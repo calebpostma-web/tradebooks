@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TradeBooks — AI Bookkeeping for Canadian Small Business</title>
+<meta name="description" content="AI-powered bookkeeping built for Canadian small businesses. Import bank statements, scan receipts, generate invoices, file HST. $49/month. No accountant needed.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0c110f;--ink2:#2a3530;--ink3:#5e706a;
+  --paper:#f6f4ef;--paper2:#ece9e1;
+  --green:#1b6b3a;--green2:#24884c;--greenlt:#e4f5eb;--greendark:#0f4424;
+  --amber:#7b5200;--amberlt:#fff7e0;
+  --white:#fff;--rule:#c5c0b5;
+  --serif:'Newsreader',Georgia,serif;
+  --sans:'Manrope',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+html{font-size:16px;scroll-behavior:smooth}
+body{font-family:var(--sans);color:var(--ink);background:var(--paper);font-weight:400;-webkit-font-smoothing:antialiased}
+
+/* ── NAV ── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  backdrop-filter:blur(16px);background:rgba(246,244,239,.85);
+  border-bottom:1px solid rgba(197,192,181,.4);
+}
+.nav-inner{
+  max-width:1140px;margin:0 auto;padding:.85rem 2.5rem;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.nav-logo{font-family:var(--serif);font-size:1.15rem;font-weight:500;color:var(--ink);display:flex;align-items:center;gap:.5rem;text-decoration:none}
+.nav-dot{width:8px;height:8px;background:var(--green);border-radius:50%}
+.nav-links{display:flex;gap:2rem;align-items:center}
+.nav-links a{font-size:.88rem;color:var(--ink3);text-decoration:none;transition:color .2s}
+.nav-links a:hover{color:var(--ink)}
+.nav-cta{
+  padding:.5rem 1.25rem;background:var(--green);color:white;
+  border:none;border-radius:6px;font-family:var(--sans);font-size:.85rem;
+  font-weight:600;cursor:pointer;text-decoration:none;transition:background .2s;
+}
+.nav-cta:hover{background:var(--green2)}
+
+/* ── HERO ── */
+.hero{
+  max-width:1140px;margin:0 auto;
+  padding:8rem 2.5rem 5rem;
+  display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;
+}
+.hero-content{}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:.4rem;
+  font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;
+  color:var(--green);background:var(--greenlt);
+  padding:.35rem .9rem;border-radius:20px;margin-bottom:1.5rem;
+  text-transform:uppercase;
+}
+.hero-badge::before{content:'';width:6px;height:6px;background:var(--green);border-radius:50%}
+.hero h1{
+  font-family:var(--serif);font-size:3.1rem;font-weight:400;
+  line-height:1.15;margin-bottom:1.25rem;letter-spacing:-.02em;
+}
+.hero h1 em{font-style:italic;color:var(--green)}
+.hero-sub{
+  font-size:1.08rem;color:var(--ink3);line-height:1.7;
+  margin-bottom:2rem;max-width:480px;font-weight:300;
+}
+.hero-actions{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
+.btn-hero{
+  padding:.8rem 2rem;background:var(--green);color:white;
+  border:none;border-radius:6px;font-family:var(--sans);
+  font-size:1rem;font-weight:600;cursor:pointer;text-decoration:none;
+  transition:all .2s;display:inline-flex;align-items:center;gap:.4rem;
+}
+.btn-hero:hover{background:var(--green2);transform:translateY(-1px);box-shadow:0 4px 20px rgba(27,107,58,.2)}
+.btn-ghost{
+  padding:.8rem 1.5rem;background:transparent;color:var(--ink2);
+  border:1.5px solid var(--rule);border-radius:6px;font-family:var(--sans);
+  font-size:.92rem;font-weight:500;cursor:pointer;text-decoration:none;transition:all .2s;
+}
+.btn-ghost:hover{border-color:var(--ink2);color:var(--ink)}
+.hero-price{display:block;font-family:var(--mono);font-size:.72rem;color:var(--ink3);margin-top:.75rem}
+
+/* Hero visual */
+.hero-visual{position:relative}
+.hero-card{
+  background:var(--white);border:1px solid var(--rule);border-radius:12px;
+  padding:1.75rem;box-shadow:0 8px 40px rgba(0,0,0,.06);
+  animation:heroFloat 6s ease-in-out infinite;
+}
+@keyframes heroFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.hero-card-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem}
+.hero-txn{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:.55rem 0;border-bottom:1px solid var(--paper2);font-size:.85rem;
+}
+.hero-txn:last-child{border-bottom:none}
+.hero-txn-name{color:var(--ink2)}
+.hero-txn-cat{font-family:var(--mono);font-size:.68rem;background:var(--greenlt);color:var(--green);padding:.15rem .5rem;border-radius:3px}
+.hero-txn-amt{font-family:var(--mono);font-size:.82rem}
+.hero-badge-ai{
+  position:absolute;top:-12px;right:24px;
+  background:var(--green);color:white;padding:.3rem .8rem;
+  border-radius:6px;font-family:var(--mono);font-size:.65rem;letter-spacing:.06em;
+  box-shadow:0 2px 12px rgba(27,107,58,.3);
+}
+
+/* ── SOCIAL PROOF ── */
+.proof{
+  background:var(--ink);color:var(--paper);padding:3.5rem 2.5rem;
+  text-align:center;
+}
+.proof-inner{max-width:800px;margin:0 auto}
+.proof-logos{
+  display:flex;justify-content:center;gap:3rem;align-items:center;
+  margin-bottom:1.5rem;opacity:.5;
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+}
+.proof-quote{
+  font-family:var(--serif);font-size:1.4rem;font-weight:300;
+  font-style:italic;line-height:1.6;margin-bottom:1rem;
+  color:rgba(246,244,239,.85);
+}
+.proof-attr{font-size:.82rem;color:rgba(246,244,239,.4);font-family:var(--mono);font-size:.72rem}
+
+/* ── FEATURES ── */
+.features{max-width:1140px;margin:0 auto;padding:5rem 2.5rem}
+.features-header{text-align:center;margin-bottom:3.5rem}
+.features-header h2{font-family:var(--serif);font-size:2.2rem;font-weight:400;margin-bottom:.5rem}
+.features-header p{font-size:1rem;color:var(--ink3);font-weight:300}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.feat{
+  background:var(--white);border:1px solid var(--rule);border-radius:10px;
+  padding:1.75rem;transition:all .2s;
+}
+.feat:hover{border-color:var(--green);box-shadow:0 4px 20px rgba(0,0,0,.04);transform:translateY(-2px)}
+.feat-icon{font-size:1.6rem;margin-bottom:.75rem}
+.feat-title{font-family:var(--sans);font-weight:600;font-size:.95rem;margin-bottom:.4rem;color:var(--ink)}
+.feat-desc{font-size:.85rem;color:var(--ink3);line-height:1.6;font-weight:300}
+
+/* ── HOW IT WORKS ── */
+.how{background:var(--white);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:5rem 2.5rem}
+.how-inner{max-width:1140px;margin:0 auto}
+.how h2{font-family:var(--serif);font-size:2.2rem;font-weight:400;text-align:center;margin-bottom:3rem}
+.how-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:2rem}
+.how-step{text-align:center;position:relative}
+.how-num{
+  width:40px;height:40px;border-radius:50%;background:var(--green);color:white;
+  font-family:var(--mono);font-size:.85rem;font-weight:600;
+  display:flex;align-items:center;justify-content:center;margin:0 auto .75rem;
+}
+.how-step-title{font-weight:600;font-size:.92rem;margin-bottom:.35rem}
+.how-step-desc{font-size:.82rem;color:var(--ink3);line-height:1.6;font-weight:300}
+
+/* ── PRICING ── */
+.pricing{max-width:1140px;margin:0 auto;padding:5rem 2.5rem;text-align:center}
+.pricing h2{font-family:var(--serif);font-size:2.2rem;font-weight:400;margin-bottom:.5rem}
+.pricing-sub{font-size:1rem;color:var(--ink3);margin-bottom:3rem;font-weight:300}
+.price-card{
+  max-width:480px;margin:0 auto;background:var(--white);
+  border:2px solid var(--green);border-radius:12px;
+  padding:2.5rem;text-align:center;position:relative;
+}
+.price-badge{
+  position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+  background:var(--green);color:white;padding:.3rem 1.2rem;
+  border-radius:20px;font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;
+  text-transform:uppercase;white-space:nowrap;
+}
+.price-amount{font-family:var(--serif);font-size:3.5rem;font-weight:400;color:var(--ink);margin:.75rem 0 .25rem}
+.price-amount span{font-size:1.2rem;color:var(--ink3);font-weight:300}
+.price-period{font-size:.88rem;color:var(--ink3);margin-bottom:1.5rem}
+.price-features{text-align:left;margin-bottom:2rem}
+.price-feat{
+  display:flex;align-items:flex-start;gap:.6rem;padding:.45rem 0;
+  font-size:.88rem;color:var(--ink2);line-height:1.5;
+}
+.price-check{color:var(--green);font-weight:700;flex-shrink:0;margin-top:.1rem}
+.price-btn{
+  width:100%;padding:.85rem;background:var(--green);color:white;
+  border:none;border-radius:8px;font-family:var(--sans);
+  font-size:1rem;font-weight:600;cursor:pointer;transition:background .2s;
+  text-decoration:none;display:block;text-align:center;
+}
+.price-btn:hover{background:var(--green2)}
+.price-note{font-size:.78rem;color:var(--ink3);margin-top:.75rem}
+.price-compare{
+  max-width:600px;margin:2.5rem auto 0;
+  font-size:.85rem;color:var(--ink3);line-height:1.7;
+}
+.price-compare strong{color:var(--ink)}
+
+/* ── DATA OWNERSHIP ── */
+.ownership{background:var(--greenlt);border-top:1px solid #b8ddc8;border-bottom:1px solid #b8ddc8;padding:4rem 2.5rem}
+.own-inner{max-width:800px;margin:0 auto;text-align:center}
+.own-inner h2{font-family:var(--serif);font-size:2rem;font-weight:400;margin-bottom:.75rem;color:var(--greendark)}
+.own-inner p{font-size:1rem;color:var(--ink2);line-height:1.7;margin-bottom:1rem;font-weight:300}
+.own-inner strong{color:var(--greendark)}
+
+/* ── FAQ ── */
+.faq{max-width:740px;margin:0 auto;padding:5rem 2.5rem}
+.faq h2{font-family:var(--serif);font-size:2.2rem;font-weight:400;text-align:center;margin-bottom:2.5rem}
+.faq-item{border-bottom:1px solid var(--rule);padding:1.25rem 0}
+.faq-q{font-weight:600;font-size:.95rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.faq-q::after{content:'+';font-size:1.2rem;color:var(--ink3);transition:transform .2s}
+.faq-item.open .faq-q::after{transform:rotate(45deg)}
+.faq-a{font-size:.88rem;color:var(--ink3);line-height:1.7;max-height:0;overflow:hidden;transition:max-height .3s,padding .3s;font-weight:300}
+.faq-item.open .faq-a{max-height:200px;padding-top:.75rem}
+
+/* ── CTA ── */
+.cta-section{background:var(--ink);padding:5rem 2.5rem;text-align:center}
+.cta-inner{max-width:600px;margin:0 auto}
+.cta-inner h2{font-family:var(--serif);font-size:2.2rem;font-weight:400;color:var(--paper);margin-bottom:.75rem}
+.cta-inner p{font-size:1rem;color:rgba(246,244,239,.5);margin-bottom:2rem;font-weight:300;line-height:1.7}
+.cta-btn{
+  padding:.9rem 2.5rem;background:var(--green);color:white;
+  border:none;border-radius:8px;font-family:var(--sans);
+  font-size:1.05rem;font-weight:600;cursor:pointer;text-decoration:none;
+  transition:all .2s;display:inline-block;
+}
+.cta-btn:hover{background:var(--green2);transform:translateY(-1px)}
+
+/* ── FOOTER ── */
+footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
+.footer-inner{max-width:1140px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+.footer-brand{font-family:var(--serif);font-size:.95rem;color:var(--ink3)}
+.footer-links{display:flex;gap:1.5rem}
+.footer-links a{font-size:.82rem;color:var(--ink3);text-decoration:none}
+.footer-links a:hover{color:var(--ink)}
+
+/* ── ANIMATIONS ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.hero-content{animation:fadeUp .7s ease}
+.hero-visual{animation:fadeUp .7s ease .15s both}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  .hero{grid-template-columns:1fr;padding:7rem 1.5rem 3rem;gap:2.5rem}
+  .hero h1{font-size:2.4rem}
+  .hero-visual{order:-1}
+  .features-grid{grid-template-columns:1fr}
+  .how-steps{grid-template-columns:1fr 1fr;gap:1.5rem}
+  .nav-links a:not(.nav-cta){display:none}
+  .nav-inner{padding:.85rem 1.5rem}
+  .proof-logos{flex-wrap:wrap;gap:1.5rem}
+}
+@media(max-width:500px){
+  .hero h1{font-size:1.9rem}
+  .hero-actions{flex-direction:column;align-items:stretch}
+  .btn-hero,.btn-ghost{text-align:center;justify-content:center}
+  .how-steps{grid-template-columns:1fr}
+  .price-card{padding:1.75rem}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="nav-logo"><span class="nav-dot"></span>TradeBooks</a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+      <a href="/app" class="nav-cta">Log in</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-badge">Built for Canadian small business</div>
+    <h1>AI bookkeeping that<br><em>actually understands</em><br>your business</h1>
+    <p class="hero-sub">
+      Import bank statements. Snap receipts. Generate invoices. File your HST.
+      Get real tax advice. All from your phone — no accountant needed.
+    </p>
+    <div class="hero-actions">
+      <a href="/app" class="btn-hero">Start free trial →</a>
+      <a href="#features" class="btn-ghost">See how it works</a>
+    </div>
+    <span class="hero-price">14 days free · $49/month after · Cancel anytime</span>
+  </div>
+  <div class="hero-visual">
+    <div class="hero-card">
+      <div class="hero-badge-ai">AI CATEGORIZED</div>
+      <div class="hero-card-label">Statement Import — March 2026</div>
+      <div class="hero-txn">
+        <span class="hero-txn-name">Canadian Tire #482</span>
+        <span class="hero-txn-cat">Small Tools</span>
+        <span class="hero-txn-amt">$127.34</span>
+      </div>
+      <div class="hero-txn">
+        <span class="hero-txn-name">Shell Fuel Station</span>
+        <span class="hero-txn-cat">Fuel</span>
+        <span class="hero-txn-amt">$89.50</span>
+      </div>
+      <div class="hero-txn">
+        <span class="hero-txn-name">Home Hardware</span>
+        <span class="hero-txn-cat">Supplies</span>
+        <span class="hero-txn-amt">$234.17</span>
+      </div>
+      <div class="hero-txn">
+        <span class="hero-txn-name">Tim Hortons</span>
+        <span class="hero-txn-cat">Meals</span>
+        <span class="hero-txn-amt">$18.64</span>
+      </div>
+      <div class="hero-txn" style="color:var(--green)">
+        <span class="hero-txn-name" style="font-weight:500">Payment received</span>
+        <span class="hero-txn-cat" style="background:var(--amberlt);color:var(--amber)">Income</span>
+        <span class="hero-txn-amt" style="color:var(--green)">+$4,520.00</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SOCIAL PROOF -->
+<section class="proof">
+  <div class="proof-inner">
+    <div class="proof-logos">
+      <span>BMO</span><span>TD</span><span>RBC</span><span>AMEX</span><span>SCOTIABANK</span><span>CIBC</span>
+    </div>
+    <div class="proof-quote">
+      "I used to spend $4,000 a year on a bookkeeper. Now I do it myself in 20 minutes
+      a month on my phone. The AI categorization is scary accurate."
+    </div>
+    <div class="proof-attr">— Mike S. · Plumber · London, ON</div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <div class="features-header">
+    <h2>Everything you need. Nothing you don't.</h2>
+    <p>Built specifically for Canadian small businesses — not adapted from American software.</p>
+  </div>
+  <div class="features-grid">
+    <div class="feat">
+      <div class="feat-icon">📥</div>
+      <div class="feat-title">Bank Statement Import</div>
+      <div class="feat-desc">Upload your bank or credit card statement as PDF or CSV. AI reads every transaction, categorizes it, and extracts HST automatically. Supports all major Canadian banks.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🧾</div>
+      <div class="feat-title">Receipt Scanner</div>
+      <div class="feat-desc">Snap a photo of any receipt. AI reads the vendor, amount, date, and tax — then files it in the right category. Works on your phone.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">📄</div>
+      <div class="feat-title">Invoice Builder</div>
+      <div class="feat-desc">Create professional invoices in seconds with live preview. Download as PDF, send to clients. Everything flows to your Google Sheet automatically.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🏛</div>
+      <div class="feat-title">HST Returns</div>
+      <div class="feat-desc">Every CRA line number pre-filled from your actual books. HST collected, ITCs claimed, net owing — ready to file on My Business Account.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🧠</div>
+      <div class="feat-title">AI Tax Advisor</div>
+      <div class="feat-desc">Ask questions about your specific situation. Get dollar-specific answers about deductions, CCA, family wages, and year-end strategies. Knows Canadian tax law.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🏥</div>
+      <div class="feat-title">Book Health Check</div>
+      <div class="feat-desc">AI scans your books for missing categories, duplicate entries, uncategorized expenses, and overdue invoices. Gives you a score and tells you exactly what to fix.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🔒</div>
+      <div class="feat-title">Your Data, Your Sheet</div>
+      <div class="feat-desc">Everything lives in a Google Sheet you own. If you ever cancel, your books stay with you forever. No hostage data. No export fees.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">⚡</div>
+      <div class="feat-title">Duplicate Detection</div>
+      <div class="feat-desc">Import your credit card statement and bank statement without worrying about double-counting. AI catches duplicates automatically and warns you in plain language.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🇨🇦</div>
+      <div class="feat-title">Canadian from the ground up</div>
+      <div class="feat-desc">HST, GST, PST for all 10 provinces. CRA filing guides. T2 for corps, T2125 for sole props. CPP, EI, payroll. Not an American tool with a Canadian flag slapped on.</div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="how" id="how">
+  <div class="how-inner">
+    <h2>Up and running in 10 minutes</h2>
+    <div class="how-steps">
+      <div class="how-step">
+        <div class="how-num">1</div>
+        <div class="how-step-title">Create your account</div>
+        <div class="how-step-desc">Tell us your business name, province, and bank. Takes 2 minutes.</div>
+      </div>
+      <div class="how-step">
+        <div class="how-num">2</div>
+        <div class="how-step-title">Copy the Sheet template</div>
+        <div class="how-step-desc">One click copies our pre-built Google Sheet to your Drive. Your data, your account.</div>
+      </div>
+      <div class="how-step">
+        <div class="how-num">3</div>
+        <div class="how-step-title">Import your first statement</div>
+        <div class="how-step-desc">Upload a PDF or CSV from your bank. AI categorizes everything in seconds.</div>
+      </div>
+      <div class="how-step">
+        <div class="how-num">4</div>
+        <div class="how-step-title">You're done</div>
+        <div class="how-step-desc">Your books are caught up. Do this for 5 minutes a month and never stress about tax season again.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DATA OWNERSHIP -->
+<section class="ownership">
+  <div class="own-inner">
+    <h2>📊 Your books belong to you. Period.</h2>
+    <p>
+      Unlike QuickBooks or FreshBooks, your financial data lives in a <strong>Google Sheet in your own Google Drive</strong>.
+      We never store your transactions, receipts, or invoices on our servers.
+      If you cancel TradeBooks tomorrow, every dollar you've ever tracked is still right there in your Sheet.
+    </p>
+    <p><strong>We provide the intelligence. You keep the data.</strong></p>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="pricing" id="pricing">
+  <h2>Simple pricing. No surprises.</h2>
+  <p class="pricing-sub">One plan. Everything included. No per-user fees, no feature tiers, no upsells.</p>
+  <div class="price-card">
+    <div class="price-badge">14-day free trial</div>
+    <div class="price-amount">$49<span>/month</span></div>
+    <div class="price-period">Cancel anytime · No contracts · HST included</div>
+    <div class="price-features">
+      <div class="price-feat"><span class="price-check">✓</span>Unlimited bank statement imports</div>
+      <div class="price-feat"><span class="price-check">✓</span>Unlimited receipt scanning</div>
+      <div class="price-feat"><span class="price-check">✓</span>Unlimited invoices</div>
+      <div class="price-feat"><span class="price-check">✓</span>AI transaction categorization</div>
+      <div class="price-feat"><span class="price-check">✓</span>AI tax advisor — ask anything</div>
+      <div class="price-feat"><span class="price-check">✓</span>HST return calculator (all provinces)</div>
+      <div class="price-feat"><span class="price-check">✓</span>T2 corporate tax + T2125 sole prop</div>
+      <div class="price-feat"><span class="price-check">✓</span>Payroll calculator (CPP, EI, PD7A)</div>
+      <div class="price-feat"><span class="price-check">✓</span>Monthly health check + duplicate detection</div>
+      <div class="price-feat"><span class="price-check">✓</span>Your data stays in your Google Sheet</div>
+    </div>
+    <a href="/app" class="price-btn">Start your free trial →</a>
+    <div class="price-note">No credit card required to start</div>
+  </div>
+  <div class="price-compare">
+    <strong>How this compares:</strong> QuickBooks charges $25-55/month and doesn't include AI categorization or Canadian tax advice.
+    A bookkeeper costs $200-500/month. An accountant for basic bookkeeping runs $3,000-5,000/year.
+    TradeBooks does 90% of what they do for $49/month.
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq" id="faq">
+  <h2>Frequently asked questions</h2>
+  <div class="faq-item" onclick="this.classList.toggle('open')">
+    <div class="faq-q">Do I need accounting experience?</div>
+    <div class="faq-a">No. TradeBooks is built for business owners, not accountants. The AI handles categorization, HST extraction, and tax calculations. You just review what it did and confirm. If something looks wrong, change it with a dropdown — the AI learns your patterns over time.</div>
+  </div>
+  <div class="faq-item" onclick="this.classList.toggle('open')">
+    <div class="faq-q">Which banks are supported?</div>
+    <div class="faq-a">All major Canadian banks — BMO, TD, RBC, Scotiabank, CIBC, Desjardins — plus credit cards from AMEX, Visa, Mastercard, and Capital One. Upload any PDF or CSV statement.</div>
+  </div>
+  <div class="faq-item" onclick="this.classList.toggle('open')">
+    <div class="faq-q">Is my financial data secure?</div>
+    <div class="faq-a">Your data lives in your own Google Sheet, in your own Google account. We don't store your transactions, receipts, or financial records. The AI processes your data in real-time and never retains it. Your Google Sheet is as secure as your Google account.</div>
+  </div>
+  <div class="faq-item" onclick="this.classList.toggle('open')">
+    <div class="faq-q">Can I use this for my corporation AND sole proprietorship?</div>
+    <div class="faq-a">Yes. During setup, you choose your business type — sole proprietor or incorporated. TradeBooks shows the right tax forms for each: T2125 for sole props, T2 for corporations. Both get full HST, payroll, and AI tax advice.</div>
+  </div>
+  <div class="faq-item" onclick="this.classList.toggle('open')">
+    <div class="faq-q">What happens if I cancel?</div>
+    <div class="faq-a">You keep everything. Your Google Sheet with all your books stays in your Google Drive forever. You just lose access to the AI features (statement import, receipt scanning, tax advisor). Your data is never deleted or locked behind a paywall.</div>
+  </div>
+  <div class="faq-item" onclick="this.classList.toggle('open')">
+    <div class="faq-q">Does this replace my accountant?</div>
+    <div class="faq-a">For day-to-day bookkeeping, yes. TradeBooks handles statement imports, categorization, HST tracking, invoicing, and tax estimation. You may still want an accountant for year-end filing, complex tax planning, or audit situations — but you'll save thousands on routine bookkeeping.</div>
+  </div>
+  <div class="faq-item" onclick="this.classList.toggle('open')">
+    <div class="faq-q">Does it work on my phone?</div>
+    <div class="faq-a">Yes. TradeBooks is a web app that works on any device — phone, tablet, laptop. No app to install. The receipt scanner opens your phone camera directly. Most users do their monthly bookkeeping on their phone in under 20 minutes.</div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="cta-inner">
+    <h2>Stop dreading tax season.</h2>
+    <p>Join hundreds of Canadian small business owners who manage their own books with AI. Set up in 10 minutes. No accounting degree required.</p>
+    <a href="/app" class="cta-btn">Start your free trial →</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">TradeBooks · AI Bookkeeping for Canadian Small Business</div>
+    <div class="footer-links">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+      <a href="/app">Log in</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

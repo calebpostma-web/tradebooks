@@ -2547,9 +2547,6 @@ function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace
 let impBank='AMEX', impRawRows=[], impTxns=[];
 let impPdfB64=null; // set when a PDF is loaded
 
-const EXP_CATS=['Meals & Entertainment','Professional Fees','Wages & Salaries','Small Tools','Supplies','Uniforms','Dues & Memberships','Vehicle Repairs','Fuel','Insurance','Interest & Bank Charges','Repairs & Maintenance','Property Tax','Telephone','Utilities','Conferences','Equipment Purchase','Inventory — Materials (COGS)','Other','Bill Payment / Transfer','Owner Draw / Distribution','Income Received','SKIP — not a business expense'];
-const NO_HST=new Set(['Wages & Salaries','Insurance','Interest & Bank Charges','Property Tax','Bill Payment / Transfer','Owner Draw / Distribution','Income Received','SKIP — not a business expense']);
-
 function setBank(b,el){
   impBank=b;
   document.querySelectorAll('.bank-tab').forEach(t=>t.classList.remove('active'));

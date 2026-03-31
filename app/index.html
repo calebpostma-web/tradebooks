@@ -4315,10 +4315,26 @@ function obRender(){
       </div>${field('Home office % (0 if none)','ob_homeOfficePercent','0',p.homeOfficePercent,'number')}`; break;
     case 3:
       html = `<div style="text-align:center;padding:.75rem 0 1rem"><div style="font-size:3rem;margin-bottom:.5rem">📊</div><div style="font-size:.85rem;color:var(--ink3);line-height:1.6;max-width:400px;margin:0 auto">Your books live in a Google Sheet you own. We never store your financial data.</div></div>
-      <div style="background:var(--greenlt);border:1px solid #b8ddc8;border-radius:var(--radius);padding:1rem;margin-bottom:1rem"><div style="font-weight:500;font-size:.85rem;color:var(--green);margin-bottom:.3rem">Step 1: Copy the template</div><div style="font-size:.8rem;color:var(--ink2);line-height:1.5">Click below to copy the bookkeeping template to your Google Drive.</div><button style="margin-top:.5rem;padding:.45rem .9rem;background:var(--green);color:white;border:none;border-radius:var(--radius);font-size:.8rem;cursor:pointer" onclick="toast('Template link — configured during deployment')">📋 Copy template to my Drive</button></div>
-      ${field('Google Sheet ID','ob_sheetId','Paste the long ID from your Sheet URL',p.sheetId)}
-      ${field('Apps Script URL (optional)','ob_scriptUrl','https://script.google.com/macros/s/...',p.scriptUrl)}
-      ${hint('You can skip this and set it up later.')}`; break;
+      
+      <!-- PATH A: Automatic setup with Google sign-in -->
+      <div id="obPathA" style="background:var(--greenlt);border:2px solid #b8ddc8;border-radius:var(--radius);padding:1.25rem;margin-bottom:1rem;text-align:center">
+        <div style="font-weight:600;font-size:.95rem;color:var(--green);margin-bottom:.5rem">✨ Recommended: One-click setup</div>
+        <div style="font-size:.8rem;color:var(--ink2);line-height:1.5;margin-bottom:.75rem">Sign in with Google and we'll create your bookkeeping sheet automatically — tabs, formulas, categories, everything.</div>
+        <button id="googleSignInBtn" style="padding:.6rem 1.5rem;background:white;color:var(--ink);border:1px solid #ddd;border-radius:var(--radius);font-size:.88rem;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem" onclick="googleAutoSetup()">
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          Sign in with Google
+        </button>
+        <div id="googleSetupStatus" style="font-size:.78rem;color:var(--ink3);margin-top:.5rem;display:none"></div>
+      </div>
+
+      <div style="text-align:center;font-size:.75rem;color:var(--ink3);margin:1rem 0;position:relative"><span style="background:var(--paper);padding:0 .75rem;position:relative;z-index:1">or set up manually</span><div style="position:absolute;top:50%;left:0;right:0;border-top:1px solid var(--rule)"></div></div>
+
+      <!-- PATH B: Manual setup -->
+      <div id="obPathB">
+        ${field('Google Sheet ID','ob_sheetId','Paste the long ID from your Sheet URL',p.sheetId)}
+        ${field('Apps Script URL (optional)','ob_scriptUrl','https://script.google.com/macros/s/...',p.scriptUrl)}
+        ${hint('Create a sheet from the add-on or copy the template, then paste the ID here.')}
+      </div>`; break;
     case 4:
       const prov = PROVINCE_CONFIG[p.province]||PROVINCE_CONFIG.ON;
       html = `<div style="text-align:center;padding:1.5rem 0"><div style="font-size:3.5rem;margin-bottom:.75rem">🎉</div>
@@ -4375,6 +4391,135 @@ async function obComplete(){
 // Patch showOnboarding to init wizard
 const _origShowOB=showOnboarding;
 showOnboarding=function(){_origShowOB();obStep=0;obProfile.ownerName=USER_CONFIG.ownerName||'';obProfile.email=USER_CONFIG.email||'';obRender()};
+
+// ════════════════════════════════════════════════════════════
+// GOOGLE OAUTH — Sign in with Google + auto-create sheet
+// ════════════════════════════════════════════════════════════
+const GOOGLE_CLIENT_ID = '156430400132-g1svqh7tu8c31lf10afu2hm1koqec1vo.apps.googleusercontent.com';
+const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/script.deployments https://www.googleapis.com/auth/userinfo.email';
+
+function googleAutoSetup() {
+  const btn = document.getElementById('googleSignInBtn');
+  const status = document.getElementById('googleSetupStatus');
+  if (btn) btn.disabled = true;
+  if (status) { status.style.display = 'block'; status.textContent = 'Opening Google sign-in...'; }
+
+  // Build OAuth URL
+  const redirectUri = window.location.origin + '/app/';
+  const state = 'tradebooks_setup_' + Date.now();
+  sessionStorage.setItem('google_oauth_state', state);
+
+  const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: GOOGLE_SCOPES,
+    state: state,
+    access_type: 'offline',
+    prompt: 'consent',
+  }).toString();
+
+  window.location.href = authUrl;
+}
+
+// Handle OAuth callback — runs on page load if there's a code in the URL
+async function handleGoogleCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+
+  if (!code || !state) return false;
+
+  // Verify state
+  const savedState = sessionStorage.getItem('google_oauth_state');
+  if (!savedState || !state.startsWith('tradebooks_setup_')) return false;
+  sessionStorage.removeItem('google_oauth_state');
+
+  // Clean URL
+  window.history.replaceState({}, '', window.location.pathname);
+
+  // Show loading
+  showLoading('Setting up your bookkeeping sheet...');
+
+  try {
+    // Step 1: Exchange code for tokens
+    const tokenResp = await fetch('/api/google-setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const tokenData = await tokenResp.json();
+    if (!tokenData.ok) throw new Error(tokenData.error || 'Google sign-in failed');
+
+    // Step 2: Create the sheet + script automatically
+    showLoading('Creating your bookkeeping sheet...');
+    const setupResp = await fetch('/api/google-setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create-sheet',
+        accessToken: tokenData.accessToken,
+        profile: {
+          businessName: obProfile.businessName || USER_CONFIG.businessName || '',
+          tradingName: obProfile.tradingName || USER_CONFIG.tradingName || '',
+          ownerName: obProfile.ownerName || tokenData.name || '',
+          email: tokenData.email || obProfile.email || '',
+          city: obProfile.city || '',
+          province: obProfile.province || 'ON',
+          hstNumber: obProfile.hstNumber || '',
+          businessType: obProfile.businessType || 'sole_prop',
+          fiscalYearEnd: obProfile.fiscalYearEnd || 'December 31',
+          primaryBank: obProfile.primaryBank || 'BMO',
+          creditCard: obProfile.creditCard || 'AMEX',
+          invoiceStart: obProfile.invoiceStart || 1001,
+          homeOfficePercent: obProfile.homeOfficePercent || 0,
+          structure: obProfile.structure || '',
+          activities: obProfile.activities || '',
+        },
+      }),
+    });
+    const setupData = await setupResp.json();
+    if (!setupData.ok) throw new Error(setupData.error || 'Sheet creation failed');
+
+    // Success — populate the profile with the new sheet info
+    obProfile.sheetId = setupData.spreadsheetId;
+    obProfile.scriptUrl = setupData.scriptUrl || '';
+    obProfile.email = obProfile.email || tokenData.email || '';
+    obProfile.ownerName = obProfile.ownerName || tokenData.name || '';
+
+    // Skip to step 4 (confirmation)
+    obStep = 4;
+    showOnboarding();
+    obStep = 4;
+    obRender();
+
+    toast(setupData.scriptUrl
+      ? '✅ Sheet created and script deployed automatically!'
+      : '✅ Sheet created! You may need to deploy the script manually for full features.');
+
+  } catch (e) {
+    console.error('Google setup error:', e);
+    toast('Setup error: ' + e.message);
+    // Fall back to onboarding step 3 (manual path)
+    showOnboarding();
+    obStep = 3;
+    obRender();
+  }
+}
+
+// Check for OAuth callback on page load
+(function() {
+  const origInitAuth = initAuth;
+  initAuth = function() {
+    // Check for Google OAuth callback first
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('code') && params.get('state')?.startsWith('tradebooks_setup_')) {
+      handleGoogleCallback();
+      return;
+    }
+    origInitAuth();
+  };
+})();
 
 // ════════════════════════════════════════════════════════════
 // TAX INTELLIGENCE — Auto-load from Google Sheet + Health Check

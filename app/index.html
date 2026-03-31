@@ -1975,24 +1975,52 @@ const PROVINCE_CONFIG = {
   QC: { name:'Quebec',               rate:0.14975, type:'GST+QST', provSBD:0.032 },
 };
 
-// ── Universal expense categories ──
-const EXP_CATS = [
+// ── Universal expense categories (defaults) ──
+const DEFAULT_EXP_CATS = [
   'Meals & Entertainment','Professional Fees','Wages & Salaries','Small Tools',
   'Supplies','Uniforms','Dues & Memberships','Vehicle Repairs','Fuel',
   'Insurance','Interest & Bank Charges','Repairs & Maintenance','Property Tax',
   'Telephone','Utilities','Conferences','Equipment Purchase',
   'Inventory — Materials (COGS)','Advertising & Marketing','Subcontractors',
   'Office Supplies','Rent','Home Office','Vehicle Lease/Payments','Travel',
-  'Training & Education','Permits & Licenses','Other',
+  'Training & Education','Permits & Licenses','Tax Payments','Other',
   'Bill Payment / Transfer','Owner Draw / Distribution',
   'Income Received','SKIP — not a business expense'
 ];
 
-const INCOME_CATS = [
+const DEFAULT_INCOME_CATS = [
   'Consulting Revenue','Service Revenue','Sales Revenue',
   'Sales Revenue — Materials','Rental Income','Interest Income',
   'Income Received','Other Income'
 ];
+
+// Merged category lists — includes user's custom categories
+function getExpCats() {
+  const custom = (USER_CONFIG.customExpenseCats || []).filter(Boolean);
+  if (!custom.length) return DEFAULT_EXP_CATS;
+  // Insert custom cats before 'Other'
+  const idx = DEFAULT_EXP_CATS.indexOf('Other');
+  const merged = [...DEFAULT_EXP_CATS];
+  custom.forEach(c => { if (!merged.includes(c)) merged.splice(idx, 0, c); });
+  return merged;
+}
+
+function getIncomeCats() {
+  const custom = (USER_CONFIG.customIncomeCats || []).filter(Boolean);
+  if (!custom.length) return DEFAULT_INCOME_CATS;
+  const merged = [...DEFAULT_INCOME_CATS];
+  custom.forEach(c => { if (!merged.includes(c)) merged.splice(merged.length - 1, 0, c); });
+  return merged;
+}
+
+// Keep EXP_CATS as a getter for backward compat in places that reference it directly
+let EXP_CATS = DEFAULT_EXP_CATS;
+let INCOME_CATS = DEFAULT_INCOME_CATS;
+
+function refreshCategoryLists() {
+  EXP_CATS = getExpCats();
+  INCOME_CATS = getIncomeCats();
+}
 
 const NO_HST = new Set([
   'Wages & Salaries','Insurance','Interest & Bank Charges','Property Tax',
@@ -2032,6 +2060,8 @@ let USER_CONFIG = {
   fedSBDRate: 0.09,
   provSBDRate: 0.032,
   combinedRate: 0.122,
+  customExpenseCats: [],
+  customIncomeCats: [],
 };
 
 // ── Derive tax config from province + business type ──
@@ -2205,6 +2235,9 @@ function setScreen(name) {
 function applyConfig() {
   const C = USER_CONFIG;
   const prov = PROVINCE_CONFIG[C.province] || PROVINCE_CONFIG.ON;
+
+  // Refresh merged category lists with any custom categories
+  refreshCategoryLists();
 
   // Header
   const brand = document.querySelector('.brand');
@@ -2395,7 +2428,7 @@ IMPORTANT BANK CONTEXT:
 - Credit card bill payments (${C.creditCard} BILL PYMT etc.) = paying the credit card bill from the bank. Mark as "Bill Payment / Transfer" — individual purchases are captured in the credit card statement. NEVER double-count these.
 - Owner distributions, draws, transfers to personal = "Owner Draw / Distribution"
 - Interac e-Transfer received from clients = "Income Received"
-- CRA / HST / tax payments = "Interest & Bank Charges"
+- CRA / HST / tax payments = "Tax Payments"
 - Bank fees, service charges = "Interest & Bank Charges"
 - Payroll debits = "Wages & Salaries"`
     : `This is a ${C.creditCard} CREDIT CARD statement for ${C.businessName} (${prov.name} ${C.businessType === 'incorporated' ? 'corporation' : 'sole proprietorship'}).
@@ -4092,7 +4125,7 @@ function renderSettings(){
   const provOpts = Object.entries(PROVINCE_CONFIG).map(([code,cfg])=>`<option value="${code}"${code===C.province?' selected':''}>${cfg.name} (${cfg.type} ${Math.round(cfg.rate*100)}%)</option>`).join('');
   const bankOpts = ['BMO','TD','RBC','Scotiabank','CIBC','Desjardins','Other'].map(b=>`<option${b===C.primaryBank?' selected':''}>${b}</option>`).join('');
   const ccOpts = ['AMEX','Visa','Mastercard','Capital One','None'].map(c=>`<option${c===C.creditCard?' selected':''}>${c}</option>`).join('');
-  const fyOpts = ['December 31','March 31','June 30','September 30'].map(f=>`<option${f===C.fiscalYearEnd?' selected':''}>${f}</option>`).join('');
+  const fyOpts = ['January 31','February 28','March 31','April 30','May 31','June 30','July 31','August 31','September 30','October 31','November 30','December 31'].map(f=>`<option${f===C.fiscalYearEnd?' selected':''}>${f}</option>`).join('');
   const typeOpts = `<option value="sole_prop"${C.businessType==='sole_prop'?' selected':''}>Sole Proprietor</option><option value="incorporated"${C.businessType==='incorporated'?' selected':''}>Incorporated</option>`;
 
   const f = (lbl,id,val,type) => `<div class="field"><label>${lbl}</label><input type="${type||'text'}" id="${id}" value="${val||''}" style="font-size:.88rem"></div>`;
@@ -4131,6 +4164,18 @@ function renderSettings(){
       <label>Client Autocomplete (comma-separated)</label>
       <input type="text" id="set_clients" value="${(C.clients||[]).join(', ')}" style="font-size:.88rem" placeholder="Johnson Construction, Maple Leaf Homes">
     </div>
+
+    <hr class="divider">
+    <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Custom Categories</div>
+    <div class="field">
+      <label>Custom Expense Categories (comma-separated)</label>
+      <input type="text" id="set_customExpenseCats" value="${(C.customExpenseCats||[]).join(', ')}" style="font-size:.88rem" placeholder="Inventory — Tires/Wheels (COGS), Snow Removal">
+    </div>
+    <div class="field">
+      <label>Custom Income Categories (comma-separated)</label>
+      <input type="text" id="set_customIncomeCats" value="${(C.customIncomeCats||[]).join(', ')}" style="font-size:.88rem" placeholder="Sales Revenue — Tires/Wheels, Maintenance Contracts">
+    </div>
+    <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">These will appear in all category dropdowns alongside the standard categories. The AI will learn to use them when categorizing your transactions.</div>
 
     <hr class="divider">
     <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Google Sheet Connection</div>
@@ -4182,6 +4227,8 @@ async function saveSettings(){
     invoiceStart: parseInt(document.getElementById('set_invoiceStart')?.value) || 1001,
     email: document.getElementById('set_email')?.value || '',
     clients: (document.getElementById('set_clients')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
+    customExpenseCats: (document.getElementById('set_customExpenseCats')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
+    customIncomeCats: (document.getElementById('set_customIncomeCats')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
     sheetId: document.getElementById('set_sheetId')?.value || '',
     scriptUrl: document.getElementById('set_scriptUrl')?.value || '',
     structure: document.getElementById('set_structure')?.value || '',
@@ -4255,9 +4302,9 @@ function obRender(){
       ${field('Trading / DBA name (leave blank if same)','ob_tradingName','e.g. Smith Emergency Plumbing',p.tradingName)}`; break;
     case 1:
       html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">${field('City','ob_city','London',p.city)}${sel('Province','ob_province',provOpts,p.province)}</div>
-      ${field('HST / GST registration number','ob_hstNumber','123456789 RT 0001',p.hstNumber)}
+      <div style="margin-bottom:1rem"><label style="display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);margin-bottom:.35rem;text-transform:uppercase">HST / GST registration number (optional)</label><input type="text" id="ob_hstNumber" placeholder="123456789 RT 0001 — or leave blank" value="${p.hstNumber||''}" style="width:100%;padding:.6rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem;color:var(--ink);outline:none" oninput="obField('ob_hstNumber',this.value)"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">${sel('Primary bank','ob_primaryBank',['BMO','TD','RBC','Scotiabank','CIBC','Desjardins','Other'],p.primaryBank)}${sel('Business credit card','ob_creditCard',['AMEX','Visa','Mastercard','Capital One','None'],p.creditCard)}</div>
-      ${sel('Fiscal year end','ob_fiscalYearEnd',['December 31','March 31','June 30','September 30'],p.fiscalYearEnd)}
+      ${sel('Fiscal year end','ob_fiscalYearEnd',['January 31','February 28','March 31','April 30','May 31','June 30','July 31','August 31','September 30','October 31','November 30','December 31'],p.fiscalYearEnd)}
       ${p.businessType==='sole_prop'&&p.fiscalYearEnd!=='December 31'?hint('⚠️ Sole proprietors in Canada must use December 31 as their fiscal year end.'):''}`; break;
     case 2:
       html = `${field('Starting invoice number','ob_invoiceStart','1001',p.invoiceStart,'number')}
@@ -4342,24 +4389,28 @@ async function taxFetchSummary(){
     const r=await fetch(url+'?action=summary');
     const data=await r.json();
     if(!data.ok) throw new Error(data.error||'Failed');
-    document.getElementById('ti-revenue').value=data.income?.total||'';
-    document.getElementById('ti-expenses').value=data.expenses?.total||'';
-    document.getElementById('ti-wages').value=data.expenses?.byCategory?.['Wages & Salaries']||'';
+    // Populate manual input fields with real data
+    const revEl=document.getElementById('ti-revenue');
+    const expEl=document.getElementById('ti-expenses');
+    const wageEl=document.getElementById('ti-wages');
+    if(revEl) revEl.value=data.totalRevenue||0;
+    if(expEl) expEl.value=data.totalExpenses||0;
+    if(wageEl) wageEl.value=data.expensesByCategory?.['Wages & Salaries']||0;
     taxCalc();
     // Show detail
     const d=document.getElementById('taxSummaryDetail');
     if(d){
-      const s=data;
       let cats='';
-      if(s.expenses?.byCategory) cats=Object.entries(s.expenses.byCategory).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([c,a])=>`<div style="display:flex;justify-content:space-between;padding:.2rem 0;border-bottom:1px solid var(--paper2);font-size:.8rem"><span>${c}</span><span style="font-family:var(--mono)">$${fmtMoney(a)}</span></div>`).join('');
+      if(data.topExpenses) cats=data.topExpenses.map(e=>`<div style="display:flex;justify-content:space-between;padding:.2rem 0;border-bottom:1px solid var(--paper2);font-size:.8rem"><span>${e.category}</span><span style="font-family:var(--mono)">$${fmtMoney(e.amount)}</span></div>`).join('');
       d.innerHTML=`<div style="font-family:var(--mono);font-size:.6rem;color:var(--ink3);letter-spacing:.06em;margin-bottom:.5rem">AUTO-LOADED FROM GOOGLE SHEET</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.75rem">
-          <div style="background:var(--greenlt);border-radius:var(--radius);padding:.5rem;text-align:center"><div style="font-size:.62rem;color:var(--green);font-family:var(--mono)">HST COLLECTED</div><div style="font-family:var(--serif);font-size:1rem;color:var(--green)">$${fmtMoney(s.hst?.collected||0)}</div></div>
-          <div style="background:var(--amberlt);border-radius:var(--radius);padding:.5rem;text-align:center"><div style="font-size:.62rem;color:var(--amber);font-family:var(--mono)">HST OWING</div><div style="font-family:var(--serif);font-size:1rem;color:var(--amber)">$${fmtMoney(s.hst?.netOwing||0)}</div></div>
+          <div style="background:var(--greenlt);border-radius:var(--radius);padding:.5rem;text-align:center"><div style="font-size:.62rem;color:var(--green);font-family:var(--mono)">HST COLLECTED</div><div style="font-family:var(--serif);font-size:1rem;color:var(--green)">$${fmtMoney(data.hstCollected||0)}</div></div>
+          <div style="background:var(--amberlt);border-radius:var(--radius);padding:.5rem;text-align:center"><div style="font-size:.62rem;color:var(--amber);font-family:var(--mono)">HST OWING</div><div style="font-family:var(--serif);font-size:1rem;color:var(--amber)">$${fmtMoney(data.hstNetOwing||0)}</div></div>
         </div>
-        ${s.invoices?.unpaid>0?`<div style="background:var(--redlt);border:1px solid #e8b8b8;border-radius:var(--radius);padding:.5rem;font-size:.78rem;color:var(--red);margin-bottom:.6rem">📌 ${s.invoices.unpaid} unpaid invoice(s) — $${fmtMoney(s.invoices.unpaidAmount)}</div>`:''}
+        ${data.unpaidInvoices>0?`<div style="background:var(--redlt);border:1px solid #e8b8b8;border-radius:var(--radius);padding:.5rem;font-size:.78rem;color:var(--red);margin-bottom:.6rem">📌 ${data.unpaidInvoices} unpaid invoice(s) — $${fmtMoney(data.unpaidTotal||0)}</div>`:''}
         ${cats?`<div style="font-size:.78rem;margin-bottom:.3rem"><strong>Top expenses:</strong></div>${cats}`:''}
-        ${s.warnings?.length?s.warnings.map(w=>'<div style="font-size:.75rem;color:var(--amber);margin-top:.3rem">⚠️ '+w+'</div>').join(''):''}`;
+        ${data.missingCategories?.length?`<div style="font-size:.75rem;color:var(--amber);margin-top:.5rem">⚠️ No entries for: ${data.missingCategories.join(', ')}</div>`:''}
+        <div style="font-size:.72rem;color:var(--ink3);margin-top:.4rem">${data.transactionCount||0} transactions · ${data.invoiceCount||0} invoices</div>`;
     }
     toast('Numbers loaded from your Google Sheet');
   }catch(e){toast('Could not load: '+e.message)}

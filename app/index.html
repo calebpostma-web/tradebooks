@@ -986,9 +986,25 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div id="rcptExportWrap" class="hidden">
         <div class="btn-row">
           <button class="btn btn-green" id="rcptSheetsBtn" onclick="rcptSendToSheets()">📊 Send to Google Sheets</button>
+          <button class="btn btn-outline" onclick="downloadReceiptImage()" title="Download receipt image to your device">📥 Save Receipt Image</button>
           <button class="btn btn-outline" onclick="rcptClear()">Clear / Scan another</button>
         </div>
         <div id="rcptSheetsStatus" style="font-size:.82rem;color:var(--ink3);margin-top:.5rem"></div>
+        <div id="rcptTipBanner" style="display:none;margin-top:.75rem">
+          <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:var(--radius);padding:1rem 1.1rem">
+            <div style="display:flex;align-items:flex-start;gap:.6rem">
+              <span style="font-size:1.3rem;line-height:1">💡</span>
+              <div style="flex:1">
+                <div style="font-weight:600;color:#1D4ED8;margin-bottom:.25rem;font-size:.88rem">Set up receipt syncing across your devices</div>
+                <div style="font-size:.8rem;color:#374151;line-height:1.5">CRA requires receipts for 6 years. Set up iCloud or Google Drive syncing so every saved receipt is automatically backed up on your phone <em>and</em> computer.</div>
+                <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
+                  <button onclick="downloadSetupGuide()" style="font-size:.78rem;padding:.35rem .85rem;background:#1D4ED8;color:white;border:none;border-radius:var(--radius);cursor:pointer">📄 Download Setup Guide</button>
+                  <button onclick="dismissReceiptTip()" style="font-size:.78rem;padding:.35rem .85rem;background:transparent;border:1px solid #93C5FD;color:#1D4ED8;border-radius:var(--radius);cursor:pointer">Got it, dismiss</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -3365,6 +3381,10 @@ async function rcptSendToSheets(){
         msg = '✅ Added to Expenses tab in your Google Sheet.';
       }
       status.innerHTML = msg;
+      // Show first-time tip banner
+      if (!localStorage.getItem('tb_receipt_tip_dismissed')) {
+        document.getElementById('rcptTipBanner').style.display = 'block';
+      }
     } else {
       status.textContent = '❌ Error: ' + (d.error || 'Unknown');
       btn.disabled = false;
@@ -3403,6 +3423,41 @@ function rcptClear(){
   document.getElementById('rcptResultContent').innerHTML=`<div style="text-align:center;padding:2rem;color:var(--ink3)"><div style="font-size:2rem;margin-bottom:.5rem">🧾</div><div style="font-size:.85rem">Upload a receipt to get started</div></div>`;
   document.getElementById('rcptInput').value='';
   const fn=document.getElementById('rcptFname');if(fn)fn.textContent='';
+}
+
+function downloadReceiptImage() {
+  if (!rcptB64 || !rcptMediaType) { toast('No receipt image loaded'); return; }
+  const vendor = (rcptResult.vendor || 'receipt').replace(/[^a-zA-Z0-9]/g, '-');
+  const date = rcptResult.date || new Date().toISOString().split('T')[0];
+  const amount = rcptResult.total || '0';
+  const ext = rcptMediaType === 'application/pdf' ? 'pdf' : 'jpg';
+  const filename = `receipt-${date}-${vendor}-$${amount}.${ext}`;
+  const bytes = atob(rcptB64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  const blob = new Blob([arr], { type: rcptMediaType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  toast('Receipt saved — ' + filename);
+}
+
+function downloadSetupGuide() {
+  const b64 = 'JVBERi0xLjQKJZOMi54gUmVwb3J0TGFiIEdlbmVyYXRlZCBQREYgZG9jdW1lbnQgKG9wZW5zb3VyY2UpCjEgMCBvYmoKPDwKL0YxIDIgMCBSIC9GMiAzIDAgUiAvRjMgNCAwIFIgL0Y0IDUgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9CYXNlRm9udCAvSGVsdmV0aWNhIC9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nIC9OYW1lIC9GMSAvU3VidHlwZSAvVHlwZTEgL1R5cGUgL0ZvbnQKPj4KZW5kb2JqCjMgMCBvYmoKPDwKL0Jhc2VGb250IC9IZWx2ZXRpY2EtQm9sZCAvRW5jb2RpbmcgL1dpbkFuc2lFbmNvZGluZyAvTmFtZSAvRjIgL1N1YnR5cGUgL1R5cGUxIC9UeXBlIC9Gb250Cj4+CmVuZG9iago0IDAgb2JqCjw8Ci9CYXNlRm9udCAvWmFwZkRpbmdiYXRzIC9OYW1lIC9GMyAvU3VidHlwZSAvVHlwZTEgL1R5cGUgL0ZvbnQKPj4KZW5kb2JqCjUgMCBvYmoKPDwKL0Jhc2VGb250IC9TeW1ib2wgL05hbWUgL0Y0IC9TdWJ0eXBlIC9UeXBlMSAvVHlwZSAvRm9udAo+PgplbmRvYmoKNiAwIG9iago8PAovQ29udGVudHMgMTEgMCBSIC9NZWRpYUJveCBbIDAgMCA2MTIgNzkyIF0gL1BhcmVudCAxMCAwIFIgL1Jlc291cmNlcyA8PAovRm9udCAxIDAgUiAvUHJvY1NldCBbIC9QREYgL1RleHQgL0ltYWdlQiAvSW1hZ2VDIC9JbWFnZUkgXQo+PiAvUm90YXRlIDAgL1RyYW5zIDw8Cgo+PiAKICAvVHlwZSAvUGFnZQo+PgplbmRvYmoKNyAwIG9iago8PAovQ29udGVudHMgMTIgMCBSIC9NZWRpYUJveCBbIDAgMCA2MTIgNzkyIF0gL1BhcmVudCAxMCAwIFIgL1Jlc291cmNlcyA8PAovRm9udCAxIDAgUiAvUHJvY1NldCBbIC9QREYgL1RleHQgL0ltYWdlQiAvSW1hZ2VDIC9JbWFnZUkgXQo+PiAvUm90YXRlIDAgL1RyYW5zIDw8Cgo+PiAKICAvVHlwZSAvUGFnZQo+PgplbmRvYmoKOCAwIG9iago8PAovUGFnZU1vZGUgL1VzZU5vbmUgL1BhZ2VzIDEwIDAgUiAvVHlwZSAvQ2F0YWxvZwo+PgplbmRvYmoKOSAwIG9iago8PAovQXV0aG9yIChcKGFub255bW91c1wpKSAvQ3JlYXRpb25EYXRlIChEOjIwMjYwMzMxMTQxNzE4KzAwJzAwJykgL0NyZWF0b3IgKFwodW5zcGVjaWZpZWRcKSkgL0tleXdvcmRzICgpIC9Nb2REYXRlIChEOjIwMjYwMzMxMTQxNzE4KzAwJzAwJykgL1Byb2R1Y2VyIChSZXBvcnRMYWIgUERGIExpYnJhcnkgLSBcKG9wZW5zb3VyY2VcKSkgCiAgL1N1YmplY3QgKFwodW5zcGVjaWZpZWRcKSkgL1RpdGxlIChcKGFub255bW91c1wpKSAvVHJhcHBlZCAvRmFsc2UKPj4KZW5kb2JqCjEwIDAgb2JqCjw8Ci9Db3VudCAyIC9LaWRzIFsgNiAwIFIgNyAwIFIgXSAvVHlwZSAvUGFnZXMKPj4KZW5kb2JqCjExIDAgb2JqCjw8Ci9GaWx0ZXIgWyAvQVNDSUk4NURlY29kZSAvRmxhdGVEZWNvZGUgXSAvTGVuZ3RoIDI2NjAKPj4Kc3RyZWFtCkdiIi8pPWBgPVcmcTlTWWthLzhnO0BdIVBHV2szQUEyQ1JGQTdBUTg7V1NeYEtJK1ZOYWNNYiNnMF9WTiEhcWtvSSNUTjFlQEpVOy4wPTA+ZCwzSTJDa3RILyspXylAJFwyOmxwdEshXz5lb0QvXDcsZGxzK0otXyVfYSQoZjJHKmhKTEk1bHEjWzJnRWlRJEsiYXRQVGY/aWZxTE88RGQjOEpOOkkvdEslOmUxUy1dTWc/bksiY24jXzIiMi1FPylNQi4qXlNJYCxxbTI6Ylk8X3I2Ui08IXFAVlgwbUsrNTM+ImkrLDZBTEFqK1ctaTZQanFRTixDWiJpNi0yPyVYdWYqWihqUEQuTGFgLlFxUyw5Nlhabk9AP2EpP2BNRWA9JlE4LSZoUis5SVNmXClJSzxUZFZfbmJXNGZcJlBWbzoqRzI6QUQoXVxANGovUDZGUGkrSC4lJzY1Jjo2RVJLLzJAJEJBWjNpbnBoalAudDk2aG1hKD5yRmhjcE47cyIyJnRxMmZ0YjQyPV9LVSNuZjF1O2FbSU5VXnNANXJzLFMxYS8rcU1ePlNvISViUGIvVEFMdTItMSdsOUBeXy5AZVRmM2ldRzooNT5dOjRia2BOcU9gSmYnJyRhQUFaPllDbUZzQSZaZXUmVlk2TTFhOFZLNVVHSTttZT5dLz11V1tjUVJzZUAvQ2QlUVNgcUJfPGBRO1wsS09oaFk8VGRMZEhbZjg2J2YhJmY3Q1pfbTBYMks7PEFjbEtTVFlHK15uNUtiP2ZEOj5CWE1aXXNeQUhUUFssLEQ3ZTcwVk9tIycwXUsqZCRmS0dhZ2ssKD5DXiQjKmZ0aUhGbXJkQG9DM21rc1pxLCdcTC5RPCNUYEBLZjQoTi8taEFoQkdMbG4/dCUvRUdvb2QzSjdibjc9ZkNTUSdbUU5sUW9tP2teNTY2bykoU2pwTT9LU1lTMUZAMiNhNFVeSkY+ZCUhK05LO2BlXis8TEVUakxwZFhSMlpFLEo7TkNaJSFGYGotUy5bUCtjPm0uVEMsNFpqPGNTXCRiLStvOWA3Qyg9SG1kcmVzWVw7cidnTC9CWFFXOEltO1FNXDNQTFx1X2NKUmNXXmJWQDZjVDFbdHNEPWwlXFtmJEVubDJebEhDMmhTSDxeYjhGNUJNWDRnOzI6J0ciXWFCcldGZTQiaDE3O1QtQV8sQSlJMjslI1xqS2wuK0VXNWdON15BNiFbWGZLJWpZKz5JZ2lpRjhwJ0oyMT06Qy4iXk1EIS4/PG49aFgwXT9VS25wRClqYiJqcXNJXkFUQTZrQCtKN00uOFVXQTNwOjQmIVNNaXFYcSRkImJyZUFWUVMmKVxPbkU6Ry9aVylhNyJzbGhCLyoiUD4lSEtqXGohJFpGLnBobzZmMktVUWZXWFArPkYhRlE7YiwoL0pqZEJyI2g/NFZPbUMlN1lNNSc5JjNyYT5oJHJzNUQiQSk6Sj9qPGpRTD02WHIpTzRBOjpMU2FrPD8xPV8tXDZcbixZWWk4InJpLjg/SyxjRElXWXFKcT5TMUVsTi9AJW40LzZGZUldV2ZUJC9qQl5kJkRbMlhYNm1BTTxNLUNSYm04QVouM0osVEc5UjovJ1ZdXiNKZSsmXlBXRjBwMlBGU1cxWT1tMFpSI2ZHWEhzQDBXXD91KEE+ZygvNkFTb2xZajVTRElqKTNLSCgmKEpCNlpPUSY0dGM7b08lN11BOWc1XkJLdUJBI25LX00pPWtIIjBbRG9WNUksY3JHVD8lXFhYUjVcbj81PkZKcElYK29mXiRAJDtmc0RdIk5ZcThcYkhDLEUrSyQ2Wkc+SClhVyY6IitPYHIvKCw2QylNPk1tcW9DNyJsRD9YWi1cY3RBNTBrJiE8Q2lCV2U1bjc9NChfQmYjSkpBcS9JRz8tUV0pPSZYTSpeX0xHXiFkI0wiRzlSSE1pRys2SG1qLT46VWZkZEpFayQ/SVIpYjdFR1lvJDZMM20mSSpUQGJGTUU9LzVHczpIREFER0FJIkYjMSNAMzBsNG8mIzlHYm1iKmc7cC5IPWtBMT4tNGkwXFJpXm86ZiRsZEgxM0kuJ0U4MiEiMSdJRVF0PHRVSzxAaysqdT1hPGtnbWhrYz4pbVRDIV5WYGhqQ0xiNz5UNm9vOVNTVmFjbEshTTltbXQpdVU3WC9uN2M1PnUhZClOUzJOZmdHJj1xPkAuNitCXnJvT29dcV5xRkZRP0JAb2lYIj9aOiRGVjBJIk5tJ2BEalQtRDlOYCM4NkgpM2A2Om5wOFw3SF07cz1qTTBZaj1WXE06akYsLD9QQG1fJCVcRjEscj8saiYqRTBGUzQjZWJScGZgL01jS0M5SCVBZCZ0VVl1RG8yRyxDa11xaFlvczE8MiprXikoPzNwPkEmcG0rKXVrXSVGUmhPUXIxNHFyWGBiXUdfLlFFbTFxOEImOUltVy9KQ2lXbE1AQEQ1NjJKWUtsW2smal5sXSRZOEY4b0cwKE9APFpEZ19AJTAsZSlrO3FNUGxiaVFfQkRqNTE4a1olOUpcUkBlXCJwL0VsXi9HaVJRTkFZZCgkPXFSVFdqXEA2XC9xWkBSUGljPlVZRjA3aT5HbHRpJWMjcFkwbjc+OihjLTlQT0s8Yk9Ncz0rbyFtKlw+I0dqTkVtXi4iXl4qXlNpSjE9KWhac1hJUy5UJmg/QjIuIWZiKzJkMyY5aUM/Ly1fW10lb1guUFlNbWs/PiZmUXJSbkNGQj48YDdbLG8uQFMqaU9hSW4lOD1QJEIzZCc/ZSlmMEdnMzRVJ2ZFdFkvVispKD5fNl8yLCkwNCModE8wYz9lUU0jP1tbWFAsYlZmU0NNWmgtW1RSTUtyR25tYnI6bl1YSE0tUlg8RSYtQjdbdHBRJEcxVzlLW3BeV1RGbHEkPVZaT1okb2kyWUVpSHNsKWt0Y19uMGNbQDJgP21GT1tOOSkmWmJkV0YqKnFOYXEpRldFMmtRQGc0JTBCaV5OIV8zV1E4M1cocClpaD5OaGtATylaKC0waC1dV1ItLWclUUhiSTYxaUFGXz9RY09qa0Y1SXN1JVFhYG0hLTYnVD5zLFlYXy8xLW5BUlpQPyFxODEiS0UzbFJvaldbc18zT15QVWdOKWlka29IPVVlXWMuZTRnYGRAa0xzP05rYTgrTjA6V0sxSGovLzteK1EwaFBFJi5bWDchPUJZYF8hZ2goPklIYydzLGBGPkAxY2VAP0BkLj5xaz0yRC80ZCpyOVtZL09pOGxLRlYiQF5TWCVzQ3JCPiViZTtrXjZdbE8uVW5BOEZiSGI9PERaUDM/JmJQcF0zcSJVVGROKEJvWk8mdSNjJzorQFNtVDAlMj1WWWRaXGpQcTFGY0VUKDApc2UucmlcdTA0dSpYO1N0L1JRa3RVbHMuL0xdXXJEUVxPSjBZP04rOCE7NElUS0ZzZVpWLVtrWnNrSk8qbTFnYms4J2ZCVEJOLShjPVAmWl4oPkApWz4qWEVgdT0uVj5TcVdbVmNbW1QkdUJeXig6WVdycnBLYUJKMH4+ZW5kc3RyZWFtCmVuZG9iagoxMiAwIG9iago8PAovRmlsdGVyIFsgL0FTQ0lJODVEZWNvZGUgL0ZsYXRlRGVjb2RlIF0gL0xlbmd0aCAyNDA5Cj4+CnN0cmVhbQpHYiIvKD5CQVEtJnE5U1lmXWMnVzhub1JSR15oYmE0KXJ1R1tSaEg1MU09XVwmLihwZS49cV5wcXJscF0oRWIucVAjS0NLLV5VNWhBISRodChbVVMhKFBbUXQrKVxqIid1OEs6U21IQm8haUMlcyE9TjwzKWEnYDZySDYnVVNZOUVtVSw2QmUnJl4/NmY/TjtnK1NAOmJmSFw+TGU8MFlnO2lAQiU8bUY7QDdWKy9eQVBqT0wta0xVKStDdVZNUGVcTFphL1FrJGlSOnVLNy0jWm0mKTxbbERUaSNbRSMvPUExNkBDM1osOj9IcXNbZExIa1BHbyc2b1Iya0VwUDRUKVJfMGgoaSpMZ0YjZjxyTVpgRG1mODtuNEgyPFM1PXBNTSFZWlZxKDFgcW0sUnAzN2kxM18hSXJeJiE3MV9ON2k/JW5WTU4pMXFSJylNTypdcF87Jm44V29sQDk6YVIjJmQ6STBcNEtFM2BWN3JpYmtgUWkyQkgtLU0/UFBecjNhSl1uTWwxXV05YFY6LEoqOyVTKiVeJ1pEMlExMS8+X2FfdTVnYUxpKk8+LDl0WHBlakgvNiowRVM5N1AnV01ZNT5RKVVLcVJpX2hkOChISHQuSUsmW1VbZylDKDUsIT0kIi4wUUg+MFtfJlZgUVMnI3RpLilZbUYvV047ZSEuZWo8Xj8vK1dPWFBmdW1fOVRiRiZPdV9vPm8lRDwlZUJcQzkhL2pCL2FUJSNfMS1RXmssQkpFLT5VMlxaV1JDOjI2PCciRSZDTC9fKkU1aDQ7I3VrajIjOGlVMiNSVXBwKiU1bVEvdWQzKFViTnBgImdocyE4aWRdV3VeRD8pcGI1MTp1c2g1anVKN0hAYC0jUUZiVmtrSkhaMT40ImswI1I0TVchLExDLlcvW0FiYUpwUmYmKWgmQUoyYUtGTWVfYyk/LVxzKysqKjdhPCEycz41OFsoXGBUVydgM0dUcXFLJHMkKWFEMjdDNSc8WEVcaiVmTiElaTJtbVtHc29yXU9oPzZSYThUT3QjR1kmb2dNRWYjU2RbcmwsWzVhcj04KEYqNEFRcCNlcGMtUV9rZzYwRlptQGVJZGFEX1ttTWdUJmFZRG5vZXReaEsmUT8wKEtrSSxhRUVLQVo/XS9fXCtmXiNEMXMyay5KVGJTMyFOMzIndFI/Tzc8czJHZ0RzLVxpOXRNKkUzVjRsRzAxUlVJJVxMWlVNdWMxIkBtby8rVz1FY3BKMTNSYiU/Q1IrXiMoJldiNCddanVYW11nbF5WdWN1aTxgbDtaXjI0RU8nKWNPcDFCWUU8XGQ1b2tVRFVZb2sxVW03RCxESTZScSk1IUIjZWwpMWpaITFRcyJzJFtPSHBcXG04Y2peKSouTCJJJiNhWy9EOCtFJU9XI1ZZTyEyNmwlTyQoWC07N2o8OUcsNm0zTj8iO181RmRoaHREI1hkOCNLb3QyLURjPmQzYENMbyhTZnVzJDg7ITdMaSJIXSUicSRGRCY4MzhHUj03ZVluWjZYLiExPlwlNE49PGxIVC5qMlBYUEtOUjpzdEUiUmVNZTE3U0Y5LEBhakIjRWIjKVZcZkAwJF41Pi84VE8tOT4yaDYkWUNSPltAYFosPUo4MUxPSidsTDUjWiZtSVFHRzRxKE5abytdO3EySjhoYU9eVVRHcDNCLnRmUVYtWyFWQFFfRTA0KFVKWGgoPU1vSEAwUDxhXjBgS2VcXl9FXnUzaElCcVpzayglSmdkZypPYktDZERbJG1dLHNcJGwwYk1mI1Y9KlVnY0M3LFBCcmdUYWwvWTU5P000Wz82QEw0V11BY25hRzlHVkhgblBZIXUyc0k6PEwxVD5UYXVJIWtnMlMkP00uMy9qZTtBMFVMVjZpblBeaSMmYmVrUUlkVUpHSm86RSssOFIhaDVvS1RaQENEUiJbKXVwSDtyQCkncEptIjcsPTlic2wjaCk5JmovYFtdQEQpWmtMLlBlQT5cLEtRIitAWD0maVY3PTRQLzhuYGZqdEs/aSRTY1I7MGhyVWE/VFNJNHItK3U4IWY6JlJrTyskYGZfJ2hbUFdPMmIsUS9iWlRgI0AyXkU9JFtaWDxgIyUsJFxoOWQuPWNNPzlsXC5GbkwjVWRQIW9FMlk8OipsTnRfVUU6NmZuW2xfckY6Y0wmLmwoVFhWclNQZ0hoaCxMbmJjLDdTWGEmWSVXKitoRyw4cWlGYiYoTEpOX1ZdUlVccGcxM0k3KiRTYzU1JXIvOjldTUdrWioiODZwMT1gJTZMbjFSN3E+bmBZZ1EvZEBoIkVLXCZSLzYzZVhLUCQ2YFlGODdfP04yRzNhNTRoPiVwOHMmUS8+QiVMR2NkMlQmczJ0LEplNlRtPnFTUixwTS9wRTosayxQI21bXyk2VVFbdWVPJ1dpb0YkKkkvVVZuRmxUPVYrTTY1cF9DNmRRPidkPS1jWjU7cz0tVThmTmVWcUhvMEZQT01MUnJnK0FeRUVIKVM1aGZmcV1hcHE4NVJlXS4nXkQ+PXJrcDpJVlBCSzxhLG5JW15LWl1rNS43N09eUjlbWWZoLGNNaWxGRXVEW0w5JSMsYS4qNChIaHVadClZWDI3Z2ZANCc5VF5tNTQpS3AoJEE/XidOMmtgPjlddDw1KlRgaWoiS0dNQDw0MyZSPEdAOGhDck1OREMmXF9tTD02ZzJHPywmbWRgNShvUUVJZzlocEBFKHIkXUo+XkZHP1YuMSooJlkzXERgQkU2Mz1Vck9KayJMZDYuTkU7cWlFYSlwcEc+azM4YjQtNS84Jj5BOFY/UlRxW0BlTV5GVzc4KDFZQidtIi5aQjxIaj8tXzI/JGJjKnRabkhjJEkxRExDRDhtdWI3VWtXY2lFWVFuVEdfcStWNG4tTygxbUk3UT5dRio4L2dpU3AyZ2BUQGFrMzk6VVhCUEtKYGM9ZSFmT1lJZysoOWNhSjpqOWZLNis+WyRwSzUmVDxFWF0yckteUUcta1kmYFdnTGxBLzBILCdISHNJaSo8VTJzVTBCVVExbVJgJlIlPHMqPCs2OWdvdEcwc3RfME4kNi9xOy5uRFVgO2YkdS1lXzZUcERmT3VjKEw5bW84QDInN0RPUV5LdTs7S29CT09ncEs6Ul5YZltUR1pCQkthZEY/VTFBZlA1cVNoSF91Ujc/NGtBVElEOWlCP2xyQGtldSUlSWZgNTEmfj5lbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCAxMwowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwNjEgMDAwMDAgbiAKMDAwMDAwMDEyMiAwMDAwMCBuIAowMDAwMDAwMjI5IDAwMDAwIG4gCjAwMDAwMDAzNDEgMDAwMDAgbiAKMDAwMDAwMDQyNCAwMDAwMCBuIAowMDAwMDAwNTAxIDAwMDAwIG4gCjAwMDAwMDA2OTYgMDAwMDAgbiAKMDAwMDAwMDg5MSAwMDAwMCBuIAowMDAwMDAwOTYwIDAwMDAwIG4gCjAwMDAwMDEyNDAgMDAwMDAgbiAKMDAwMDAwMTMwNiAwMDAwMCBuIAowMDAwMDA0MDU4IDAwMDAwIG4gCnRyYWlsZXIKPDwKL0lEIApbPDU0OGIwMWY1OTVkMjZmN2JlZmNmNjU1YmYxMGQ1ZWM3Pjw1NDhiMDFmNTk1ZDI2ZjdiZWZjZjY1NWJmMTBkNWVjNz5dCiUgUmVwb3J0TGFiIGdlbmVyYXRlZCBQREYgZG9jdW1lbnQgLS0gZGlnZXN0IChvcGVuc291cmNlKQoKL0luZm8gOSAwIFIKL1Jvb3QgOCAwIFIKL1NpemUgMTMKPj4Kc3RhcnR4cmVmCjY1NTkKJSVFT0YK';
+  const bytes = atob(b64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  const blob = new Blob([arr], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'TradeBooks-Receipt-Storage-Guide.pdf'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function dismissReceiptTip() {
+  localStorage.setItem('tb_receipt_tip_dismissed', '1');
+  document.getElementById('rcptTipBanner').style.display = 'none';
 }
 
 // ════════════════════════════════════════════════════════════

@@ -2539,61 +2539,7 @@ function fmtDate(s){
   return d.toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'});
 }
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-// All Claude API calls route through /claude-proxy (Cloudflare Pages Function)
-// This avoids CORS errors and keeps the API key server-side
-const CLAUDE_PROXY = '/claude-proxy';
-
-async function callClaude(prompt, maxTokens=1000){
-  const r = await fetch(CLAUDE_PROXY, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
-      messages: [{role:'user', content:prompt}]
-    })
-  });
-  const d = await r.json();
-  if(d.error) throw new Error(d.error);
-  return d.content?.[0]?.text || '';
-}
-
-async function callClaudeWithImage(prompt, b64, mediaType){
-  const r = await fetch(CLAUDE_PROXY, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{role:'user', content:[
-        {type:'image', source:{type:'base64', media_type:mediaType, data:b64}},
-        {type:'text', text:prompt}
-      ]}]
-    })
-  });
-  const d = await r.json();
-  if(d.error) throw new Error(d.error);
-  return d.content?.[0]?.text || '';
-}
-
-async function callClaudeWithPDF(prompt, b64, maxTokens=4096){
-  const r = await fetch(CLAUDE_PROXY, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
-      beta: 'pdfs-2024-09-25',
-      messages: [{role:'user', content:[
-        {type:'document', source:{type:'base64', media_type:'application/pdf', data:b64}},
-        {type:'text', text:prompt}
-      ]}]
-    })
-  });
-  const d = await r.json();
-  if(d.error) throw new Error(d.error);
-  return d.content?.[0]?.text || '';
-}
+// Claude API functions defined in TRADEBOOKS CORE MODULE above
 
 // ════════════════════════════════════════════════════════════
 // TAB 1 — STATEMENT IMPORTER (PDF + CSV)
@@ -2831,13 +2777,7 @@ async function runImpAI(){
   calcHST();impRender();impRenderStats();
 }
 
-function calcHST(){
-  const rate = USER_CONFIG?.taxRate || 0.13;
-  impTxns.forEach(tx=>{
-    if(NO_HST.has(tx.category)||tx.amount>0){tx.hst=0;tx.net=tx.amount}
-    else{tx.hst=Math.round(Math.abs(tx.amount)/(1+rate)*rate*100)/100;tx.net=-(Math.abs(tx.amount)-tx.hst)}
-  });
-}
+// calcHST defined in TRADEBOOKS CORE MODULE above
 
 function ruleCategory(d,amt,bank='AMEX'){
   const isBMO=bank==='BMO';
@@ -2928,8 +2868,7 @@ function impReset(){
   const title=document.getElementById('impUploadTitle');if(title)title.textContent='Drop your statement here';
 }
 async function impRerun(){document.getElementById('impProgWrap').classList.remove('hidden');await runImpAI()}
-function getSheetsUrl(){ return USER_CONFIG.scriptUrl || ''; }
-const SHEETS_URL_LEGACY = ''; // Dynamic — use getSheetsUrl()
+// getSheetsUrl defined in TRADEBOOKS CORE MODULE above
 
 async function sendToSheets(){
   const btn = document.getElementById('sendSheetsBtn');

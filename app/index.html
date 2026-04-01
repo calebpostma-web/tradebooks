@@ -1630,10 +1630,76 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">Pay reasonable salaries to family members who perform real services for the business. Their income is taxed at their lower personal rate, and the business deducts the salary. <strong>Ensure work is real and salary is reasonable — CRA scrutinizes this.</strong></div>
       </div>
 
-      <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
+  <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
         <div style="font-size:1.1rem;margin-bottom:.35rem">🚗</div>
         <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">Vehicle Expenses (Log Required)</div>
         <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">Keep a mileage log for any vehicle used for business. Deduct the business-use percentage of gas, insurance, repairs, and CCA. For a vehicle used 70% for business, claim 70% of costs. CRA requires a logbook to support the claim.</div>
+        <div style="margin-top:.75rem">
+          <button class="btn btn-outline btn-sm" onclick="toggleVehicleCalc()" id="vehCalcToggleBtn">🧮 Calculate my deduction →</button>
+        </div>
+        <div id="vehicleCalc" style="display:none;margin-top:1rem;border-top:1px solid #e6c97a;padding-top:1rem">
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Vehicle Deduction Calculator</div>
+ 
+          <!-- Odometer / KM -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem;margin-bottom:.75rem">
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Total km this year</label>
+              <input type="number" id="veh_totalKm" placeholder="e.g. 25000" oninput="calcVehicle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Business km</label>
+              <input type="number" id="veh_bizKm" placeholder="e.g. 18000" oninput="calcVehicle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Business use %</label>
+              <input type="text" id="veh_pct" readonly style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem;background:var(--paper);color:var(--green);font-weight:600;text-align:center">
+            </div>
+          </div>
+ 
+          <!-- Trip Logger -->
+          <div style="margin-bottom:1rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+              <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase">Quick Trip Log</div>
+              <button class="btn btn-outline btn-sm" onclick="vehAddTrip()" style="font-size:.72rem;padding:.2rem .6rem">+ Add trip</button>
+            </div>
+            <div id="vehTrips" style="font-size:.8rem"></div>
+            <div id="vehTripTotal" style="font-size:.78rem;color:var(--green);font-weight:600;margin-top:.4rem"></div>
+          </div>
+ 
+          <!-- Annual Vehicle Costs -->
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.5rem">Annual Vehicle Costs</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Gas / fuel</label>
+              <input type="number" id="veh_fuel" placeholder="0.00" oninput="calcVehicle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Insurance</label>
+              <input type="number" id="veh_insurance" placeholder="0.00" oninput="calcVehicle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Repairs / maintenance</label>
+              <input type="number" id="veh_repairs" placeholder="0.00" oninput="calcVehicle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Lease / loan interest</label>
+              <input type="number" id="veh_lease" placeholder="0.00" oninput="calcVehicle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Licence / registration</label>
+              <input type="number" id="veh_licence" placeholder="0.00" oninput="calcVehicle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">CCA (depreciation)</label>
+              <input type="number" id="veh_cca" placeholder="0.00" oninput="calcVehicle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+          </div>
+ 
+          <!-- Results -->
+          <div id="veh_result" style="display:none;margin-top:.75rem;background:var(--greenlt);border:1px solid #c0ddc8;border-radius:var(--radius);padding:.85rem">
+          </div>
+          <div style="font-size:.72rem;color:var(--ink3);margin-top:.5rem;line-height:1.5">CRA Form T2125, Lines 9281–9284. You must keep a logbook for at least one full year to establish a base year. After that, a 3-month sample period each year is sufficient if the pattern hasn't changed.</div>
+        </div>
       </div>
 
         <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
@@ -3514,6 +3580,126 @@ function downloadSetupGuide() {
   URL.revokeObjectURL(url);
 }
 
+  // ── Vehicle Mileage Log & Calculator ──
+let vehTrips = [];
+ 
+function toggleVehicleCalc() {
+  const calc = document.getElementById('vehicleCalc');
+  const btn = document.getElementById('vehCalcToggleBtn');
+  if (calc.style.display === 'none') {
+    calc.style.display = 'block';
+    btn.textContent = '✕ Close calculator';
+    renderVehTrips();
+  } else {
+    calc.style.display = 'none';
+    btn.textContent = '🧮 Calculate my deduction →';
+  }
+}
+ 
+function vehAddTrip() {
+  vehTrips.push({ date: new Date().toISOString().split('T')[0], from: '', to: '', km: '', purpose: '' });
+  renderVehTrips();
+}
+ 
+function vehRemoveTrip(i) {
+  vehTrips.splice(i, 1);
+  renderVehTrips();
+  calcVehicle();
+}
+ 
+function renderVehTrips() {
+  const container = document.getElementById('vehTrips');
+  if (!vehTrips.length) {
+    container.innerHTML = '<div style="color:var(--ink3);font-size:.78rem;padding:.3rem 0">No trips logged yet. Click + Add trip to start your CRA logbook.</div>';
+    document.getElementById('vehTripTotal').textContent = '';
+    return;
+  }
+  container.innerHTML = vehTrips.map((t, i) => `
+    <div style="display:grid;grid-template-columns:90px 1fr 1fr 65px 1fr 24px;gap:.35rem;align-items:center;margin-bottom:.35rem;padding:.3rem 0;border-bottom:1px solid var(--rule)">
+      <input type="date" value="${t.date}" onchange="vehTrips[${i}].date=this.value" style="font-size:.73rem;padding:.25rem .3rem;border:1px solid var(--rule);border-radius:3px">
+      <input type="text" value="${t.from}" placeholder="From" onchange="vehTrips[${i}].from=this.value" style="font-size:.73rem;padding:.25rem .3rem;border:1px solid var(--rule);border-radius:3px">
+      <input type="text" value="${t.to}" placeholder="To" onchange="vehTrips[${i}].to=this.value" style="font-size:.73rem;padding:.25rem .3rem;border:1px solid var(--rule);border-radius:3px">
+      <input type="number" value="${t.km}" placeholder="km" oninput="vehTrips[${i}].km=parseFloat(this.value)||0;calcVehicle()" style="font-size:.73rem;padding:.25rem .3rem;border:1px solid var(--rule);border-radius:3px;text-align:right">
+      <input type="text" value="${t.purpose}" placeholder="Purpose (e.g. client site visit)" onchange="vehTrips[${i}].purpose=this.value" style="font-size:.73rem;padding:.25rem .3rem;border:1px solid var(--rule);border-radius:3px">
+      <button onclick="vehRemoveTrip(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.85rem;padding:0">×</button>
+    </div>`).join('');
+ 
+  const totalTripKm = vehTrips.reduce((s, t) => s + (parseFloat(t.km) || 0), 0);
+  document.getElementById('vehTripTotal').textContent = totalTripKm > 0 ? 'Logged trips: ' + totalTripKm.toFixed(0) + ' km' : '';
+ 
+  // Auto-fill business km from trips if the field is empty or matches previous trip total
+  const bizField = document.getElementById('veh_bizKm');
+  if (totalTripKm > 0 && (!bizField.value || bizField.dataset.fromTrips === 'true')) {
+    bizField.value = totalTripKm.toFixed(0);
+    bizField.dataset.fromTrips = 'true';
+    calcVehicle();
+  }
+}
+ 
+function calcVehicle() {
+  const totalKm = parseFloat(document.getElementById('veh_totalKm').value) || 0;
+  const bizKm = parseFloat(document.getElementById('veh_bizKm').value) || 0;
+  const pctField = document.getElementById('veh_pct');
+  const resultDiv = document.getElementById('veh_result');
+ 
+  // Calculate business-use percentage
+  let pct = 0;
+  if (totalKm > 0 && bizKm > 0) {
+    pct = Math.min(bizKm / totalKm, 1);
+    pctField.value = (pct * 100).toFixed(1) + '%';
+  } else {
+    pctField.value = '';
+  }
+ 
+  // Sum vehicle costs
+  const fuel = parseFloat(document.getElementById('veh_fuel').value) || 0;
+  const insurance = parseFloat(document.getElementById('veh_insurance').value) || 0;
+  const repairs = parseFloat(document.getElementById('veh_repairs').value) || 0;
+  const lease = parseFloat(document.getElementById('veh_lease').value) || 0;
+  const licence = parseFloat(document.getElementById('veh_licence').value) || 0;
+  const cca = parseFloat(document.getElementById('veh_cca').value) || 0;
+ 
+  const totalCosts = fuel + insurance + repairs + lease + licence + cca;
+ 
+  if (totalCosts <= 0 || pct <= 0) {
+    resultDiv.style.display = 'none';
+    return;
+  }
+ 
+  // Method 1: Actual cost method
+  const actualDeduction = totalCosts * pct;
+ 
+  // Method 2: CRA per-km rate (2025 rates)
+  const craRate1 = 0.70; // first 5,000 km
+  const craRate2 = 0.64; // after 5,000 km
+  const perKmDeduction = bizKm <= 5000
+    ? bizKm * craRate1
+    : (5000 * craRate1) + ((bizKm - 5000) * craRate2);
+ 
+  const betterMethod = actualDeduction >= perKmDeduction ? 'Actual Cost' : 'Per-Km Rate';
+  const betterAmount = Math.max(actualDeduction, perKmDeduction);
+  const taxSaved = betterAmount * 0.122;
+ 
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+      <div style="text-align:center;padding:.6rem;border-radius:var(--radius);border:1px solid ${actualDeduction >= perKmDeduction ? 'var(--green)' : 'var(--rule)'}; background:${actualDeduction >= perKmDeduction ? 'var(--greenlt)' : 'var(--white)'}">
+        <div style="font-family:var(--mono);font-size:.55rem;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase">Method 1: Actual Cost</div>
+        <div style="font-family:var(--serif);font-size:1.05rem;font-weight:600;color:${actualDeduction >= perKmDeduction ? 'var(--green)' : 'var(--ink2)'}">$${actualDeduction.toFixed(2)}</div>
+        <div style="font-size:.7rem;color:var(--ink3)">${(pct*100).toFixed(1)}% × $${totalCosts.toFixed(2)}</div>
+      </div>
+      <div style="text-align:center;padding:.6rem;border-radius:var(--radius);border:1px solid ${perKmDeduction > actualDeduction ? 'var(--green)' : 'var(--rule)'}; background:${perKmDeduction > actualDeduction ? 'var(--greenlt)' : 'var(--white)'}">
+        <div style="font-family:var(--mono);font-size:.55rem;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase">Method 2: CRA Per-Km Rate</div>
+        <div style="font-family:var(--serif);font-size:1.05rem;font-weight:600;color:${perKmDeduction > actualDeduction ? 'var(--green)' : 'var(--ink2)'}">$${perKmDeduction.toFixed(2)}</div>
+        <div style="font-size:.7rem;color:var(--ink3)">${bizKm.toFixed(0)} km × $0.70/$0.64</div>
+      </div>
+    </div>
+    <div style="text-align:center;padding:.5rem;background:var(--paper);border-radius:var(--radius)">
+      <div style="font-size:.78rem;color:var(--ink2)">Better method: <strong style="color:var(--green)">${betterMethod}</strong> — deduct <strong style="color:var(--green)">$${betterAmount.toFixed(2)}</strong></div>
+      <div style="font-size:.75rem;color:var(--amber);margin-top:.2rem">Saves ~$${taxSaved.toFixed(2)} in corporate tax</div>
+    </div>`;
+}
+  
   function toggleHomeOfficeCalc() {
   const calc = document.getElementById('homeOfficeCalc');
   const btn = document.getElementById('hoCalcToggleBtn');

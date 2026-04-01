@@ -3327,19 +3327,19 @@ async function rcptSendToSheets(){
   const status = document.getElementById('rcptSheetsStatus');
   const url = getSheetsUrl();
   const cat = document.getElementById('rcptCatSel')?.value || r.category || 'Other';
-
+ 
   if(!url){
     toast('Connect your Google Sheet first — complete onboarding or check Settings');
     return;
   }
-
+ 
   // Try to match against any already-imported statement transactions
   const matchedTxn = findMatchingTransaction(r);
-
+ 
   btn.disabled = true;
   btn.textContent = '⏳ Sending…';
   status.textContent = 'Sending to Google Sheets…';
-
+ 
   const payload = {
     bank: USER_CONFIG?.creditCard || 'Receipt',
     rows: [{
@@ -3352,9 +3352,12 @@ async function rcptSendToSheets(){
       net: -(parseFloat(r.net) || 0),
       receiptVerified: true,
       matchedStatement: matchedTxn ? matchedTxn.vendor : null
-    }]
+    }],
+    // ── NEW: include receipt image for Google Drive backup ──
+    receiptImage: rcptB64 || null,
+    receiptMimeType: rcptMediaType || null
   };
-
+ 
   try {
     const resp = await fetch(url, {
       method: 'POST',
@@ -3362,11 +3365,11 @@ async function rcptSendToSheets(){
       body: JSON.stringify(payload)
     });
     const d = await resp.json();
-
+ 
     if(d.ok) {
       btn.textContent = '✓ Sent!';
       let msg = '';
-
+ 
       // Duplicate detected by backend
       if(d.duplicatesBlocked > 0){
         btn.textContent = '⚠️ Already exists';
@@ -3380,7 +3383,16 @@ async function rcptSendToSheets(){
         btn.style.background = 'var(--green)';
         msg = '✅ Added to Expenses tab in your Google Sheet.';
       }
+ 
+      // ── NEW: Show Drive backup status ──
+      if (d.receiptDriveUrl) {
+        msg += ` <a href="${d.receiptDriveUrl}" target="_blank" style="color:var(--green);text-decoration:underline">📁 View in Drive</a>`;
+      } else if (d.receiptDriveError) {
+        msg += `<div style="font-size:.78rem;color:var(--ink3);margin-top:.3rem">⚠️ Receipt image backup failed — save manually with the button above.</div>`;
+      }
+ 
       status.innerHTML = msg;
+ 
       // Show first-time tip banner
       if (!localStorage.getItem('tb_receipt_tip_dismissed')) {
         document.getElementById('rcptTipBanner').style.display = 'block';

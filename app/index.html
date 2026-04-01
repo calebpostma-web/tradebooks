@@ -4236,11 +4236,11 @@ function renderSettings(){
     <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Custom Categories</div>
     <div class="field">
       <label>Custom Expense Categories (comma-separated)</label>
-      <input type="text" id="set_customExpenseCats" value="${(C.customExpenseCats||[]).join(', ')}" style="font-size:.88rem" placeholder="Inventory — Tires/Wheels (COGS), Snow Removal">
+      <input type="text" id="set_customExpenseCats" value="${(C.customExpenseCats||[]).join(', ')}" style="font-size:.88rem" placeholder="e.g. Shop Materials, Disposal Fees">
     </div>
     <div class="field">
       <label>Custom Income Categories (comma-separated)</label>
-      <input type="text" id="set_customIncomeCats" value="${(C.customIncomeCats||[]).join(', ')}" style="font-size:.88rem" placeholder="Sales Revenue — Tires/Wheels, Maintenance Contracts">
+      <input type="text" id="set_customIncomeCats" value="${(C.customIncomeCats||[]).join(', ')}" style="font-size:.88rem" placeholder="Sales Revenue, Installation Revenue">
     </div>
     <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">These will appear in all category dropdowns alongside the standard categories. The AI will learn to use them when categorizing your transactions.</div>
 

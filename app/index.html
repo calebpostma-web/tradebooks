@@ -1636,12 +1636,59 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">Keep a mileage log for any vehicle used for business. Deduct the business-use percentage of gas, insurance, repairs, and CCA. For a vehicle used 70% for business, claim 70% of costs. CRA requires a logbook to support the claim.</div>
       </div>
 
-      <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
+        <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
         <div style="font-size:1.1rem;margin-bottom:.35rem">🏠</div>
         <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">Home Office Deduction</div>
         <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">If you use a dedicated home office space for your business, claim a portion of rent/mortgage interest, utilities, and internet. Calculate by area (e.g., 10% of home = 10% of eligible expenses). Must be the principal place of business.</div>
+        <div style="margin-top:.75rem">
+          <button class="btn btn-outline btn-sm" onclick="toggleHomeOfficeCalc()" id="hoCalcToggleBtn">🧮 Calculate my deduction →</button>
+        </div>
+        <div id="homeOfficeCalc" style="display:none;margin-top:1rem;border-top:1px solid #e6c97a;padding-top:1rem">
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Home Office Calculator</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.75rem">
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Total home sq ft</label>
+              <input type="number" id="ho_totalSqft" placeholder="e.g. 1200" oninput="calcHomeOffice()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Office sq ft</label>
+              <input type="number" id="ho_officeSqft" placeholder="e.g. 120" oninput="calcHomeOffice()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+          </div>
+          <div id="ho_pctDisplay" style="font-size:.82rem;color:var(--green);font-weight:600;margin-bottom:.75rem"></div>
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.5rem">Annual Eligible Expenses</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Rent or mortgage interest</label>
+              <input type="number" id="ho_rent" placeholder="0.00" oninput="calcHomeOffice()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Property tax</label>
+              <input type="number" id="ho_propTax" placeholder="0.00" oninput="calcHomeOffice()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Utilities (heat, hydro, water)</label>
+              <input type="number" id="ho_utilities" placeholder="0.00" oninput="calcHomeOffice()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Internet</label>
+              <input type="number" id="ho_internet" placeholder="0.00" oninput="calcHomeOffice()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Home insurance</label>
+              <input type="number" id="ho_insurance" placeholder="0.00" oninput="calcHomeOffice()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Maintenance / repairs</label>
+              <input type="number" id="ho_maint" placeholder="0.00" oninput="calcHomeOffice()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+          </div>
+          <div id="ho_result" style="display:none;margin-top:.75rem;background:var(--greenlt);border:1px solid #c0ddc8;border-radius:var(--radius);padding:.85rem">
+          </div>
+          <div style="font-size:.72rem;color:var(--ink3);margin-top:.5rem;line-height:1.5">CRA Form T2125, Line 9945. Incorporated businesses claim on T2 Schedule 1. Must be your principal place of business or used regularly to meet clients.</div>
+        </div>
       </div>
-
+  
       <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
         <div style="font-size:1.1rem;margin-bottom:.35rem">📱</div>
         <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">Technology & Equipment</div>
@@ -3467,6 +3514,81 @@ function downloadSetupGuide() {
   URL.revokeObjectURL(url);
 }
 
+  function toggleHomeOfficeCalc() {
+  const calc = document.getElementById('homeOfficeCalc');
+  const btn = document.getElementById('hoCalcToggleBtn');
+  if (calc.style.display === 'none') {
+    calc.style.display = 'block';
+    btn.textContent = '✕ Close calculator';
+    // Pre-fill from settings if available
+    const pct = parseFloat(USER_CONFIG?.homeOfficePercent) || 0;
+    if (pct > 0) {
+      // Back-calculate approximate sqft from percentage
+      document.getElementById('ho_totalSqft').value = '1000';
+      document.getElementById('ho_officeSqft').value = Math.round(pct * 10);
+      calcHomeOffice();
+    }
+  } else {
+    calc.style.display = 'none';
+    btn.textContent = '🧮 Calculate my deduction →';
+  }
+}
+ 
+function calcHomeOffice() {
+  const totalSqft = parseFloat(document.getElementById('ho_totalSqft').value) || 0;
+  const officeSqft = parseFloat(document.getElementById('ho_officeSqft').value) || 0;
+  const pctDisplay = document.getElementById('ho_pctDisplay');
+  const resultDiv = document.getElementById('ho_result');
+ 
+  if (totalSqft <= 0 || officeSqft <= 0) {
+    pctDisplay.textContent = '';
+    resultDiv.style.display = 'none';
+    return;
+  }
+ 
+  const pct = Math.min(officeSqft / totalSqft, 1);
+  pctDisplay.textContent = 'Business-use percentage: ' + (pct * 100).toFixed(1) + '%';
+ 
+  // Also update the Settings value for use in T2
+  if (USER_CONFIG) USER_CONFIG.homeOfficePercent = (pct * 100).toFixed(1);
+ 
+  const rent = parseFloat(document.getElementById('ho_rent').value) || 0;
+  const propTax = parseFloat(document.getElementById('ho_propTax').value) || 0;
+  const utilities = parseFloat(document.getElementById('ho_utilities').value) || 0;
+  const internet = parseFloat(document.getElementById('ho_internet').value) || 0;
+  const insurance = parseFloat(document.getElementById('ho_insurance').value) || 0;
+  const maint = parseFloat(document.getElementById('ho_maint').value) || 0;
+ 
+  const totalEligible = rent + propTax + utilities + internet + insurance + maint;
+  const deduction = totalEligible * pct;
+  const taxSaved = deduction * 0.122; // Ontario SBD rate
+ 
+  if (totalEligible <= 0) {
+    resultDiv.style.display = 'none';
+    return;
+  }
+ 
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;text-align:center">
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase">Total Eligible</div>
+        <div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--ink)">$${totalEligible.toFixed(2)}</div>
+      </div>
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--green);letter-spacing:.06em;text-transform:uppercase">Your Deduction</div>
+        <div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--green)">$${deduction.toFixed(2)}</div>
+      </div>
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--amber);letter-spacing:.06em;text-transform:uppercase">Corp Tax Saved</div>
+        <div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--amber)">$${taxSaved.toFixed(2)}</div>
+      </div>
+    </div>
+    <div style="font-size:.78rem;color:var(--ink2);margin-top:.6rem;line-height:1.5;text-align:center">
+      ${(pct * 100).toFixed(1)}% of $${totalEligible.toFixed(2)} = <strong>$${deduction.toFixed(2)}</strong> deduction on your T2
+    </div>`;
+}
+  
 function dismissReceiptTip() {
   localStorage.setItem('tb_receipt_tip_dismissed', '1');
   document.getElementById('rcptTipBanner').style.display = 'none';

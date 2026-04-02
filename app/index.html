@@ -3690,6 +3690,8 @@ function rcptClear(){
   document.getElementById('rcptResultContent').innerHTML=`<div style="text-align:center;padding:2rem;color:var(--ink3)"><div style="font-size:2rem;margin-bottom:.5rem">🧾</div><div style="font-size:.85rem">Upload a receipt to get started</div></div>`;
   document.getElementById('rcptInput').value='';
   const fn=document.getElementById('rcptFname');if(fn)fn.textContent='';
+  const rcptBtn = document.getElementById('rcptSheetsBtn');
+if(rcptBtn){ rcptBtn.textContent='📊 Send to Google Sheets'; rcptBtn.disabled=false; rcptBtn.style.background=''; }
 }
 
 function downloadReceiptImage() {

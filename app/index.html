@@ -1757,8 +1757,48 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
   
       <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
         <div style="font-size:1.1rem;margin-bottom:.35rem">📱</div>
-        <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">Technology & Equipment</div>
+        <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">Technology &amp; Equipment</div>
         <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">Laptops, tablets, phones, software used for business are deductible. Phones are typically 50–100% deductible if used mainly for business. Equipment over $1,500 goes on Schedule 8 CCA. The Accelerated Investment Incentive allows 1.5× first-year CCA on new eligible property.</div>
+        <div style="margin-top:.75rem">
+          <button class="btn btn-outline btn-sm" onclick="toggleEquipCalc()" id="equipCalcToggleBtn">🧮 Calculate CCA write-off →</button>
+        </div>
+        <div id="equipCalc" style="display:none;margin-top:1rem;border-top:1px solid #e6c97a;padding-top:1rem">
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">CCA Write-Off Calculator</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.75rem">
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Purchase price ($)</label>
+              <input type="number" id="eq_price" placeholder="e.g. 2500" oninput="calcEquipCCA()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">CCA Class</label>
+              <select id="eq_class" onchange="calcEquipCCA()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem;background:white">
+                <option value="">Select class...</option>
+                <option value="8">Class 8 (20%) — Tools, equipment, furniture</option>
+                <option value="10">Class 10 (30%) — Vehicles, trailers</option>
+                <option value="10.1">Class 10.1 (30%) — Passenger vehicle over $37,000</option>
+                <option value="50">Class 50 (55%) — Computers, laptops, tablets</option>
+                <option value="12">Class 12 (100%) — Small tools under $500</option>
+                <option value="46">Class 46 (30%) — Data network equipment</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.75rem">
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Business use %</label>
+              <input type="number" id="eq_bizpct" value="100" min="0" max="100" oninput="calcEquipCCA()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Accelerated Investment?</label>
+              <select id="eq_aii" onchange="calcEquipCCA()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem;background:white">
+                <option value="yes">Yes — 1.5× first year (new asset)</option>
+                <option value="no">No — standard half-year rule</option>
+              </select>
+            </div>
+          </div>
+          <div id="eq_result" style="display:none;margin-top:.75rem;background:var(--greenlt);border:1px solid #c0ddc8;border-radius:var(--radius);padding:.85rem">
+          </div>
+          <div style="font-size:.72rem;color:var(--ink3);margin-top:.5rem;line-height:1.5">Items under $500 can be expensed immediately (Class 12). Items $500–$1,500 are a grey area — many accountants expense them. Over $1,500 must be capitalized on Schedule 8.</div>
+        </div>
       </div>
 
       <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">

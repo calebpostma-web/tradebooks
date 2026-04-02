@@ -1624,10 +1624,29 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
 
-      <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
+  <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
         <div style="font-size:1.1rem;margin-bottom:.35rem">💼</div>
         <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">Income Splitting via Salary</div>
         <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">Pay reasonable salaries to family members who perform real services for the business. Their income is taxed at their lower personal rate, and the business deducts the salary. <strong>Ensure work is real and salary is reasonable — CRA scrutinizes this.</strong></div>
+        <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="craShowPanel('payroll');showTab('taxfiling')">👥 Set up payroll →</button>
+          <button class="btn btn-outline btn-sm" onclick="toggleSplitCalc()" id="splitCalcToggleBtn">🧮 See the savings →</button>
+        </div>
+        <div id="splitCalc" style="display:none;margin-top:1rem;border-top:1px solid #e6c97a;padding-top:1rem">
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Income Splitting Calculator</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.75rem">
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Corp net income (before salaries)</label>
+              <input type="number" id="split_corpIncome" placeholder="e.g. 120000" oninput="calcSplit()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Salary to family member ($)</label>
+              <input type="number" id="split_salary" placeholder="e.g. 30000" oninput="calcSplit()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+          </div>
+          <div id="split_result" style="display:none;background:var(--greenlt);border:1px solid #c0ddc8;border-radius:var(--radius);padding:.85rem"></div>
+          <div style="font-size:.72rem;color:var(--ink3);margin-top:.5rem;line-height:1.5">CRA's reasonableness test: the salary must reflect actual work performed. Keep records of hours, duties, and pay comparable to what you'd pay a stranger for the same work.</div>
+        </div>
       </div>
 
   <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
@@ -1801,30 +1820,100 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         </div>
       </div>
 
-      <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
+   <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
         <div style="font-size:1.1rem;margin-bottom:.35rem">📈</div>
         <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">Defer Income / Accelerate Expenses</div>
         <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">Near year-end (March 31): delay issuing invoices until April if possible (defers tax one year). Also prepay or incur deductible expenses before March 31 — prepaid insurance, supplies, conference fees, professional development. Every dollar of expense = ~12.2 cents of corporate tax saved.</div>
+        <div style="margin-top:.75rem">
+          <button class="btn btn-outline btn-sm" onclick="toggleDeferCalc()" id="deferCalcToggleBtn">📅 Year-end planner →</button>
+        </div>
+        <div id="deferCalc" style="display:none;margin-top:1rem;border-top:1px solid #e6c97a;padding-top:1rem">
+          <div id="deferCountdown" style="margin-bottom:.75rem"></div>
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.5rem">Quick Expense Planner</div>
+          <div style="font-size:.8rem;color:var(--ink2);line-height:1.5;margin-bottom:.5rem">What can you prepay or buy before year-end?</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Prepay insurance</label>
+              <input type="number" id="defer_ins" placeholder="0.00" oninput="calcDefer()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Buy supplies / tools</label>
+              <input type="number" id="defer_supplies" placeholder="0.00" oninput="calcDefer()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Training / courses</label>
+              <input type="number" id="defer_training" placeholder="0.00" oninput="calcDefer()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.73rem;color:var(--ink3);display:block;margin-bottom:.2rem">Dues / memberships</label>
+              <input type="number" id="defer_dues" placeholder="0.00" oninput="calcDefer()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+          </div>
+          <div id="defer_result" style="display:none;background:var(--greenlt);border:1px solid #c0ddc8;border-radius:var(--radius);padding:.85rem;text-align:center"></div>
+        </div>
       </div>
 
-      <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
+   <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
         <div style="font-size:1.1rem;margin-bottom:.35rem">🏋️</div>
         <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">EPSP / Bonuses to Reduce Corp Income</div>
         <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">The corporation can declare a bonus to you (the owner) payable within 179 days of year-end, deducting it in the current corp year. You'd pay personal tax on it, but it reduces corp income. Useful if corp income is near the $500K SBD limit or if your personal rate is lower.</div>
+        <div style="margin-top:.75rem">
+          <button class="btn btn-outline btn-sm" onclick="toggleBonusCalc()" id="bonusCalcToggleBtn">🧮 Calculate bonus impact →</button>
+        </div>
+        <div id="bonusCalc" style="display:none;margin-top:1rem;border-top:1px solid #e6c97a;padding-top:1rem">
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Bonus vs Keep in Corp</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.75rem">
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Corp net income</label>
+              <input type="number" id="bonus_corpIncome" placeholder="e.g. 150000" oninput="calcBonus()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Bonus amount ($)</label>
+              <input type="number" id="bonus_amount" placeholder="e.g. 50000" oninput="calcBonus()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+            </div>
+          </div>
+          <div id="bonus_result" style="display:none;background:var(--greenlt);border:1px solid #c0ddc8;border-radius:var(--radius);padding:.85rem"></div>
+          <div style="font-size:.72rem;color:var(--ink3);margin-top:.5rem;line-height:1.5">Bonus must be paid within 179 days of fiscal year-end to be deductible in the current year. CPP contributions apply on bonus amounts. This is a common year-end tax planning tool — consult your accountant for optimal amounts.</div>
+        </div>
       </div>
 
-      <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
+    <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
         <div style="font-size:1.1rem;margin-bottom:.35rem">🌱</div>
         <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">Charitable Donations via Corp</div>
         <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">Donations made by the corporation give a federal tax credit of ~38.33% (vs. only ~15% for personal donation in low-income years). Make charitable gifts through the company to maximize the benefit.</div>
+        <div style="margin-top:.75rem">
+          <button class="btn btn-outline btn-sm" onclick="toggleDonationCalc()" id="donationCalcToggleBtn">🧮 Compare corp vs personal →</button>
+        </div>
+        <div id="donationCalc" style="display:none;margin-top:1rem;border-top:1px solid #e6c97a;padding-top:1rem">
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Donation Tax Credit Comparison</div>
+          <div>
+            <label style="font-size:.75rem;color:var(--ink3);display:block;margin-bottom:.2rem">Donation amount ($)</label>
+            <input type="number" id="don_amount" placeholder="e.g. 1000" oninput="calcDonation()" style="width:100%;max-width:220px;padding:.4rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem">
+          </div>
+          <div id="don_result" style="display:none;margin-top:.75rem;background:var(--greenlt);border:1px solid #c0ddc8;border-radius:var(--radius);padding:.85rem"></div>
+          <div style="font-size:.72rem;color:var(--ink3);margin-top:.5rem;line-height:1.5">Corporate donations are limited to 75% of net income. Must be to a registered Canadian charity with a valid receipt. The corporation claims the deduction; you can't also claim it personally.</div>
+        </div>
       </div>
 
-      <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
+ <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1.1rem">
         <div style="font-size:1.1rem;margin-bottom:.35rem">🏛</div>
         <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">Scientific Research / SR&amp;ED</div>
-        <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">If any work involves technological advancement or developing new systems (e.g., your bookkeeping app development), it may qualify for SR&ED credits — 35% federal ITC on qualifying R&D expenses. Worth reviewing with a SR&ED consultant for the app development costs.</div>
+        <div style="font-size:.8rem;color:var(--ink2);line-height:1.6">If any work involves technological advancement or developing new systems, it may qualify for SR&amp;ED credits — 35% federal ITC on qualifying R&amp;D expenses. Worth reviewing with a SR&amp;ED consultant.</div>
+        <div style="margin-top:.75rem">
+          <button class="btn btn-outline btn-sm" onclick="toggleSredCheck()" id="sredCheckToggleBtn">✅ Check eligibility →</button>
+        </div>
+        <div id="sredCheck" style="display:none;margin-top:1rem;border-top:1px solid #e6c97a;padding-top:1rem">
+          <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">SR&amp;ED Quick Eligibility Check</div>
+          <div style="font-size:.8rem;color:var(--ink2);line-height:1.8">
+            <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;margin-bottom:.3rem"><input type="checkbox" class="sred-q" onchange="calcSred()"> Are you developing new software, tools, or processes?</label>
+            <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;margin-bottom:.3rem"><input type="checkbox" class="sred-q" onchange="calcSred()"> Does it involve technological uncertainty (you didn't know if it would work)?</label>
+            <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;margin-bottom:.3rem"><input type="checkbox" class="sred-q" onchange="calcSred()"> Did you try different approaches or experiments?</label>
+            <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;margin-bottom:.3rem"><input type="checkbox" class="sred-q" onchange="calcSred()"> Can you document what you tried, what failed, and what worked?</label>
+            <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;margin-bottom:.3rem"><input type="checkbox" class="sred-q" onchange="calcSred()"> Did you pay employees or contractors to do this work?</label>
+          </div>
+          <div id="sred_result" style="margin-top:.75rem"></div>
+        </div>
       </div>
-
     </div>
 
     <div class="card">
@@ -3619,7 +3708,227 @@ function downloadSetupGuide() {
   a.href = url; a.download = 'TradeBooks-Receipt-Storage-Guide.pdf'; a.click();
   URL.revokeObjectURL(url);
 }
-
+// ── Income Splitting Calculator ──
+function toggleSplitCalc() {
+  const calc = document.getElementById('splitCalc');
+  const btn = document.getElementById('splitCalcToggleBtn');
+  calc.style.display = calc.style.display === 'none' ? 'block' : 'none';
+  btn.textContent = calc.style.display === 'none' ? '🧮 See the savings →' : '✕ Close calculator';
+}
+ 
+function calcSplit() {
+  const corpIncome = parseFloat(document.getElementById('split_corpIncome').value) || 0;
+  const salary = parseFloat(document.getElementById('split_salary').value) || 0;
+  const resultDiv = document.getElementById('split_result');
+  if (!corpIncome || !salary) { resultDiv.style.display = 'none'; return; }
+ 
+  // Corp tax saved by paying salary (deductible)
+  const corpTaxSaved = salary * 0.122;
+  // Approximate personal tax on that salary (Ontario combined rates, simplified)
+  const personalTax = salary <= 15705 ? 0
+    : salary <= 55867 ? (salary - 15705) * 0.2005
+    : salary <= 111733 ? (55867 - 15705) * 0.2005 + (salary - 55867) * 0.2932
+    : (55867 - 15705) * 0.2005 + (111733 - 55867) * 0.2932 + (salary - 111733) * 0.3148;
+  // CPP contributions (2025 employee + employer)
+  const cpp = Math.min(Math.max(salary - 3500, 0) * 0.0595 * 2, 4000 * 2);
+  const netSaving = corpTaxSaved - personalTax - cpp;
+ 
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;text-align:center">
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--green);letter-spacing:.06em;text-transform:uppercase">Corp Tax Saved</div>
+        <div style="font-family:var(--serif);font-size:1rem;font-weight:600;color:var(--green)">$${corpTaxSaved.toFixed(0)}</div>
+      </div>
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--red);letter-spacing:.06em;text-transform:uppercase">Personal Tax + CPP</div>
+        <div style="font-family:var(--serif);font-size:1rem;font-weight:600;color:var(--red)">$${(personalTax + cpp).toFixed(0)}</div>
+      </div>
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:${netSaving >= 0 ? 'var(--green)' : 'var(--red)'};letter-spacing:.06em;text-transform:uppercase">Net ${netSaving >= 0 ? 'Saving' : 'Cost'}</div>
+        <div style="font-family:var(--serif);font-size:1rem;font-weight:600;color:${netSaving >= 0 ? 'var(--green)' : 'var(--red)'}">$${Math.abs(netSaving).toFixed(0)}</div>
+      </div>
+    </div>
+    <div style="font-size:.78rem;color:var(--ink2);margin-top:.5rem;text-align:center">
+      ${netSaving >= 0 ? 'Splitting saves your family money overall. The lower the family member\'s other income, the bigger the benefit.' : 'At this salary level, the personal tax + CPP costs more than the corp tax savings. Try a lower amount.'}
+    </div>`;
+}
+ 
+// ── Defer Income / Accelerate Expenses ──
+function toggleDeferCalc() {
+  const calc = document.getElementById('deferCalc');
+  const btn = document.getElementById('deferCalcToggleBtn');
+  calc.style.display = calc.style.display === 'none' ? 'block' : 'none';
+  btn.textContent = calc.style.display === 'none' ? '📅 Year-end planner →' : '✕ Close planner';
+  if (calc.style.display !== 'none') calcDeferCountdown();
+}
+ 
+function calcDeferCountdown() {
+  const fyeStr = USER_CONFIG?.fiscalYearEnd || 'March 31';
+  const now = new Date();
+  // Parse fiscal year end into next upcoming date
+  const months = { 'January': 0, 'February': 1, 'March': 2, 'April': 3, 'May': 4, 'June': 5, 'July': 6, 'August': 7, 'September': 8, 'October': 9, 'November': 10, 'December': 11 };
+  const parts = fyeStr.split(' ');
+  const month = months[parts[0]] ?? 2;
+  const day = parseInt(parts[1]) || 31;
+  let fyeDate = new Date(now.getFullYear(), month, day);
+  if (fyeDate < now) fyeDate = new Date(now.getFullYear() + 1, month, day);
+  const daysLeft = Math.ceil((fyeDate - now) / (1000 * 60 * 60 * 24));
+ 
+  const urgency = daysLeft <= 30 ? 'var(--red)' : daysLeft <= 90 ? 'var(--amber)' : 'var(--green)';
+  document.getElementById('deferCountdown').innerHTML = `
+    <div style="text-align:center;padding:.75rem;background:var(--paper);border-radius:var(--radius);border:1px solid var(--rule)">
+      <div style="font-family:var(--serif);font-size:1.8rem;font-weight:700;color:${urgency}">${daysLeft}</div>
+      <div style="font-size:.78rem;color:var(--ink2)">days until fiscal year-end (${fyeStr})</div>
+      ${daysLeft <= 90 ? '<div style="font-size:.75rem;color:var(--amber);margin-top:.3rem;font-weight:600">Time to accelerate expenses and defer invoices!</div>' : ''}
+    </div>`;
+}
+ 
+function calcDefer() {
+  const ins = parseFloat(document.getElementById('defer_ins').value) || 0;
+  const supplies = parseFloat(document.getElementById('defer_supplies').value) || 0;
+  const training = parseFloat(document.getElementById('defer_training').value) || 0;
+  const dues = parseFloat(document.getElementById('defer_dues').value) || 0;
+  const resultDiv = document.getElementById('defer_result');
+  const total = ins + supplies + training + dues;
+  if (total <= 0) { resultDiv.style.display = 'none'; return; }
+ 
+  const taxSaved = total * 0.122;
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `
+    <div style="font-family:var(--serif);font-size:1.2rem;font-weight:600;color:var(--green)">$${taxSaved.toFixed(2)}</div>
+    <div style="font-size:.8rem;color:var(--ink2);margin-top:.2rem">in corporate tax saved by spending <strong>$${total.toFixed(2)}</strong> before year-end</div>
+    <div style="font-size:.75rem;color:var(--ink3);margin-top:.3rem">That's ${(total * 0.122).toFixed(0)} cents back for every dollar. These are expenses you'd pay anyway — you're just timing them better.</div>`;
+}
+ 
+// ── EPSP / Bonus Calculator ──
+function toggleBonusCalc() {
+  const calc = document.getElementById('bonusCalc');
+  const btn = document.getElementById('bonusCalcToggleBtn');
+  calc.style.display = calc.style.display === 'none' ? 'block' : 'none';
+  btn.textContent = calc.style.display === 'none' ? '🧮 Calculate bonus impact →' : '✕ Close calculator';
+}
+ 
+function calcBonus() {
+  const corpIncome = parseFloat(document.getElementById('bonus_corpIncome').value) || 0;
+  const bonus = parseFloat(document.getElementById('bonus_amount').value) || 0;
+  const resultDiv = document.getElementById('bonus_result');
+  if (!corpIncome || !bonus) { resultDiv.style.display = 'none'; return; }
+ 
+  const corpTaxSaved = bonus * 0.122;
+  // Personal tax on bonus (simplified Ontario rates)
+  const personalTax = bonus <= 15705 ? 0
+    : bonus <= 55867 ? (bonus - 15705) * 0.2005
+    : bonus <= 111733 ? (55867 - 15705) * 0.2005 + (bonus - 55867) * 0.2932
+    : (55867 - 15705) * 0.2005 + (111733 - 55867) * 0.2932 + (bonus - 111733) * 0.3148;
+  const cpp = Math.min(Math.max(bonus - 3500, 0) * 0.0595, 4000);
+  const totalPersonalCost = personalTax + cpp;
+  const netBenefit = corpTaxSaved - totalPersonalCost;
+  const corpIncomeAfter = corpIncome - bonus;
+  const nearSBD = corpIncome > 450000;
+ 
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;text-align:center;margin-bottom:.5rem">
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase">Corp Income Before</div>
+        <div style="font-family:var(--serif);font-size:.95rem;font-weight:600">$${corpIncome.toLocaleString()}</div>
+      </div>
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--green);letter-spacing:.06em;text-transform:uppercase">Corp Income After Bonus</div>
+        <div style="font-family:var(--serif);font-size:.95rem;font-weight:600;color:var(--green)">$${corpIncomeAfter.toLocaleString()}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;text-align:center;padding-top:.5rem;border-top:1px solid var(--rule)">
+      <div>
+        <div style="font-size:.65rem;color:var(--green)">Corp tax saved</div>
+        <div style="font-weight:600;color:var(--green)">$${corpTaxSaved.toFixed(0)}</div>
+      </div>
+      <div>
+        <div style="font-size:.65rem;color:var(--red)">Personal tax + CPP</div>
+        <div style="font-weight:600;color:var(--red)">$${totalPersonalCost.toFixed(0)}</div>
+      </div>
+      <div>
+        <div style="font-size:.65rem;color:${netBenefit >= 0 ? 'var(--green)' : 'var(--red)'}">Net</div>
+        <div style="font-weight:600;color:${netBenefit >= 0 ? 'var(--green)' : 'var(--red)'}">${netBenefit >= 0 ? 'Save' : 'Cost'} $${Math.abs(netBenefit).toFixed(0)}</div>
+      </div>
+    </div>
+    ${nearSBD ? '<div style="font-size:.75rem;color:var(--amber);margin-top:.5rem;text-align:center;font-weight:600">⚠️ Corp income is near $500K SBD limit — bonus may prevent the higher 26.5% rate on excess.</div>' : ''}
+    <div style="font-size:.75rem;color:var(--ink3);margin-top:.4rem;text-align:center">Must be paid within 179 days of year-end (${USER_CONFIG?.fiscalYearEnd || 'March 31'}) to be deductible this year.</div>`;
+}
+ 
+// ── Charitable Donations ──
+function toggleDonationCalc() {
+  const calc = document.getElementById('donationCalc');
+  const btn = document.getElementById('donationCalcToggleBtn');
+  calc.style.display = calc.style.display === 'none' ? 'block' : 'none';
+  btn.textContent = calc.style.display === 'none' ? '🧮 Compare corp vs personal →' : '✕ Close calculator';
+}
+ 
+function calcDonation() {
+  const amount = parseFloat(document.getElementById('don_amount').value) || 0;
+  const resultDiv = document.getElementById('don_result');
+  if (!amount) { resultDiv.style.display = 'none'; return; }
+ 
+  // Corporate: deduction at 12.2% combined rate
+  const corpSaving = amount * 0.122;
+  // Personal: 15% federal on first $200, 29% after + Ontario 5.05%/11.16%
+  const personalCredit = amount <= 200
+    ? amount * 0.2005
+    : (200 * 0.2005) + ((amount - 200) * 0.4016);
+  const better = corpSaving > personalCredit ? 'personal' : 'corporate';
+  const difference = Math.abs(personalCredit - corpSaving);
+ 
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;text-align:center;margin-bottom:.5rem">
+      <div style="padding:.5rem;border-radius:var(--radius);border:1px solid ${better === 'personal' ? 'var(--rule)' : 'var(--green)'};background:${better === 'personal' ? 'var(--white)' : 'var(--greenlt)'}">
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase">Via Corporation</div>
+        <div style="font-family:var(--serif);font-size:1.05rem;font-weight:600">$${corpSaving.toFixed(2)}</div>
+        <div style="font-size:.7rem;color:var(--ink3)">12.2% deduction</div>
+      </div>
+      <div style="padding:.5rem;border-radius:var(--radius);border:1px solid ${better === 'corporate' ? 'var(--rule)' : 'var(--green)'};background:${better === 'corporate' ? 'var(--white)' : 'var(--greenlt)'}">
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase">Personal Claim</div>
+        <div style="font-family:var(--serif);font-size:1.05rem;font-weight:600">$${personalCredit.toFixed(2)}</div>
+        <div style="font-size:.7rem;color:var(--ink3)">15%/29% + provincial</div>
+      </div>
+    </div>
+    <div style="font-size:.8rem;color:var(--ink2);text-align:center">
+      ${amount > 200
+        ? 'For donations over $200, <strong>personal claims</strong> usually give a bigger credit due to the 29%+ rate on amounts above $200.'
+        : 'For small donations under $200, the personal credit rate (20%) is higher than the corporate deduction (12.2%).'}
+      <br>Difference: <strong>$${difference.toFixed(2)}</strong>
+    </div>`;
+}
+ 
+// ── SR&ED Eligibility Check ──
+function toggleSredCheck() {
+  const calc = document.getElementById('sredCheck');
+  const btn = document.getElementById('sredCheckToggleBtn');
+  calc.style.display = calc.style.display === 'none' ? 'block' : 'none';
+  btn.textContent = calc.style.display === 'none' ? '✅ Check eligibility →' : '✕ Close';
+}
+ 
+function calcSred() {
+  const checks = document.querySelectorAll('.sred-q');
+  const checked = Array.from(checks).filter(c => c.checked).length;
+  const total = checks.length;
+  const resultDiv = document.getElementById('sred_result');
+ 
+  let msg, color, bg;
+  if (checked >= 4) {
+    msg = `<strong>Strong candidate for SR&ED.</strong> You checked ${checked}/${total} criteria. With qualifying R&D expenses, you could get back 35% as a refundable tax credit. A $50,000 qualifying project = $17,500 back from CRA. Contact a SR&ED consultant — they typically work on contingency (no refund, no fee).`;
+    color = 'var(--green)'; bg = 'var(--greenlt)';
+  } else if (checked >= 2) {
+    msg = `<strong>Possible candidate.</strong> You checked ${checked}/${total}. Some of your work may qualify, but you'll need stronger documentation of the technological uncertainty and systematic investigation. A SR&ED consultant can help assess specific projects.`;
+    color = 'var(--amber)'; bg = 'var(--amberlt)';
+  } else {
+    msg = `<strong>Unlikely to qualify.</strong> SR&ED requires technological advancement through systematic investigation. Standard business operations, even complex ones, typically don't qualify. If you start a new R&D project in the future, revisit this.`;
+    color = 'var(--ink3)'; bg = 'var(--paper)';
+  }
+ 
+  resultDiv.innerHTML = `<div style="background:${bg};border:1px solid ${color};border-radius:var(--radius);padding:.85rem;font-size:.8rem;color:var(--ink2);line-height:1.6">${msg}</div>`;
+}
   // ── Vehicle Mileage Log & Calculator ──
 let vehTrips = [];
 

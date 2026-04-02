@@ -760,7 +760,20 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div class="step-tip">💡 <strong>Best practice:</strong> Import AMEX and BMO on the 1st of every month. Takes 5–10 minutes and means your books are always current. Never face a year-end backlog again.</div>
     </div>
   </div>
-
+ <!-- CRA COMPLIANCE TIMELINE -->
+  <div class="card" id="complianceTimeline" style="margin-top:1.5rem">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>📋 CRA Compliance Timeline</span>
+      <span class="badge badge-green" style="font-size:.65rem">Smart reminders</span>
+    </div>
+    <p style="font-size:.82rem;color:var(--ink3);margin-bottom:1rem;line-height:1.5">Upcoming deadlines based on your business setup. Sorted by urgency — red means act now.</p>
+    <div id="complianceItems"></div>
+    <div id="complianceSetupWarnings" style="margin-top:1rem"></div>
+    <div style="margin-top:.75rem;font-size:.72rem;color:var(--ink3);line-height:1.5">
+      Deadlines are calculated from your fiscal year end (<span data-dynamic="fiscalYearEnd"></span>) and business type.
+      CRA penalties for late filing start at 5% of balance owing + 1%/month. Always file on time even if you can't pay.
+    </div>
+  </div>
 </div><!-- /page -->
 </div><!-- /panel-home -->
 
@@ -3929,6 +3942,269 @@ function calcSred() {
  
   resultDiv.innerHTML = `<div style="background:${bg};border:1px solid ${color};border-radius:var(--radius);padding:.85rem;font-size:.8rem;color:var(--ink2);line-height:1.6">${msg}</div>`;
 }
+
+  function renderComplianceTimeline() {
+  const today = new Date();
+  const C = USER_CONFIG || {};
+  const fyeStr = C.fiscalYearEnd || 'March 31';
+  const bizType = C.businessType || 'incorporated';
+  const hasPayroll = !!(C.employees && C.employees.length > 0);
+ 
+  // Parse fiscal year-end
+  const months = { 'January':0,'February':1,'March':2,'April':3,'May':4,'June':5,
+                    'July':6,'August':7,'September':8,'October':9,'November':10,'December':11 };
+  const fyeParts = fyeStr.split(' ');
+  const fyeMonth = months[fyeParts[0]] ?? 2;
+  const fyeDay = parseInt(fyeParts[1]) || 31;
+ 
+  // Calculate fiscal year-end dates (current and next)
+  let fye = new Date(today.getFullYear(), fyeMonth, fyeDay);
+  if (fye < new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30)) {
+    fye = new Date(today.getFullYear() + 1, fyeMonth, fyeDay);
+  }
+ 
+  // Helper: add months to a date
+  function addMonths(d, m) {
+    const r = new Date(d);
+    r.setMonth(r.getMonth() + m);
+    return r;
+  }
+ 
+  function fmtDate(d) {
+    return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+ 
+  function daysBetween(a, b) {
+    return Math.ceil((b - a) / (1000 * 60 * 60 * 24));
+  }
+ 
+  // ── Build deadline list ──
+  const deadlines = [];
+ 
+  // === SETUP PREREQUISITES (things you need BEFORE you need them) ===
+  const setupWarnings = [];
+ 
+  // Payroll RP number check
+  if (hasPayroll && !C.payrollRpNumber) {
+    setupWarnings.push({
+      icon: '🚨',
+      title: 'Register for a CRA Payroll Account (RP number)',
+      detail: 'You have employees but no RP number in your settings. You need this BEFORE paying anyone. Register at CRA My Business Account or call 1-800-959-5525.',
+      link: 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/open-manage-payroll-account/how-register.html',
+      linkText: 'CRA: Register for payroll →'
+    });
+  }
+ 
+  // WSIB check for trades/contracting
+  if (hasPayroll) {
+    setupWarnings.push({
+      icon: '⚠️',
+      title: 'WSIB Registration Required',
+      detail: 'Ontario trades businesses must register with WSIB within 10 days of hiring an employee. If not registered, you\'re personally liable for any workplace injuries.',
+      link: 'https://www.wsib.ca/en/registeringwsib',
+      linkText: 'WSIB: Register now →'
+    });
+  }
+ 
+  // TD1 forms reminder
+  if (hasPayroll) {
+    setupWarnings.push({
+      icon: '📝',
+      title: 'TD1 Forms for Each Employee',
+      detail: 'Every employee must fill out federal and provincial TD1 forms before their first pay. You keep these on file — don\'t send to CRA, but you need them to calculate the right tax deductions.',
+      link: 'https://www.canada.ca/en/revenue-agency/services/forms-publications/td1-personal-tax-credits-returns.html',
+      linkText: 'CRA: Get TD1 forms →'
+    });
+  }
+ 
+  // === MONTHLY DEADLINES ===
+ 
+  // Payroll remittance — 15th of each month
+  if (hasPayroll) {
+    // Next upcoming 15th
+    let nextRemit = new Date(today.getFullYear(), today.getMonth(), 15);
+    if (nextRemit <= today) nextRemit = new Date(today.getFullYear(), today.getMonth() + 1, 15);
+    deadlines.push({
+      date: nextRemit,
+      title: 'Payroll Remittance Due (CPP + EI + Tax)',
+      detail: 'Remit employee deductions to CRA. Pay via My Business Account or BMO online banking to "Receiver General."',
+      recurring: 'Monthly — 15th of each month',
+      link: 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/remitting-source-deductions.html',
+      category: 'payroll'
+    });
+  }
+ 
+  // === QUARTERLY HST ===
+  // Determine next HST quarter-end and due date
+  const hstQuarters = [
+    { qEnd: new Date(today.getFullYear(), 2, 31), due: new Date(today.getFullYear(), 3, 30), label: 'Q1 (Jan–Mar)' },
+    { qEnd: new Date(today.getFullYear(), 5, 30), due: new Date(today.getFullYear(), 6, 31), label: 'Q2 (Apr–Jun)' },
+    { qEnd: new Date(today.getFullYear(), 8, 30), due: new Date(today.getFullYear(), 9, 31), label: 'Q3 (Jul–Sep)' },
+    { qEnd: new Date(today.getFullYear(), 11, 31), due: new Date(today.getFullYear() + 1, 0, 31), label: 'Q4 (Oct–Dec)' },
+  ];
+  const nextHST = hstQuarters.find(q => q.due > today) || hstQuarters[0];
+  deadlines.push({
+    date: nextHST.due,
+    title: 'HST Return Due — ' + nextHST.label,
+    detail: 'File GST34 and pay net HST owing. Use CRA My Business Account to file and BMO to pay.',
+    recurring: 'Quarterly',
+    link: 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses.html',
+    category: 'hst'
+  });
+ 
+  // === ANNUAL DEADLINES ===
+ 
+  // T4 slips — last day of February
+  const t4Due = new Date(today.getFullYear(), 1, 28);
+  const t4DueNext = t4Due < today ? new Date(today.getFullYear() + 1, 1, 28) : t4Due;
+  if (hasPayroll) {
+    deadlines.push({
+      date: t4DueNext,
+      title: 'T4 Slips Due to CRA + Employees',
+      detail: 'Issue T4 slips to every employee AND file T4 Summary with CRA. Covers the previous calendar year.',
+      recurring: 'Annual — last day of February',
+      link: 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/completing-filing-information-returns/t4-information-employers.html',
+      category: 'payroll'
+    });
+  }
+ 
+  // T5 slips (dividends) — last day of February
+  if (bizType === 'incorporated') {
+    deadlines.push({
+      date: t4DueNext,
+      title: 'T5 Slips Due (if dividends paid)',
+      detail: 'If your corporation paid dividends to you or any shareholders, T5 slips must be filed with CRA and given to recipients by end of February.',
+      recurring: 'Annual — last day of February',
+      link: 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/completing-slips-summaries/financial-slips-summaries/return-investment-income-t5.html',
+      category: 'tax'
+    });
+  }
+ 
+  // WSIB annual reconciliation — April 30
+  if (hasPayroll) {
+    const wsibDue = new Date(today.getFullYear(), 3, 30);
+    const wsibDueNext = wsibDue < today ? new Date(today.getFullYear() + 1, 3, 30) : wsibDue;
+    deadlines.push({
+      date: wsibDueNext,
+      title: 'WSIB Annual Reconciliation',
+      detail: 'Report your actual insurable earnings for the year and reconcile premiums paid. File through WSIB online services.',
+      recurring: 'Annual — April 30',
+      link: 'https://www.wsib.ca/en',
+      category: 'payroll'
+    });
+  }
+ 
+  // Fiscal year-end — last day to incur expenses
+  deadlines.push({
+    date: fye,
+    title: 'Fiscal Year-End — ' + fyeStr,
+    detail: 'Last day to incur deductible expenses, prepay insurance/dues, buy equipment, pay bonuses. After this date, everything goes to next year.',
+    recurring: 'Annual',
+    category: 'tax'
+  });
+ 
+  // Corporate tax PAYMENT due — 2 months (or 3 months for SBD-eligible) after year-end
+  const taxPayDue = addMonths(fye, 3); // 3 months for small business
+  deadlines.push({
+    date: taxPayDue,
+    title: 'Corporate Tax Payment Due',
+    detail: 'Pay any corporate tax owing to avoid arrears interest. Pay via BMO to "Receiver General for Canada" using your BN.',
+    recurring: 'Annual — 3 months after year-end',
+    link: 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/corporations/corporation-payments.html',
+    category: 'tax'
+  });
+ 
+  // T2 FILING due — 6 months after year-end
+  const t2Due = addMonths(fye, 6);
+  deadlines.push({
+    date: t2Due,
+    title: 'T2 Corporate Tax Return Filing',
+    detail: 'File T2 return with CRA. Late filing penalty: 5% of balance owing + 1%/month up to 12 months.',
+    recurring: 'Annual — 6 months after year-end',
+    link: 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/corporations/corporation-income-tax-return.html',
+    category: 'tax'
+  });
+ 
+  // Personal tax deadline (owner) — April 30
+  const personalDue = new Date(today.getFullYear(), 3, 30);
+  const personalDueNext = personalDue < today ? new Date(today.getFullYear() + 1, 3, 30) : personalDue;
+  deadlines.push({
+    date: personalDueNext,
+    title: 'Personal Tax Payment Due (Owner)',
+    detail: 'Your personal T1 tax payment is due April 30. If you or your spouse has self-employment income, the FILING deadline extends to June 15 but PAYMENT is still April 30.',
+    recurring: 'Annual — April 30',
+    category: 'personal'
+  });
+ 
+  // === SORT BY DATE ===
+  deadlines.sort((a, b) => a.date - b.date);
+ 
+  // === RENDER ===
+  const container = document.getElementById('complianceItems');
+  if (!container) return;
+ 
+  container.innerHTML = deadlines.map(d => {
+    const days = daysBetween(today, d.date);
+    const isPast = days < 0;
+    const urgency = isPast ? 'var(--red)' : days <= 14 ? 'var(--red)' : days <= 45 ? 'var(--amber)' : 'var(--green)';
+    const urgencyBg = isPast ? 'var(--redlt)' : days <= 14 ? 'var(--redlt)' : days <= 45 ? 'var(--amberlt)' : 'var(--greenlt)';
+    const badge = isPast ? 'OVERDUE' : days <= 7 ? 'THIS WEEK' : days <= 14 ? 'URGENT' : days <= 30 ? 'SOON' : days <= 60 ? 'UPCOMING' : 'ON TRACK';
+    const catIcon = d.category === 'payroll' ? '👥' : d.category === 'hst' ? '🏦' : d.category === 'personal' ? '👤' : '🏢';
+ 
+    return `
+      <div style="display:flex;gap:.85rem;padding:.85rem .5rem;border-bottom:1px solid var(--rule);align-items:flex-start">
+        <div style="text-align:center;min-width:52px">
+          <div style="font-size:1.6rem;font-weight:700;font-family:var(--serif);color:${urgency};line-height:1">${isPast ? '!' : Math.abs(days)}</div>
+          <div style="font-family:var(--mono);font-size:.55rem;color:${urgency};letter-spacing:.04em">${isPast ? 'OVERDUE' : days === 1 ? 'DAY' : 'DAYS'}</div>
+        </div>
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.2rem">
+            <span style="font-size:.75rem">${catIcon}</span>
+            <strong style="font-size:.85rem">${d.title}</strong>
+            <span style="font-family:var(--mono);font-size:.55rem;padding:.1rem .4rem;border-radius:3px;background:${urgencyBg};color:${urgency};letter-spacing:.04em">${badge}</span>
+          </div>
+          <div style="font-size:.78rem;color:var(--ink3);margin-bottom:.2rem">${fmtDate(d.date)}${d.recurring ? ' · ' + d.recurring : ''}</div>
+          <div style="font-size:.78rem;color:var(--ink2);line-height:1.5">${d.detail}</div>
+          ${d.link ? `<a href="${d.link}" target="_blank" style="font-size:.75rem;color:var(--green);text-decoration:underline;margin-top:.2rem;display:inline-block">${d.linkText || 'CRA info →'}</a>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+ 
+  // === SETUP WARNINGS ===
+  const warningsDiv = document.getElementById('complianceSetupWarnings');
+  if (warningsDiv && setupWarnings.length > 0) {
+    warningsDiv.innerHTML = `
+      <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--red);text-transform:uppercase;margin-bottom:.5rem">⚠ Setup Required — Do These BEFORE You Need Them</div>
+      ${setupWarnings.map(w => `
+        <div style="background:var(--redlt);border:1px solid #e8b4b4;border-radius:var(--radius);padding:.85rem;margin-bottom:.5rem">
+          <div style="display:flex;align-items:flex-start;gap:.5rem">
+            <span style="font-size:1.1rem">${w.icon}</span>
+            <div style="flex:1">
+              <div style="font-weight:600;font-size:.85rem;color:var(--red);margin-bottom:.2rem">${w.title}</div>
+              <div style="font-size:.78rem;color:var(--ink2);line-height:1.5">${w.detail}</div>
+              ${w.link ? `<a href="${w.link}" target="_blank" style="font-size:.75rem;color:var(--red);text-decoration:underline;margin-top:.3rem;display:inline-block">${w.linkText}</a>` : ''}
+            </div>
+          </div>
+        </div>`).join('')}`;
+  } else if (warningsDiv) {
+    warningsDiv.innerHTML = '';
+  }
+}
+ 
+// Auto-render on page load and tab switch
+(function() {
+  const origShowTab = window.showTab;
+  if (origShowTab) {
+    window.showTab = function(tab) {
+      origShowTab(tab);
+      if (tab === 'home') renderComplianceTimeline();
+    };
+  }
+  // Initial render after a short delay to let config load
+  setTimeout(renderComplianceTimeline, 1000);
+})();
+ 
+  
   // ── Vehicle Mileage Log & Calculator ──
 let vehTrips = [];
 

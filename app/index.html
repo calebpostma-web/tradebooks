@@ -3622,7 +3622,110 @@ function downloadSetupGuide() {
 
   // ── Vehicle Mileage Log & Calculator ──
 let vehTrips = [];
+
+  // CCA class rates
+const CCA_RATES = {
+  '8': { rate: 0.20, name: 'Class 8' },
+  '10': { rate: 0.30, name: 'Class 10' },
+  '10.1': { rate: 0.30, name: 'Class 10.1', cap: 37000 },
+  '50': { rate: 0.55, name: 'Class 50' },
+  '12': { rate: 1.00, name: 'Class 12' },
+  '46': { rate: 0.30, name: 'Class 46' }
+};
  
+function toggleEquipCalc() {
+  const calc = document.getElementById('equipCalc');
+  const btn = document.getElementById('equipCalcToggleBtn');
+  if (calc.style.display === 'none') {
+    calc.style.display = 'block';
+    btn.textContent = '✕ Close calculator';
+  } else {
+    calc.style.display = 'none';
+    btn.textContent = '🧮 Calculate CCA write-off →';
+  }
+}
+ 
+function calcEquipCCA() {
+  const price = parseFloat(document.getElementById('eq_price').value) || 0;
+  const classKey = document.getElementById('eq_class').value;
+  const bizPct = (parseFloat(document.getElementById('eq_bizpct').value) || 0) / 100;
+  const aii = document.getElementById('eq_aii').value === 'yes';
+  const resultDiv = document.getElementById('eq_result');
+ 
+  if (!price || !classKey) {
+    resultDiv.style.display = 'none';
+    return;
+  }
+ 
+  const cls = CCA_RATES[classKey];
+  if (!cls) { resultDiv.style.display = 'none'; return; }
+ 
+  // Apply Class 10.1 cap if applicable
+  let costBase = price;
+  let capNote = '';
+  if (cls.cap && price > cls.cap) {
+    costBase = cls.cap;
+    capNote = `<div style="font-size:.75rem;color:var(--amber);margin-bottom:.5rem">⚠️ Class 10.1 caps the depreciable amount at $${cls.cap.toLocaleString()} (you paid $${price.toLocaleString()})</div>`;
+  }
+ 
+  // Apply business-use percentage
+  const bizCost = costBase * bizPct;
+ 
+  // Calculate 5-year CCA schedule
+  let ucc = bizCost;
+  const years = [];
+ 
+  for (let yr = 1; yr <= 5; yr++) {
+    let cca;
+    if (cls.rate === 1.0) {
+      // Class 12: 100% in year 1
+      cca = yr === 1 ? ucc : 0;
+    } else if (yr === 1) {
+      // First year: half-year rule, then AII multiplier
+      const halfYear = ucc * cls.rate * 0.5;
+      cca = aii ? halfYear * 1.5 : halfYear;
+    } else {
+      cca = ucc * cls.rate;
+    }
+    cca = Math.min(cca, ucc);
+    const taxSaved = cca * 0.122;
+    years.push({ yr, cca, ucc, taxSaved });
+    ucc -= cca;
+    if (ucc < 0.01) { ucc = 0; }
+  }
+ 
+  const totalCCA5yr = years.reduce((s, y) => s + y.cca, 0);
+  const totalTaxSaved5yr = years.reduce((s, y) => s + y.taxSaved, 0);
+ 
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `
+    ${capNote}
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;text-align:center;margin-bottom:.75rem">
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--green);letter-spacing:.06em;text-transform:uppercase">Year 1 Write-Off</div>
+        <div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--green)">$${years[0].cca.toFixed(2)}</div>
+      </div>
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase">5-Year Total</div>
+        <div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--ink)">$${totalCCA5yr.toFixed(2)}</div>
+      </div>
+      <div>
+        <div style="font-family:var(--mono);font-size:.58rem;color:var(--amber);letter-spacing:.06em;text-transform:uppercase">Tax Saved (5yr)</div>
+        <div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--amber)">$${totalTaxSaved5yr.toFixed(2)}</div>
+      </div>
+    </div>
+    <div style="font-family:var(--mono);font-size:.58rem;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.35rem">Year-by-Year Schedule (${cls.name} @ ${(cls.rate*100).toFixed(0)}%${aii ? ' + AII' : ''})</div>
+    <div style="font-size:.78rem">
+      ${years.filter(y => y.cca > 0).map(y => `
+        <div style="display:flex;justify-content:space-between;padding:.2rem 0;border-bottom:1px solid var(--rule)">
+          <span>Year ${y.yr}</span>
+          <span style="color:var(--ink3);font-size:.72rem">UCC: $${y.ucc.toFixed(2)}</span>
+          <span style="font-weight:500;color:var(--green)">$${y.cca.toFixed(2)}</span>
+          <span style="color:var(--amber);font-size:.72rem">saves $${y.taxSaved.toFixed(2)}</span>
+        </div>`).join('')}
+    </div>`;
+}
+  
 function toggleVehicleCalc() {
   const calc = document.getElementById('vehicleCalc');
   const btn = document.getElementById('vehCalcToggleBtn');

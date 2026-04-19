@@ -907,7 +907,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         </div>
         <hr class="divider">
         <div class="field"><label>Client name</label><input type="text" id="invClient" placeholder="Client name" oninput="invUpdate()" list="clientSugg"><datalist id="clientSugg"></datalist></div>
-        <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;<span data-dynamic="city"></span>, <span data-dynamic="province"></span>" oninput="invUpdate()"></textarea></div>
+       <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;City, Province" oninput="invUpdate()"></textarea></div>
         <div class="field"><label>Client email (optional)</label><input type="email" id="invEmail" placeholder="billing@client.com" oninput="invUpdate()"></div>
         <hr class="divider">
         <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.6rem">Line items</div>
@@ -933,7 +933,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Live preview</div>
       <div class="inv-doc" id="invDoc">
         <div class="inv-doc-header">
-          <div><div class="inv-co-name" id="prevCoName" id="prevCoName">Your Business</div><div class="inv-co-detail" id="prevCoDetail">Your City, Province</div></div>
+         <div><div class="inv-co-name" id="prevCoName">Your Business</div><div class="inv-co-detail" id="prevCoDetail">Your City, Province</div></div>
           <div><div class="inv-doc-title">Invoice</div><div class="inv-doc-num" id="prevNum">#1001</div></div>
         </div>
         <div class="inv-meta">
@@ -3382,7 +3382,7 @@ function invUpdate(){
   if(nameEl) nameEl.textContent = co.name;
   if(detailEl) detailEl.innerHTML = (co.subline?'<span style="font-size:.7rem;color:var(--ink3)">'+co.subline+'</span><br>':'') + co.address + '<br>' + co.email + '<br>HST# ' + co.hst;
   if(footerHST) footerHST.textContent = 'HST Registration: ' + co.hst;
-  if(footerName) footerName.textContent = co.name + ' · <span data-dynamic="city"></span>, <span data-dynamic="province"></span>';
+  if(footerName) footerName.textContent = co.name + ' · ' + (USER_CONFIG?.city || '') + ', ' + (USER_CONFIG?.province || '');
   document.getElementById('prevNum').textContent='#'+invNum;
   let billTo=client||'<em style="color:var(--ink3)">Client name</em>';
   if(addr)billTo+='<br><span style="color:var(--ink3);font-size:.78rem">'+addr.replace(/\n/g,'<br>')+'</span>';

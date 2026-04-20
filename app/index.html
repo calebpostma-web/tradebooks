@@ -292,7 +292,7 @@ select.cat-sel{font-size:.75rem;padding:.2rem .4rem;border:1px solid var(--rule)
 .cra-box-full{grid-column:span 3;border-right:none}
 
 .box-code{
-  font-family:var(--mono);font-size:.8rem;font-weight:500;
+  font-family:var(--mono);font-size:.62rem;font-weight:500;
   color:var(--green);letter-spacing:.06em;margin-bottom:.25rem
 }
 .box-name{
@@ -907,7 +907,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         </div>
         <hr class="divider">
         <div class="field"><label>Client name</label><input type="text" id="invClient" placeholder="Client name" oninput="invUpdate()" list="clientSugg"><datalist id="clientSugg"></datalist></div>
-        <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;<span data-dynamic="city"></span>, <span data-dynamic="province"></span>" oninput="invUpdate()"></textarea></div>
+        <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;City, Province" oninput="invUpdate()"></textarea></div>
         <div class="field"><label>Client email (optional)</label><input type="email" id="invEmail" placeholder="billing@client.com" oninput="invUpdate()"></div>
         <hr class="divider">
         <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.6rem">Line items</div>
@@ -933,7 +933,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Live preview</div>
       <div class="inv-doc" id="invDoc">
         <div class="inv-doc-header">
-          <div><div class="inv-co-name" id="prevCoName" id="prevCoName">Your Business</div><div class="inv-co-detail" id="prevCoDetail">Your City, Province</div></div>
+          <div><div class="inv-co-name" id="prevCoName">Your Business</div><div class="inv-co-detail" id="prevCoDetail">Your City, Province</div></div>
           <div><div class="inv-doc-title">Invoice</div><div class="inv-doc-num" id="prevNum">#1001</div></div>
         </div>
         <div class="inv-meta">
@@ -1117,23 +1117,11 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <input class="box-input calc" id="hst_105" type="text" readonly placeholder="0.00">
           <div class="box-note">Calculated automatically.</div>
         </div>
-        <div class="cra-box">
-          <div class="box-code">LINE 90</div>
-          <div class="box-name">Sales to non-residents (informational — already included in Line 101)</div>
-          <input class="box-input" id="hst_90" type="text" placeholder="0.00" oninput="craCalcHST()">
-          <div class="box-note">Total of invoices to US or other non-Canadian clients for this quarter. Auto-fills from Sheet if Currency column is populated.</div>
-        </div>
-        <div class="cra-box">
-          <div class="box-code">LINE 91</div>
-          <div class="box-name">Zero-rated sales (already included in Line 101 — not re-added)</div>
-          <input class="box-input" id="hst_91" type="text" placeholder="0.00" oninput="craCalcHST()">
-          <div class="box-note">Total of zero-rated export invoices for this quarter. These explain why Line 103 is less than 13% of Line 101.</div>
-        </div>
-        <div class="cra-box">
-          <div class="box-code">LINE 102 / EXEMPT</div>
-          <div class="box-name">HST-exempt sales (basic groceries, residential rent, financial services, etc.)</div>
-          <input class="box-input" id="hst_exempt" type="text" placeholder="0.00 (usually $0)" oninput="craCalcHST()">
-          <div class="box-note">Different from zero-rated. Rare for trades businesses — usually $0.</div>
+        <div class="cra-box cra-box-wide">
+          <div class="box-code">NOTE — ZERO-RATED / EXEMPT</div>
+          <div class="box-name">Does your business have any zero-rated or HST-exempt sales?</div>
+          <input class="box-input" id="hst_exempt" type="text" placeholder="0.00 (usually $0 for consulting/lawn care)">
+          <div class="box-note">Most consulting and lawn care revenue is fully taxable at 13% HST. Enter 0 unless you have specific exempt revenue.</div>
         </div>
       </div>
 
@@ -2628,6 +2616,11 @@ function rebuildInvoiceCompanies() {
   // Show/hide company switcher
   const switcher = document.getElementById('companySwitch');
   if (switcher) switcher.style.display = C.tradingName ? '' : 'none';
+
+  // Re-render invoice preview now that company data is populated
+  if (typeof invUpdate === 'function') {
+    try { invUpdate(); } catch(e) { /* invUpdate may not be ready on first load */ }
+  }
 }
 
 function updateTaxProfile() {
@@ -3386,15 +3379,26 @@ function invUpdate(){
     <div class="tot-row final"><span>Total</span><span class="tot-val big">$${fmtMoney(total)}</span></div>`;
 
   // Update company header in preview
-  const co = INV_COMPANIES[activeCompany];
+  const co = INV_COMPANIES[activeCompany] || {};
   const nameEl = document.getElementById('prevCoName');
   const detailEl = document.getElementById('prevCoDetail');
   const footerHST = document.getElementById('prevFooterHST');
   const footerName = document.getElementById('prevFooterName');
-  if(nameEl) nameEl.textContent = co.name;
-  if(detailEl) detailEl.innerHTML = (co.subline?'<span style="font-size:.7rem;color:var(--ink3)">'+co.subline+'</span><br>':'') + co.address + '<br>' + co.email + '<br>HST# ' + co.hst;
-  if(footerHST) footerHST.textContent = 'HST Registration: ' + co.hst;
-  if(footerName) footerName.textContent = co.name + ' · <span data-dynamic="city"></span>, <span data-dynamic="province"></span>';
+  if(nameEl) nameEl.textContent = co.name || 'Your Business (set in Settings)';
+  if(detailEl){
+    const parts = [];
+    if(co.subline) parts.push('<span style="font-size:.7rem;color:var(--ink3)">'+esc(co.subline)+'</span>');
+    const addr = [USER_CONFIG?.city, USER_CONFIG?.province].filter(Boolean).join(', ');
+    if(addr) parts.push(esc(addr));
+    if(co.email) parts.push(esc(co.email));
+    if(co.hst) parts.push('HST# '+esc(co.hst));
+    detailEl.innerHTML = parts.join('<br>');
+  }
+  if(footerHST) footerHST.textContent = co.hst ? ('HST Registration: '+co.hst) : '';
+  if(footerName){
+    const loc = [USER_CONFIG?.city, USER_CONFIG?.province].filter(Boolean).join(', ');
+    footerName.textContent = co.name ? (co.name + (loc?' · '+loc:'')) : '';
+  }
   document.getElementById('prevNum').textContent='#'+invNum;
   let billTo=client||'<em style="color:var(--ink3)">Client name</em>';
   if(addr)billTo+='<br><span style="color:var(--ink3);font-size:.78rem">'+addr.replace(/\n/g,'<br>')+'</span>';
@@ -4542,59 +4546,19 @@ function craSetPeriod(q,el){
   document.getElementById('hst_filingdate').value=today;
 }
 
-// HST auto-fill from importer + Google Sheet
-async function craAutoFillHST(){
-  // First: pull expense HST (ITCs) from the current Importer session
-  if (impTxns && impTxns.length) {
-    const active = impTxns.filter(tx => !tx.excluded && tx.category !== 'SKIP — not a business expense');
-    const totalITC = active.filter(tx => tx.amount < 0).reduce((s, tx) => s + tx.hst, 0);
-    if (totalITC > 0) setBoxVal('hst_106', totalITC.toFixed(2), true);
-  }
-
-  // Second: try to pull sales totals from the Google Sheet (covers the full quarter,
-  // not just what's in the current Importer session)
-  const url = getSheetsUrl();
-  let filledFromSheet = false;
-  if (url) {
-    try {
-      const r = await fetch(url + '?action=summary');
-      const data = await r.json();
-      if (data.ok) {
-        const totalRev = parseFloat(data.totalRevenue) || 0;
-        if (totalRev > 0) {
-          setBoxVal('hst_101', totalRev.toFixed(2), true);
-          filledFromSheet = true;
-        }
-        if (data.nonResidentSales != null) {
-          setBoxVal('hst_90', (parseFloat(data.nonResidentSales) || 0).toFixed(2), true);
-        }
-        if (data.zeroRatedSales != null) {
-          setBoxVal('hst_91', (parseFloat(data.zeroRatedSales) || 0).toFixed(2), true);
-        }
-      }
-    } catch (e) {
-      console.log('Sheet summary unreachable, using Importer data only');
-    }
-  }
-
-  // Fallback: if the Sheet didn't give us Line 101, pull from Importer
-  if (!filledFromSheet && impTxns && impTxns.length) {
-    const active = impTxns.filter(tx => !tx.excluded && tx.category !== 'SKIP — not a business expense');
-    const totalRevIncHST = active.filter(tx => tx.amount > 0).reduce((s, tx) => s + tx.amount, 0);
-    if (totalRevIncHST > 0) {
-      setBoxVal('hst_101', totalRevIncHST.toFixed(2), true);
-    }
-  }
-
+// HST auto-fill from importer
+function craAutoFillHST(){
+  if(!impTxns||!impTxns.length){toast('Run the Statement Importer first, then come back here to auto-fill');return}
+  const active=impTxns.filter(tx=>!tx.excluded&&tx.category!=='SKIP — not a business expense');
+  const totalRevIncHST=active.filter(tx=>tx.amount>0).reduce((s,tx)=>s+tx.amount,0);
+  const _rate = USER_CONFIG?.taxRate || 0.13;
+  const totalHSTCollected=Math.round(totalRevIncHST/(1+_rate)*_rate*100)/100;
+  const totalITC=active.filter(tx=>tx.amount<0).reduce((s,tx)=>s+tx.hst,0);
+  setBoxVal('hst_101',totalRevIncHST.toFixed(2),true);
+  setBoxVal('hst_103',totalHSTCollected.toFixed(2),true);
+  setBoxVal('hst_106',totalITC.toFixed(2),true);
   craCalcHST();
-
-  if (filledFromSheet) {
-    toast('HST form auto-filled from Google Sheet (Lines 101, 90, 91 included)');
-  } else if (impTxns && impTxns.length) {
-    toast('HST form filled from Importer — add Line 90/91 manually if you had US sales this quarter');
-  } else {
-    toast('No data to auto-fill. Run the Statement Importer or connect your Google Sheet.');
-  }
+  toast('HST form auto-filled from imported transactions!');
 }
 
 function setBoxVal(id,val,markAuto=false){
@@ -4606,51 +4570,43 @@ function setBoxVal(id,val,markAuto=false){
 function getBoxNum(id){return parseFloat(document.getElementById(id)?.value?.replace(/,/g,'')||'0')||0}
 
 function craCalcHST(){
-  const l101 = getBoxNum('hst_101');
-  const l91  = getBoxNum('hst_91');       // zero-rated sales
-  const lex  = getBoxNum('hst_exempt');   // exempt sales
-
-  // Taxable portion = Line 101 minus zero-rated minus exempt.
-  // HST is only owed on this taxable portion.
-  const taxable = Math.max(0, l101 - l91 - lex);
-
-  // Auto-calc Line 103 from the taxable portion (if not manually set)
-  const l103El = document.getElementById('hst_103');
-  if (l103El && !l103El.dataset.manual) {
+  const l101=getBoxNum('hst_101');
+  // Auto-calc 103 if not manually set
+  const l103El=document.getElementById('hst_103');
+  if(l103El&&!l103El.dataset.manual){
     const _r = USER_CONFIG?.taxRate || 0.13;
-    const calc = Math.round(taxable / (1 + _r) * _r * 100) / 100;
-    l103El.value = calc.toFixed(2);
+    const calc=(Math.round(l101/(1+_r)*_r*100)/100);
+    l103El.value=calc.toFixed(2);
   }
+  const l103=getBoxNum('hst_103');
+  const l104=getBoxNum('hst_104');
+  const l105=l103+l104;
+  setBoxVal('hst_105',l105.toFixed(2));
 
-  const l103 = getBoxNum('hst_103');
-  const l104 = getBoxNum('hst_104');
-  const l105 = l103 + l104;
-  setBoxVal('hst_105', l105.toFixed(2));
+  const l106=getBoxNum('hst_106');
+  const l107=getBoxNum('hst_107');
+  const l108=l106+l107;
+  setBoxVal('hst_108',l108.toFixed(2));
 
-  const l106 = getBoxNum('hst_106');
-  const l107 = getBoxNum('hst_107');
-  const l108 = l106 + l107;
-  setBoxVal('hst_108', l108.toFixed(2));
+  const l109=l105-l108;
+  setBoxVal('hst_109',l109.toFixed(2));
 
-  const l109 = l105 - l108;
-  setBoxVal('hst_109', l109.toFixed(2));
+  const l110=getBoxNum('hst_110');
+  const l111=getBoxNum('hst_111');
+  const net=l109-l110-l111;
 
-  const l110 = getBoxNum('hst_110');
-  const l111 = getBoxNum('hst_111');
-  const net = l109 - l110 - l111;
-
-  if (net > 0) {
-    setBoxVal('hst_112', net.toFixed(2));
-    setBoxVal('hst_114', '0.00');
-    document.getElementById('hstResultType').textContent = 'Amount Owing to CRA';
-    document.getElementById('hstResultAmt').textContent = '$' + fmtMoney(net);
-    document.getElementById('hstResultAmt').style.color = '#ff6b6b';
+  if(net>0){
+    setBoxVal('hst_112',net.toFixed(2));
+    setBoxVal('hst_114','0.00');
+    document.getElementById('hstResultType').textContent='Amount Owing to CRA';
+    document.getElementById('hstResultAmt').textContent='$'+fmtMoney(net);
+    document.getElementById('hstResultAmt').style.color='#ff6b6b';
   } else {
-    setBoxVal('hst_112', '0.00');
-    setBoxVal('hst_114', Math.abs(net).toFixed(2));
-    document.getElementById('hstResultType').textContent = 'Refund from CRA';
-    document.getElementById('hstResultAmt').textContent = '$' + fmtMoney(Math.abs(net));
-    document.getElementById('hstResultAmt').style.color = '#4caf7d';
+    setBoxVal('hst_112','0.00');
+    setBoxVal('hst_114',Math.abs(net).toFixed(2));
+    document.getElementById('hstResultType').textContent='Refund from CRA';
+    document.getElementById('hstResultAmt').textContent='$'+fmtMoney(Math.abs(net));
+    document.getElementById('hstResultAmt').style.color='#4caf7d';
   }
 }
 

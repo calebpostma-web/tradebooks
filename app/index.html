@@ -3194,6 +3194,104 @@ function impReset(){
 async function impRerun(){document.getElementById('impProgWrap').classList.remove('hidden');await runImpAI()}
 // getSheetsUrl defined in TRADEBOOKS CORE MODULE above
 
+// ════════════════════════════════════════════════════════════
+// GOOGLE SHEETS CONNECTION — SHARED ERROR DIAGNOSTIC
+// ════════════════════════════════════════════════════════════
+// When Send-to-Sheets fails (network/CORS level), show a helpful
+// diagnostic panel with a live reachability test + common-fix guide.
+// Used by sendToSheets (statement importer), invSendToSheets
+// (invoice wizard), and rcptSendToSheets (receipt scanner).
+
+function showSheetsError(statusEl, btn, err, retryLabel){
+  const url = (typeof getSheetsUrl === 'function') ? getSheetsUrl() : (USER_CONFIG?.scriptUrl || '');
+  const sheetUrl = USER_CONFIG?.sheetUrl || '';
+  const urlLooksValid = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url || '');
+  const diagId = 'diag_' + Math.random().toString(36).slice(2, 8);
+  const errText = (err && err.message) ? err.message : String(err || 'Unknown error');
+
+  statusEl.innerHTML = `
+    <div style="border:1px solid #f0c2c2;border-radius:var(--radius);padding:.9rem 1rem;background:#fff7f7;margin-top:.5rem">
+      <div style="font-weight:500;color:var(--red);margin-bottom:.25rem">❌ Couldn't reach Google Sheets</div>
+      <div style="font-size:.74rem;color:var(--ink3);margin-bottom:.75rem;font-family:var(--mono)">${esc(errText)}</div>
+
+      <div id="${diagId}_result" style="font-size:.8rem;line-height:1.55;margin-bottom:.75rem;padding:.55rem .7rem;background:white;border-radius:4px;border:1px solid var(--rule)">
+        <span style="color:var(--ink3)">⏳ Running diagnostic…</span>
+      </div>
+
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.4rem">
+        <button class="btn btn-sm btn-outline" onclick="diagTestAppsScript('${diagId}_result', this)">🔁 Re-test connection</button>
+        ${sheetUrl ? `<a class="btn btn-sm btn-outline" href="${sheetUrl}" target="_blank" rel="noopener">📊 Open Sheet ↗</a>` : ''}
+        <button class="btn btn-sm btn-outline" onclick="showTab('settings')">⚙ Check Settings</button>
+      </div>
+
+      <details style="font-size:.77rem;color:var(--ink2);margin-top:.5rem">
+        <summary style="cursor:pointer;font-weight:500;color:var(--ink);padding:.3rem 0">How to fix this</summary>
+        <div style="padding:.4rem .2rem .2rem;line-height:1.7">
+          <div style="margin-bottom:.8rem">
+            <strong>Most common cause — deployment access is "Only myself"</strong><br>
+            <span style="color:var(--ink3)">The Sheet owner needs to:</span>
+            <ol style="margin:.3rem 0 0 1.3rem;padding:0;font-size:.76rem">
+              <li>Open the Google Sheet → <strong>Extensions → Apps Script</strong></li>
+              <li>Top right: <strong>Deploy → Manage deployments</strong></li>
+              <li>Click the <strong>pencil icon</strong> — do NOT click "New deployment" (that changes the URL and breaks everyone's settings)</li>
+              <li>Set <strong>Who has access: Anyone</strong> → <strong>Deploy</strong></li>
+            </ol>
+          </div>
+          <div>
+            <strong>Also check — is the Apps Script URL correct?</strong><br>
+            <span style="color:var(--ink3);font-size:.74rem">Current URL in your Settings:</span><br>
+            <code style="font-size:.68rem;word-break:break-all;display:inline-block;padding:.2rem .4rem;background:var(--paper2);border-radius:3px;margin:.2rem 0;max-width:100%">${url ? esc(url) : '<em>not set</em>'}</code><br>
+            <span style="color:${urlLooksValid ? 'var(--green)' : 'var(--red)'};font-size:.74rem">
+              ${urlLooksValid ? '✓ URL format looks correct (ends in /exec)' : '✗ URL should start with https://script.google.com/macros/s/ and end with /exec'}
+            </span>
+          </div>
+        </div>
+      </details>
+    </div>`;
+
+  if(btn){
+    btn.disabled = false;
+    btn.textContent = retryLabel || '📊 Send to Google Sheets';
+    btn.style.background = '';
+  }
+
+  // Auto-run the diagnostic immediately — don't make the user click a button to find out what's wrong
+  setTimeout(() => diagTestAppsScript(diagId + '_result'), 100);
+}
+
+async function diagTestAppsScript(resultId, btn){
+  const result = document.getElementById(resultId);
+  if(!result) return;
+  const url = (typeof getSheetsUrl === 'function') ? getSheetsUrl() : (USER_CONFIG?.scriptUrl || '');
+
+  if(!url){
+    result.innerHTML = '<span style="color:var(--red)">✗ No Apps Script URL configured.</span> <a onclick="showTab(\'settings\')" style="color:var(--green);cursor:pointer;text-decoration:underline">Add it in Settings →</a>';
+    return;
+  }
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)){
+    result.innerHTML = '<span style="color:var(--red)">✗ URL format is wrong</span> — should be <code style="font-size:.7rem">https://script.google.com/macros/s/.../exec</code>. <a onclick="showTab(\'settings\')" style="color:var(--green);cursor:pointer;text-decoration:underline">Fix in Settings →</a>';
+    return;
+  }
+
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Testing…'; }
+  result.innerHTML = '<span style="color:var(--ink3)">⏳ Pinging Apps Script…</span>';
+
+  const start = Date.now();
+  try {
+    const r = await fetch(url, { method: 'GET', redirect: 'follow' });
+    const elapsed = Date.now() - start;
+    if(r.ok){
+      result.innerHTML = `<span style="color:var(--green);font-weight:500">✓ Apps Script URL is reachable</span> (${elapsed}ms)<br><span style="color:var(--ink3);font-size:.76rem">The URL and access permissions are both fine. If the Send still failed, the issue is inside the Apps Script code (doPost). The Sheet owner should re-deploy via the pencil icon to pick up any recent changes.</span>`;
+    } else {
+      result.innerHTML = `<span style="color:var(--red);font-weight:500">✗ Apps Script returned HTTP ${r.status}</span><br><span style="color:var(--ink3);font-size:.76rem">The deployment is probably set to "Only myself". Sheet owner needs to re-deploy with <strong>Who has access: Anyone</strong>.</span>`;
+    }
+  } catch(e) {
+    const elapsed = Date.now() - start;
+    result.innerHTML = `<span style="color:var(--red);font-weight:500">✗ Browser blocked the request</span> (${elapsed}ms)<br><span style="color:var(--ink3);font-size:.76rem">Almost always this means the deployment access is <strong>"Only myself"</strong> and should be <strong>"Anyone"</strong>. Sheet owner: open Apps Script → <strong>Deploy → Manage deployments</strong> → pencil icon → change access → Deploy.</span>`;
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '🔁 Re-test connection'; }
+}
+
 async function sendToSheets(){
   const btn = document.getElementById('sendSheetsBtn');
   const status = document.getElementById('sendSheetsStatus');
@@ -3290,9 +3388,7 @@ async function sendToSheets(){
       btn.textContent = '📊 Send to Google Sheets';
     }
   } catch(err) {
-    status.textContent = '❌ Could not reach Google Sheets: ' + err.message;
-    btn.disabled = false;
-    btn.textContent = '📊 Send to Google Sheets';
+    showSheetsError(status, btn, err, '📊 Send to Google Sheets');
   }
 }
 
@@ -3562,9 +3658,7 @@ async function invSendToSheets(){
       btn.textContent = '📊 Send to Google Sheets';
     }
   } catch(err){
-    status.textContent = '❌ Connection error: ' + err.message;
-    btn.disabled = false;
-    btn.textContent = '📊 Send to Google Sheets';
+    showSheetsError(status, btn, err, '📊 Send to Google Sheets');
   }
 }
 function invClear(){document.getElementById('invClient').value='';document.getElementById('invAddr').value='';document.getElementById('invEmail').value='';document.getElementById('invNotes').value='';invLines=[{desc:'',qty:1,rate:''}];renderLines();invUpdate()}
@@ -3745,9 +3839,7 @@ async function rcptSendToSheets(){
       btn.textContent = '📊 Send to Google Sheets';
     }
   } catch(err) {
-    status.textContent = '❌ Connection error: ' + err.message;
-    btn.disabled = false;
-    btn.textContent = '📊 Send to Google Sheets';
+    showSheetsError(status, btn, err, '📊 Send to Google Sheets');
   }
 }
 

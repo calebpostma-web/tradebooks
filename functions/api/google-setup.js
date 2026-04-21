@@ -228,14 +228,8 @@ async function handleCreateSheet(accessToken, profile, env, headers) {
         headers: authHeader,
         body: JSON.stringify({
           versionNumber: versionData.versionNumber,
+          manifestFileName: 'appsscript',
           description: 'TradeBooks Web App',
-          entryPoints: [{
-            entryPointType: 'WEB_APP',
-            webApp: {
-              access: 'ANYONE_ANONYMOUS',
-              executeAs: 'USER_DEPLOYING',
-            },
-          }],
         }),
       });
       const deployRaw = await deployResp2.text();

@@ -5719,18 +5719,34 @@ async function handleGoogleCallback() {
   }
 }
 
-// Check for OAuth callback on page load
+// Check for OAuth callback on page load — runs BEFORE anything else
 (function() {
-  const origInitAuth = initAuth;
-  initAuth = function() {
-    // Check for Google OAuth callback first
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('code') && params.get('state')?.startsWith('tradebooks_setup_')) {
-      handleGoogleCallback();
-      return;
-    }
-    origInitAuth();
-  };
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  const error = params.get('error');
+
+  // Loud logging so we can see what happened in the browser console
+  if (error) {
+    console.error('[TradeBooks OAuth] Google returned error:', error, params.get('error_description') || '');
+    // Clean URL so error doesn't stick around
+    window.history.replaceState({}, '', window.location.pathname);
+    return;
+  }
+
+  if (code && state && state.startsWith('tradebooks_setup_')) {
+    console.log('[TradeBooks OAuth] Callback detected, code length:', code.length, 'state:', state);
+    // Intercept initAuth so the app doesn't boot normally before we finish setup
+    const origInitAuth = window.initAuth;
+    window.initAuth = function() {
+      console.log('[TradeBooks OAuth] Running handleGoogleCallback');
+      handleGoogleCallback().catch(e => {
+        console.error('[TradeBooks OAuth] Callback failed:', e);
+        // Fall back to normal boot so the user isn't completely stuck
+        origInitAuth();
+      });
+    };
+  }
 })();
 
 // ════════════════════════════════════════════════════════════

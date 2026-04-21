@@ -891,13 +891,19 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     <div>
       <div class="card">
         <div class="card-title">Billing from</div>
-        <div id="companySwitch" style="display:none;gap:.5rem;margin-bottom:1.25rem"></div>
+        <div id="companySwitch" style="display:none;gap:.5rem;margin-bottom:1rem"></div>
+        <div id="billingFromSummary" style="padding:.75rem .9rem;background:var(--paper2);border-radius:var(--radius);margin-bottom:1.25rem;font-size:.82rem;line-height:1.5">
+          <div id="bfName" style="font-family:var(--serif);font-size:1rem;color:var(--ink);margin-bottom:.15rem">Your Business</div>
+          <div id="bfLegal" style="font-size:.7rem;color:var(--ink3);font-style:italic;margin-bottom:.25rem"></div>
+          <div id="bfDetail" style="color:var(--ink3);font-size:.76rem">—</div>
+          <a onclick="showTab('settings')" style="font-size:.7rem;color:var(--green);cursor:pointer;text-decoration:underline;display:inline-block;margin-top:.4rem">Edit in Settings ↗</a>
+        </div>
         <div class="card-title" style="margin-top:0">Invoice details</div>
         <div style="margin-bottom:1.1rem">
           <label style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:.4rem">Invoice number</label>
           <div class="inv-num-row">
             <div class="inv-num-disp" id="invNumDisp">1001</div>
-            <button class="btn-regen" onclick="regenInv()">↺ New #</button>
+            <button class="btn-regen" onclick="regenInv()">↺ Next #</button>
             <input type="number" style="width:85px;padding:.48rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--mono);font-size:.85rem" placeholder="Custom" oninput="customInv(this.value)">
           </div>
         </div>
@@ -907,7 +913,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         </div>
         <hr class="divider">
         <div class="field"><label>Client name</label><input type="text" id="invClient" placeholder="Client name" oninput="invUpdate()" list="clientSugg"><datalist id="clientSugg"></datalist></div>
-        <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;<span data-dynamic="city"></span>, <span data-dynamic="province"></span>" oninput="invUpdate()"></textarea></div>
+        <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;City, ON  A1A 1A1" oninput="invUpdate()"></textarea></div>
         <div class="field"><label>Client email (optional)</label><input type="email" id="invEmail" placeholder="billing@client.com" oninput="invUpdate()"></div>
         <hr class="divider">
         <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.6rem">Line items</div>
@@ -933,7 +939,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Live preview</div>
       <div class="inv-doc" id="invDoc">
         <div class="inv-doc-header">
-          <div><div class="inv-co-name" id="prevCoName" id="prevCoName">Your Business</div><div class="inv-co-detail" id="prevCoDetail">Your City, Province</div></div>
+          <div><div class="inv-co-name" id="prevCoName">Your Business</div><div class="inv-co-detail" id="prevCoDetail">Your City, Province</div></div>
           <div><div class="inv-doc-title">Invoice</div><div class="inv-doc-num" id="prevNum">#1001</div></div>
         </div>
         <div class="inv-meta">
@@ -2609,8 +2615,12 @@ function rebuildInvoiceCompanies() {
     };
   }
 
-  // Update invoice number
-  window.invNum = String(C.invoiceStart || 1001);
+  // Invoice number display — respect the saved/sequential number, not just invoiceStart
+  if (typeof getNextInvNum === 'function') {
+    window.invNum = getNextInvNum();
+  } else {
+    window.invNum = String(C.invoiceStart || 1001);
+  }
   const numEl = document.getElementById('invNumDisp');
   if (numEl) numEl.textContent = window.invNum;
 
@@ -2618,9 +2628,17 @@ function rebuildInvoiceCompanies() {
   const dl = document.getElementById('clientSugg');
   if (dl) dl.innerHTML = (C.clients || []).map(c => `<option value="${c}">`).join('');
 
-  // Show/hide company switcher
+  // Company switcher visibility (buttons populated by setInvCompany workflow)
   const switcher = document.getElementById('companySwitch');
   if (switcher) switcher.style.display = C.tradingName ? '' : 'none';
+
+  // When a trading (operating) name is set, use it as the invoice-facing name.
+  // Legal business name appears as "o/a [legal name]" subtext.
+  if (C.tradingName && typeof window.setInvoiceActiveCompany === 'function') {
+    window.setInvoiceActiveCompany('trading');
+  } else if (!C.tradingName && typeof window.setInvoiceActiveCompany === 'function') {
+    window.setInvoiceActiveCompany('primary');
+  }
 }
 
 function updateTaxProfile() {
@@ -3318,7 +3336,15 @@ if (!window.INV_COMPANIES) {
   window.INV_COMPANIES = { primary: { name:'', address:'', email:'', hst:'', clients:[] } };
 }
 var INV_COMPANIES = window.INV_COMPANIES;
-let activeCompany = 'primary';
+// Default active company: use the trading (operating) name if set — it's the
+// customer-facing name. Fallback to 'primary' (legal business name) otherwise.
+let activeCompany = (USER_CONFIG?.tradingName && USER_CONFIG.tradingName.trim()) ? 'trading' : 'primary';
+// Exposed so rebuildInvoiceCompanies() can resync after a settings save
+window.setInvoiceActiveCompany = function(key){
+  if (!window.INV_COMPANIES || !window.INV_COMPANIES[key]) return;
+  activeCompany = key;
+  if (typeof invUpdate === 'function') invUpdate();
+};
 
 function setInvCompany(key){
   activeCompany = key;
@@ -3335,7 +3361,15 @@ function setInvCompany(key){
 }
 
 let invLines=[{desc:'',qty:1,rate:''}];
-let invNum=String(USER_CONFIG?.invoiceStart||1001);
+
+// Next invoice number = max(configured start, last-used + 1)
+// Persisted in localStorage, bumped automatically after a successful Send to Sheets.
+function getNextInvNum(){
+  const start = parseInt(USER_CONFIG?.invoiceStart || 1001, 10);
+  const last  = parseInt(localStorage.getItem('tb_lastInvNum') || '0', 10);
+  return String(Math.max(start, last + 1));
+}
+let invNum = getNextInvNum();
 
 (function initInv(){
   const today=new Date();
@@ -3343,10 +3377,15 @@ let invNum=String(USER_CONFIG?.invoiceStart||1001);
   document.getElementById('invDate').value=fmt(today);
   const due=new Date(today);due.setDate(due.getDate()+30);
   document.getElementById('invDue').value=fmt(due);
+  document.getElementById('invNumDisp').textContent = invNum;
   renderLines();invUpdate();
 })();
 
-function regenInv(){invNum=String((USER_CONFIG?.invoiceStart||1001)+Math.floor(Math.random()*200));document.getElementById('invNumDisp').textContent=invNum;invUpdate()}
+function regenInv(){
+  invNum = String(parseInt(invNum,10) + 1);
+  document.getElementById('invNumDisp').textContent = invNum;
+  invUpdate();
+}
 function customInv(v){if(v){invNum=v;document.getElementById('invNumDisp').textContent=v;invUpdate()}}
 
 function renderLines(){
@@ -3386,16 +3425,43 @@ function invUpdate(){
     ${hst?`<div class="tot-row"><span class="tot-lbl">HST 13%</span><span class="tot-val">$${fmtMoney(hstAmt)}</span></div>`:`<div class="tot-row"><span class="tot-lbl" style="color:var(--red)">No HST</span><span class="tot-val">—</span></div>`}
     <div class="tot-row final"><span>Total</span><span class="tot-val big">$${fmtMoney(total)}</span></div>`;
 
-  // Update company header in preview
-  const co = INV_COMPANIES[activeCompany];
+  // Resolve active company (falls back gracefully if config hasn't loaded)
+  const co = INV_COMPANIES[activeCompany] || INV_COMPANIES.primary || {};
+
+  // ── Billing-from summary card (left side of form) ──
+  const bfName = document.getElementById('bfName');
+  const bfLegal = document.getElementById('bfLegal');
+  const bfDetail = document.getElementById('bfDetail');
+  if(bfName) bfName.textContent = co.name || 'Your Business';
+  if(bfLegal) bfLegal.textContent = co.subline || '';
+  if(bfDetail){
+    const parts=[];
+    if(co.address) parts.push(co.address);
+    if(co.email)   parts.push(co.email);
+    if(co.hst)     parts.push('HST# '+co.hst);
+    bfDetail.textContent = parts.length ? parts.join(' · ') : 'No company details saved yet';
+  }
+
+  // ── Preview: company header ──
   const nameEl = document.getElementById('prevCoName');
   const detailEl = document.getElementById('prevCoDetail');
   const footerHST = document.getElementById('prevFooterHST');
   const footerName = document.getElementById('prevFooterName');
-  if(nameEl) nameEl.textContent = co.name;
-  if(detailEl) detailEl.innerHTML = (co.subline?'<span style="font-size:.7rem;color:var(--ink3)">'+co.subline+'</span><br>':'') + co.address + '<br>' + co.email + '<br>HST# ' + co.hst;
-  if(footerHST) footerHST.textContent = 'HST Registration: ' + co.hst;
-  if(footerName) footerName.textContent = co.name + ' · <span data-dynamic="city"></span>, <span data-dynamic="province"></span>';
+  if(nameEl) nameEl.textContent = co.name || 'Your Business';
+  if(detailEl){
+    const lines=[];
+    if(co.subline) lines.push('<span style="font-size:.7rem;color:var(--ink3);font-style:italic">'+esc(co.subline)+'</span>');
+    if(co.address) lines.push(esc(co.address));
+    if(co.email)   lines.push(esc(co.email));
+    if(co.hst)     lines.push('HST# '+esc(co.hst));
+    detailEl.innerHTML = lines.length ? lines.join('<br>') : '<em style="color:var(--ink3)">Configure in Settings</em>';
+  }
+  if(footerHST) footerHST.textContent = co.hst ? ('HST Registration: '+co.hst) : '';
+  if(footerName){
+    const C = window.USER_CONFIG || {};
+    const loc = [C.city, C.province].filter(Boolean).join(', ');
+    footerName.textContent = (co.name || '') + (loc ? ' · '+loc : '');
+  }
   document.getElementById('prevNum').textContent='#'+invNum;
   let billTo=client||'<em style="color:var(--ink3)">Client name</em>';
   if(addr)billTo+='<br><span style="color:var(--ink3);font-size:.78rem">'+addr.replace(/\n/g,'<br>')+'</span>';
@@ -3478,10 +3544,18 @@ async function invSendToSheets(){
     });
     const d = await r.json();
     if(d.ok){
+      // Remember what we just sent so the confirmation message shows that number
+      const sentNum = invNum;
+      // Bump the counter so the next invoice auto-increments (persists across sessions)
+      localStorage.setItem('tb_lastInvNum', sentNum);
+      // Advance the active invoice number and refresh the display
+      invNum = String(parseInt(sentNum,10) + 1);
+      const numEl = document.getElementById('invNumDisp');
+      if(numEl) numEl.textContent = invNum;
       btn.textContent = '✓ Sent!';
       btn.style.background = 'var(--green)';
       const sheetLink = USER_CONFIG?.sheetUrl ? `<a href="${USER_CONFIG.sheetUrl}" target="_blank" style="color:var(--green)">Open Sheet ↗</a>` : '';
-      status.innerHTML = `✅ Invoice #${invNum} added to <strong>Invoices</strong> and <strong>Income</strong> tabs. ${sheetLink}`;
+      status.innerHTML = `✅ Invoice #${sentNum} added to <strong>Invoices</strong> and <strong>Income</strong> tabs. ${sheetLink}`;
     } else {
       status.textContent = '❌ ' + (d.error || 'Unknown error');
       btn.disabled = false;
@@ -5252,8 +5326,11 @@ function renderSettings(){
   document.getElementById('settingsBody').innerHTML = `
     <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Business Information</div>
     <div class="field-row">
-      ${f('Business Name','set_businessName',C.businessName)}
-      ${f('Trading / DBA Name','set_tradingName',C.tradingName)}
+      ${f('Legal Business Name','set_businessName',C.businessName)}
+      ${f('Operating Name (appears on invoices)','set_tradingName',C.tradingName)}
+    </div>
+    <div style="font-size:.74rem;color:var(--ink3);margin:-.4rem 0 1rem;line-height:1.5">
+      Your <strong>Operating Name</strong> is the name you do business under — e.g. "Postma Contracting". It appears prominently on invoices, with your legal name shown smaller as <em>o/a [Legal Name]</em>. Leave the operating name blank if you invoice under your legal name.
     </div>
     <div class="field-row">
       ${s('Business Type','set_businessType',typeOpts)}

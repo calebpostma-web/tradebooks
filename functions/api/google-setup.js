@@ -61,28 +61,46 @@ async function handleTokenExchange(code, env, headers) {
     secretHasWhitespace: /\s/.test(secret),
     secretHasNonAscii: /[^\x20-\x7E]/.test(secret),
     codeLength: (code || '').length,
+    codePrefix: (code || '').slice(0, 10),
   };
   console.log('[handleTokenExchange] DEBUG:', JSON.stringify(debug));
 
-  const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code,
-      client_id: clientId,
-      client_secret: secret,
-      redirect_uri: 'https://tradebooks-bju.pages.dev/app/',
-      grant_type: 'authorization_code',
-    }),
-  });
+  let tokenResp, tokenRespStatus, tokenRespHeaders, tokenRaw, tokenData;
+  try {
+    tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: secret,
+        redirect_uri: 'https://tradebooks-bju.pages.dev/app/',
+        grant_type: 'authorization_code',
+      }),
+    });
+    tokenRespStatus = tokenResp.status;
+    tokenRespHeaders = Object.fromEntries(tokenResp.headers.entries());
+    tokenRaw = await tokenResp.text();
+    try { tokenData = JSON.parse(tokenRaw); } catch(_) { tokenData = { error: 'parse_failed', raw: tokenRaw }; }
+  } catch(fetchErr) {
+    return new Response(JSON.stringify({
+      ok: false,
+      error: 'Network error reaching Google: ' + fetchErr.message,
+      debug,
+    }), { headers });
+  }
 
-  const tokenData = await tokenResp.json();
+  console.log('[handleTokenExchange] Google status:', tokenRespStatus);
+  console.log('[handleTokenExchange] Google response:', tokenRaw);
 
   if (tokenData.error) {
     return new Response(JSON.stringify({
       ok: false,
       error: tokenData.error_description || tokenData.error,
       debug,
+      googleStatus: tokenRespStatus,
+      googleResponse: tokenData,
+      googleResponseHeaders: tokenRespHeaders,
     }), { headers });
   }
 

@@ -2361,7 +2361,7 @@ const PROFILE_KEY = 'tradebooks_profile';
 const API_BASE = '/api'; // Cloudflare Worker endpoints
 
 // Check for existing session on page load
-function initAuth() {
+function initAuthOriginal() {
   const token = sessionStorage.getItem(AUTH_KEY);
   const savedProfile = localStorage.getItem(PROFILE_KEY);
 
@@ -2389,6 +2389,15 @@ function initAuth() {
   } else {
     showLogin();
   }
+}
+
+function initAuth() {
+  // If OAuth callback flow overwrote window.initAuth before we got here, defer to it
+  if (window.__tbOAuthInProgress) {
+    console.log('[TradeBooks] initAuth deferred — OAuth callback is running');
+    return;
+  }
+  initAuthOriginal();
 }
 
 async function refreshProfile(token) {
@@ -5686,12 +5695,14 @@ async function handleGoogleCallback() {
         USER_CONFIG = applyProvinceConfig(merged);
         applyConfig();
       } catch(e) { console.error('Could not save Sheet connection:', e); }
+      window.__tbOAuthInProgress = false;
       showApp();
       toast('✅ Sheet connected! You can now import statements and send invoices.');
       return;
     }
 
     // Skip to step 4 (confirmation)
+    window.__tbOAuthInProgress = false;
     obStep = 4;
     showOnboarding();
     obStep = 4;
@@ -5726,26 +5737,45 @@ async function handleGoogleCallback() {
   const state = params.get('state');
   const error = params.get('error');
 
-  // Loud logging so we can see what happened in the browser console
   if (error) {
     console.error('[TradeBooks OAuth] Google returned error:', error, params.get('error_description') || '');
-    // Clean URL so error doesn't stick around
     window.history.replaceState({}, '', window.location.pathname);
     return;
   }
 
-  if (code && state && state.startsWith('tradebooks_setup_')) {
-    console.log('[TradeBooks OAuth] Callback detected, code length:', code.length, 'state:', state);
-    // Intercept initAuth so the app doesn't boot normally before we finish setup
-    const origInitAuth = window.initAuth;
-    window.initAuth = function() {
-      console.log('[TradeBooks OAuth] Running handleGoogleCallback');
-      handleGoogleCallback().catch(e => {
-        console.error('[TradeBooks OAuth] Callback failed:', e);
-        // Fall back to normal boot so the user isn't completely stuck
-        origInitAuth();
-      });
-    };
+  // Only intervene if we actually have a TradeBooks OAuth callback
+  if (!code || !state || !state.startsWith('tradebooks_setup_')) return;
+
+  console.log('[TradeBooks OAuth] Callback detected, code length:', code.length, 'state:', state);
+
+  // Flag so initAuth knows to stand down
+  window.__tbOAuthInProgress = true;
+
+  // Replace initAuth so DOMContentLoaded doesn't boot the app in parallel with our callback
+  window.initAuth = function() {
+    console.log('[TradeBooks OAuth] initAuth suppressed — OAuth callback in progress');
+  };
+
+  // Run the callback as soon as the DOM and script are both ready
+  function runCallback() {
+    console.log('[TradeBooks OAuth] Running handleGoogleCallback');
+    if (typeof handleGoogleCallback !== 'function') {
+      console.error('[TradeBooks OAuth] handleGoogleCallback is not defined yet — retrying in 100ms');
+      setTimeout(runCallback, 100);
+      return;
+    }
+    handleGoogleCallback().catch(e => {
+      console.error('[TradeBooks OAuth] Callback failed:', e);
+      window.__tbOAuthInProgress = false;
+      // Fall back to a normal boot so the user isn't stranded
+      try { initAuthOriginal(); } catch(_) { location.reload(); }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runCallback);
+  } else {
+    runCallback();
   }
 })();
 

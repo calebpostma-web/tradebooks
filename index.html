@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TradeBooks — AI Bookkeeping for Canadian Small Business</title>
+<title>AI Bookkeeper — Bookkeeping for Canadian Small Business</title>
 <meta name="description" content="AI-powered bookkeeping built for Canadian small businesses. Import bank statements, scan receipts, generate invoices, file HST. $49/month. No accountant needed.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -108,23 +108,27 @@ nav{
   box-shadow:0 2px 12px rgba(27,107,58,.3);
 }
 
-/* ── SOCIAL PROOF ── */
-.proof{
-  background:var(--ink);color:var(--paper);padding:3.5rem 2.5rem;
+/* ── FOUNDER STORY ── */
+.founder{
+  background:var(--ink);color:var(--paper);padding:4rem 2.5rem;
   text-align:center;
 }
-.proof-inner{max-width:800px;margin:0 auto}
-.proof-logos{
+.founder-inner{max-width:760px;margin:0 auto}
+.founder-logos{
   display:flex;justify-content:center;gap:3rem;align-items:center;
-  margin-bottom:1.5rem;opacity:.5;
+  margin-bottom:2.25rem;opacity:.45;
   font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
 }
-.proof-quote{
-  font-family:var(--serif);font-size:1.4rem;font-weight:300;
-  font-style:italic;line-height:1.6;margin-bottom:1rem;
-  color:rgba(246,244,239,.85);
+.founder-label{
+  font-family:var(--mono);font-size:.65rem;letter-spacing:.14em;
+  color:rgba(246,244,239,.4);text-transform:uppercase;margin-bottom:1rem;
 }
-.proof-attr{font-size:.82rem;color:rgba(246,244,239,.4);font-family:var(--mono);font-size:.72rem}
+.founder-quote{
+  font-family:var(--serif);font-size:1.3rem;font-weight:300;
+  line-height:1.65;margin-bottom:1.25rem;
+  color:rgba(246,244,239,.92);
+}
+.founder-attr{font-size:.82rem;color:rgba(246,244,239,.5);font-family:var(--mono);font-size:.72rem;letter-spacing:.04em}
 
 /* ── FEATURES ── */
 .features{max-width:1140px;margin:0 auto;padding:5rem 2.5rem}
@@ -208,7 +212,7 @@ nav{
 .faq-q::after{content:'+';font-size:1.2rem;color:var(--ink3);transition:transform .2s}
 .faq-item.open .faq-q::after{transform:rotate(45deg)}
 .faq-a{font-size:.88rem;color:var(--ink3);line-height:1.7;max-height:0;overflow:hidden;transition:max-height .3s,padding .3s;font-weight:300}
-.faq-item.open .faq-a{max-height:200px;padding-top:.75rem}
+.faq-item.open .faq-a{max-height:220px;padding-top:.75rem}
 
 /* ── CTA ── */
 .cta-section{background:var(--ink);padding:5rem 2.5rem;text-align:center}
@@ -245,7 +249,8 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
   .how-steps{grid-template-columns:1fr 1fr;gap:1.5rem}
   .nav-links a:not(.nav-cta){display:none}
   .nav-inner{padding:.85rem 1.5rem}
-  .proof-logos{flex-wrap:wrap;gap:1.5rem}
+  .founder-logos{flex-wrap:wrap;gap:1.5rem}
+  .founder-quote{font-size:1.1rem}
 }
 @media(max-width:500px){
   .hero h1{font-size:1.9rem}
@@ -261,12 +266,12 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
 <!-- NAV -->
 <nav>
   <div class="nav-inner">
-    <a href="#" class="nav-logo"><span class="nav-dot"></span>TradeBooks</a>
+    <a href="#" class="nav-logo"><span class="nav-dot"></span>AI Bookkeeper</a>
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
-      <a href="/app" class="nav-cta">Log in</a>
+      <a href="/app/" class="nav-cta">Log in</a>
     </div>
   </div>
 </nav>
@@ -281,7 +286,7 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
       Get real tax advice. All from your phone — no accountant needed.
     </p>
     <div class="hero-actions">
-      <a href="/app" class="btn-hero">Start free trial →</a>
+      <a href="/app/" class="btn-hero">Start free trial →</a>
       <a href="#features" class="btn-ghost">See how it works</a>
     </div>
     <span class="hero-price">14 days free · $49/month after · Cancel anytime</span>
@@ -319,17 +324,21 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
   </div>
 </section>
 
-<!-- SOCIAL PROOF -->
-<section class="proof">
-  <div class="proof-inner">
-    <div class="proof-logos">
+<!-- FOUNDER STORY -->
+<section class="founder">
+  <div class="founder-inner">
+    <div class="founder-logos">
       <span>BMO</span><span>TD</span><span>RBC</span><span>AMEX</span><span>SCOTIABANK</span><span>CIBC</span>
     </div>
-    <div class="proof-quote">
-      "I used to spend $4,000 a year on a bookkeeper. Now I do it myself in 20 minutes
-      a month on my phone. The AI categorization is scary accurate."
+    <div class="founder-label">— Why this exists —</div>
+    <div class="founder-quote">
+      I run three businesses out of Chatham, Ontario — contracting, HVAC, and tires. No
+      employees. I'm the one answering the phone, running the jobs, and filing the HST.
+      I was paying $4,000 a year for a bookkeeper and still doing half the work myself.
+      Nothing on the market fit how I actually work. So I built this — something I could
+      do from my truck, in 20 minutes at the end of the month.
     </div>
-    <div class="proof-attr">— Mike S. · Plumber · London, ON</div>
+    <div class="founder-attr">— Caleb Postma · Founder · Chatham, ON</div>
   </div>
 </section>
 
@@ -424,7 +433,7 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
     <p>
       Unlike QuickBooks or FreshBooks, your financial data lives in a <strong>Google Sheet in your own Google Drive</strong>.
       We never store your transactions, receipts, or invoices on our servers.
-      If you cancel TradeBooks tomorrow, every dollar you've ever tracked is still right there in your Sheet.
+      If you cancel AI Bookkeeper tomorrow, every dollar you've ever tracked is still right there in your Sheet.
     </p>
     <p><strong>We provide the intelligence. You keep the data.</strong></p>
   </div>
@@ -450,13 +459,13 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
       <div class="price-feat"><span class="price-check">✓</span>Monthly health check + duplicate detection</div>
       <div class="price-feat"><span class="price-check">✓</span>Your data stays in your Google Sheet</div>
     </div>
-    <a href="/app" class="price-btn">Start your free trial →</a>
+    <a href="/app/" class="price-btn">Start your free trial →</a>
     <div class="price-note">No credit card required to start</div>
   </div>
   <div class="price-compare">
-    <strong>How this compares:</strong> QuickBooks charges $25-55/month and doesn't include AI categorization or Canadian tax advice.
-    A bookkeeper costs $200-500/month. An accountant for basic bookkeeping runs $3,000-5,000/year.
-    TradeBooks does 90% of what they do for $49/month.
+    <strong>How this compares:</strong> QuickBooks charges $25–55/month and doesn't include AI categorization or Canadian tax advice.
+    A bookkeeper costs $200–500/month. An accountant for basic bookkeeping runs $3,000–5,000/year.
+    AI Bookkeeper does 90% of what they do for $49/month.
   </div>
 </section>
 
@@ -465,7 +474,7 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
   <h2>Frequently asked questions</h2>
   <div class="faq-item" onclick="this.classList.toggle('open')">
     <div class="faq-q">Do I need accounting experience?</div>
-    <div class="faq-a">No. TradeBooks is built for business owners, not accountants. The AI handles categorization, HST extraction, and tax calculations. You just review what it did and confirm. If something looks wrong, change it with a dropdown — the AI learns your patterns over time.</div>
+    <div class="faq-a">No. AI Bookkeeper is built for business owners, not accountants. The AI handles categorization, HST extraction, and tax calculations. You just review what it did and confirm. If something looks wrong, change it with a dropdown — the AI learns your patterns over time.</div>
   </div>
   <div class="faq-item" onclick="this.classList.toggle('open')">
     <div class="faq-q">Which banks are supported?</div>
@@ -477,7 +486,7 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
   </div>
   <div class="faq-item" onclick="this.classList.toggle('open')">
     <div class="faq-q">Can I use this for my corporation AND sole proprietorship?</div>
-    <div class="faq-a">Yes. During setup, you choose your business type — sole proprietor or incorporated. TradeBooks shows the right tax forms for each: T2125 for sole props, T2 for corporations. Both get full HST, payroll, and AI tax advice.</div>
+    <div class="faq-a">Yes. During setup, you choose your business type — sole proprietor or incorporated. AI Bookkeeper shows the right tax forms for each: T2125 for sole props, T2 for corporations. Both get full HST, payroll, and AI tax advice.</div>
   </div>
   <div class="faq-item" onclick="this.classList.toggle('open')">
     <div class="faq-q">What happens if I cancel?</div>
@@ -485,11 +494,11 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
   </div>
   <div class="faq-item" onclick="this.classList.toggle('open')">
     <div class="faq-q">Does this replace my accountant?</div>
-    <div class="faq-a">For day-to-day bookkeeping, yes. TradeBooks handles statement imports, categorization, HST tracking, invoicing, and tax estimation. You may still want an accountant for year-end filing, complex tax planning, or audit situations — but you'll save thousands on routine bookkeeping.</div>
+    <div class="faq-a">For day-to-day bookkeeping, yes. AI Bookkeeper handles statement imports, categorization, HST tracking, invoicing, and tax estimation. You may still want an accountant for year-end filing, complex tax planning, or audit situations — but you'll save thousands on routine bookkeeping.</div>
   </div>
   <div class="faq-item" onclick="this.classList.toggle('open')">
     <div class="faq-q">Does it work on my phone?</div>
-    <div class="faq-a">Yes. TradeBooks is a web app that works on any device — phone, tablet, laptop. No app to install. The receipt scanner opens your phone camera directly. Most users do their monthly bookkeeping on their phone in under 20 minutes.</div>
+    <div class="faq-a">Yes. AI Bookkeeper is a web app that works on any device — phone, tablet, laptop. No app to install. The receipt scanner opens your phone camera directly. Most users do their monthly bookkeeping on their phone in under 20 minutes.</div>
   </div>
 </section>
 
@@ -497,20 +506,20 @@ footer{padding:3rem 2.5rem;border-top:1px solid var(--rule)}
 <section class="cta-section">
   <div class="cta-inner">
     <h2>Stop dreading tax season.</h2>
-    <p>Join hundreds of Canadian small business owners who manage their own books with AI. Set up in 10 minutes. No accounting degree required.</p>
-    <a href="/app" class="cta-btn">Start your free trial →</a>
+    <p>Built by a Canadian small business owner who got tired of paying $4,000 a year for bookkeeping. Set up in 10 minutes. No accounting degree required.</p>
+    <a href="/app/" class="cta-btn">Start your free trial →</a>
   </div>
 </section>
 
 <!-- FOOTER -->
 <footer>
   <div class="footer-inner">
-    <div class="footer-brand">TradeBooks · AI Bookkeeping for Canadian Small Business</div>
+    <div class="footer-brand">AI Bookkeeper · Bookkeeping for Canadian Small Business</div>
     <div class="footer-links">
       <a href="#features">Features</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
-      <a href="/app">Log in</a>
+      <a href="/app/">Log in</a>
     </div>
   </div>
 </footer>

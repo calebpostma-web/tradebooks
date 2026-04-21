@@ -5375,21 +5375,34 @@ function settingsGoogleSetup(){
   // Seed obProfile with the user's current settings so the OAuth callback
   // can create a sheet that matches what they already set up
   const C = USER_CONFIG || {};
-  obProfile.businessName     = C.businessName || '';
-  obProfile.tradingName      = C.tradingName || '';
-  obProfile.ownerName        = C.ownerName || '';
-  obProfile.email            = C.email || '';
-  obProfile.city             = C.city || '';
-  obProfile.province         = C.province || 'ON';
-  obProfile.hstNumber        = C.hstNumber || '';
-  obProfile.businessType     = C.businessType || 'sole_prop';
-  obProfile.fiscalYearEnd    = C.fiscalYearEnd || 'December 31';
-  obProfile.primaryBank      = C.primaryBank || 'BMO';
-  obProfile.creditCard       = C.creditCard || 'AMEX';
-  obProfile.invoiceStart     = C.invoiceStart || 1001;
-  obProfile.homeOfficePercent= C.homeOfficePercent || 0;
-  obProfile.structure        = C.structure || '';
-  obProfile.activities       = C.activities || '';
+  const seeded = {
+    businessName:      C.businessName || '',
+    tradingName:       C.tradingName || '',
+    ownerName:         C.ownerName || '',
+    email:             C.email || '',
+    city:              C.city || '',
+    province:          C.province || 'ON',
+    hstNumber:         C.hstNumber || '',
+    businessType:      C.businessType || 'sole_prop',
+    fiscalYearEnd:     C.fiscalYearEnd || 'December 31',
+    primaryBank:       C.primaryBank || 'BMO',
+    creditCard:        C.creditCard || 'AMEX',
+    invoiceStart:      C.invoiceStart || 1001,
+    homeOfficePercent: C.homeOfficePercent || 0,
+    structure:         C.structure || '',
+    activities:        C.activities || '',
+  };
+  Object.assign(obProfile, seeded);
+
+  // CRITICAL: Persist seeded values through the redirect.
+  // Plain JS variables (obProfile, USER_CONFIG) are wiped by the full page reload.
+  sessionStorage.setItem('tb_google_seeded_profile', JSON.stringify(seeded));
+
+  // Also stash the user's auth token so the callback can re-fetch the profile
+  // from the server after the redirect (token sessionStorage typically survives same-origin redirects,
+  // but we add this as an explicit marker too)
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if (token) sessionStorage.setItem('tb_google_auth_token', token);
 
   // Mark that we're running from Settings (so callback returns here, not onboarding)
   sessionStorage.setItem('tb_google_from_settings', '1');
@@ -5619,6 +5632,38 @@ async function handleGoogleCallback() {
 
   if (!code || !state) return false;
 
+  // Restore seeded obProfile values that were persisted before the OAuth redirect
+  try {
+    const seededRaw = sessionStorage.getItem('tb_google_seeded_profile');
+    if (seededRaw) {
+      const seeded = JSON.parse(seededRaw);
+      Object.assign(obProfile, seeded);
+      console.log('[TradeBooks OAuth] Restored seeded profile from sessionStorage');
+    }
+  } catch(_) { /* non-critical */ }
+
+  // If from Settings, also try to restore the auth token and refresh USER_CONFIG
+  // from the server so we don't wipe out anything when we merge later.
+  const fromSettingsEarly = sessionStorage.getItem('tb_google_from_settings') === '1';
+  if (fromSettingsEarly) {
+    let token = sessionStorage.getItem(AUTH_KEY) || sessionStorage.getItem('tb_google_auth_token');
+    if (token) {
+      sessionStorage.setItem(AUTH_KEY, token);
+      try {
+        const r = await fetch(`${API_BASE}/profile`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (r.ok) {
+          const d = await r.json();
+          if (d.profile) {
+            USER_CONFIG = applyProvinceConfig(d.profile);
+            console.log('[TradeBooks OAuth] Refreshed USER_CONFIG from server');
+          }
+        }
+      } catch(e) {
+        console.warn('[TradeBooks OAuth] Could not refresh profile:', e.message);
+      }
+    }
+  }
+
   // Verify state
   const savedState = sessionStorage.getItem('google_oauth_state');
   if (!savedState || !state.startsWith('tradebooks_setup_')) return false;
@@ -5682,19 +5727,45 @@ async function handleGoogleCallback() {
     sessionStorage.removeItem('tb_google_from_settings');
 
     if (fromSettings) {
+      // Clean up the persisted seeded profile — we don't need it anymore
+      sessionStorage.removeItem('tb_google_seeded_profile');
+      sessionStorage.removeItem('tb_google_auth_token');
+
       try {
-        // Merge new Sheet details into the existing user profile and save
+        // Merge: start from server-refreshed USER_CONFIG, overlay the seeded
+        // obProfile values (in case USER_CONFIG is still empty after redirect),
+        // then apply the new Google Sheet details on top.
         const merged = {
           ...USER_CONFIG,
-          sheetId: obProfile.sheetId,
-          scriptUrl: obProfile.scriptUrl,
-          email: obProfile.email,
-          ownerName: obProfile.ownerName,
+          businessName:      USER_CONFIG.businessName      || obProfile.businessName      || '',
+          tradingName:       USER_CONFIG.tradingName       || obProfile.tradingName       || '',
+          ownerName:         obProfile.ownerName           || USER_CONFIG.ownerName       || '',
+          email:             obProfile.email               || USER_CONFIG.email           || '',
+          city:              USER_CONFIG.city              || obProfile.city              || '',
+          province:          USER_CONFIG.province          || obProfile.province          || 'ON',
+          hstNumber:         USER_CONFIG.hstNumber         || obProfile.hstNumber         || '',
+          businessType:      USER_CONFIG.businessType      || obProfile.businessType      || 'sole_prop',
+          fiscalYearEnd:     USER_CONFIG.fiscalYearEnd     || obProfile.fiscalYearEnd     || 'December 31',
+          primaryBank:       USER_CONFIG.primaryBank       || obProfile.primaryBank       || 'BMO',
+          creditCard:        USER_CONFIG.creditCard        || obProfile.creditCard        || 'AMEX',
+          invoiceStart:      USER_CONFIG.invoiceStart      || obProfile.invoiceStart      || 1001,
+          homeOfficePercent: USER_CONFIG.homeOfficePercent || obProfile.homeOfficePercent || 0,
+          structure:         USER_CONFIG.structure         || obProfile.structure         || '',
+          activities:        USER_CONFIG.activities        || obProfile.activities        || '',
+          sheetId:           obProfile.sheetId,
+          scriptUrl:         obProfile.scriptUrl,
         };
+        if (!merged.businessName) {
+          // Last-resort fallback so the API validation doesn't reject the PUT
+          merged.businessName = 'My Business';
+        }
         await saveProfile(merged);
         USER_CONFIG = applyProvinceConfig(merged);
         applyConfig();
-      } catch(e) { console.error('Could not save Sheet connection:', e); }
+      } catch(e) {
+        console.error('Could not save Sheet connection:', e);
+        toast('Saved sheet but could not update profile: ' + e.message);
+      }
       window.__tbOAuthInProgress = false;
       showApp();
       toast('✅ Sheet connected! You can now import statements and send invoices.');

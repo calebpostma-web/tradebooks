@@ -907,7 +907,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         </div>
         <hr class="divider">
         <div class="field"><label>Client name</label><input type="text" id="invClient" placeholder="Client name" oninput="invUpdate()" list="clientSugg"><datalist id="clientSugg"></datalist></div>
-        <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;City, Province" oninput="invUpdate()"></textarea></div>
+        <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;<span data-dynamic="city"></span>, <span data-dynamic="province"></span>" oninput="invUpdate()"></textarea></div>
         <div class="field"><label>Client email (optional)</label><input type="email" id="invEmail" placeholder="billing@client.com" oninput="invUpdate()"></div>
         <hr class="divider">
         <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.6rem">Line items</div>
@@ -933,7 +933,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Live preview</div>
       <div class="inv-doc" id="invDoc">
         <div class="inv-doc-header">
-          <div><div class="inv-co-name" id="prevCoName">Your Business</div><div class="inv-co-detail" id="prevCoDetail">Your City, Province</div></div>
+          <div><div class="inv-co-name" id="prevCoName" id="prevCoName">Your Business</div><div class="inv-co-detail" id="prevCoDetail">Your City, Province</div></div>
           <div><div class="inv-doc-title">Invoice</div><div class="inv-doc-num" id="prevNum">#1001</div></div>
         </div>
         <div class="inv-meta">
@@ -2361,7 +2361,7 @@ const PROFILE_KEY = 'tradebooks_profile';
 const API_BASE = '/api'; // Cloudflare Worker endpoints
 
 // Check for existing session on page load
-function initAuthOriginal() {
+function initAuth() {
   const token = sessionStorage.getItem(AUTH_KEY);
   const savedProfile = localStorage.getItem(PROFILE_KEY);
 
@@ -2389,15 +2389,6 @@ function initAuthOriginal() {
   } else {
     showLogin();
   }
-}
-
-function initAuth() {
-  // If OAuth callback flow overwrote window.initAuth before we got here, defer to it
-  if (window.__tbOAuthInProgress) {
-    console.log('[TradeBooks] initAuth deferred — OAuth callback is running');
-    return;
-  }
-  initAuthOriginal();
 }
 
 async function refreshProfile(token) {
@@ -2625,11 +2616,6 @@ function rebuildInvoiceCompanies() {
   // Show/hide company switcher
   const switcher = document.getElementById('companySwitch');
   if (switcher) switcher.style.display = C.tradingName ? '' : 'none';
-
-  // Re-render invoice preview now that company data is populated
-  if (typeof invUpdate === 'function') {
-    try { invUpdate(); } catch(e) { /* invUpdate may not be ready on first load */ }
-  }
 }
 
 function updateTaxProfile() {
@@ -3191,8 +3177,7 @@ async function sendToSheets(){
   const url = getSheetsUrl();
 
   if(!url){
-    toast('Connect your Google Sheet to continue — opening Settings…');
-    setTimeout(openSettings, 400);
+    toast('Connect your Google Sheet first — go to Settings or complete onboarding');
     return;
   }
 
@@ -3389,26 +3374,15 @@ function invUpdate(){
     <div class="tot-row final"><span>Total</span><span class="tot-val big">$${fmtMoney(total)}</span></div>`;
 
   // Update company header in preview
-  const co = INV_COMPANIES[activeCompany] || {};
+  const co = INV_COMPANIES[activeCompany];
   const nameEl = document.getElementById('prevCoName');
   const detailEl = document.getElementById('prevCoDetail');
   const footerHST = document.getElementById('prevFooterHST');
   const footerName = document.getElementById('prevFooterName');
-  if(nameEl) nameEl.textContent = co.name || 'Your Business (set in Settings)';
-  if(detailEl){
-    const parts = [];
-    if(co.subline) parts.push('<span style="font-size:.7rem;color:var(--ink3)">'+esc(co.subline)+'</span>');
-    const addr = [USER_CONFIG?.city, USER_CONFIG?.province].filter(Boolean).join(', ');
-    if(addr) parts.push(esc(addr));
-    if(co.email) parts.push(esc(co.email));
-    if(co.hst) parts.push('HST# '+esc(co.hst));
-    detailEl.innerHTML = parts.join('<br>');
-  }
-  if(footerHST) footerHST.textContent = co.hst ? ('HST Registration: '+co.hst) : '';
-  if(footerName){
-    const loc = [USER_CONFIG?.city, USER_CONFIG?.province].filter(Boolean).join(', ');
-    footerName.textContent = co.name ? (co.name + (loc?' · '+loc:'')) : '';
-  }
+  if(nameEl) nameEl.textContent = co.name;
+  if(detailEl) detailEl.innerHTML = (co.subline?'<span style="font-size:.7rem;color:var(--ink3)">'+co.subline+'</span><br>':'') + co.address + '<br>' + co.email + '<br>HST# ' + co.hst;
+  if(footerHST) footerHST.textContent = 'HST Registration: ' + co.hst;
+  if(footerName) footerName.textContent = co.name + ' · <span data-dynamic="city"></span>, <span data-dynamic="province"></span>';
   document.getElementById('prevNum').textContent='#'+invNum;
   let billTo=client||'<em style="color:var(--ink3)">Client name</em>';
   if(addr)billTo+='<br><span style="color:var(--ink3);font-size:.78rem">'+addr.replace(/\n/g,'<br>')+'</span>';
@@ -3453,7 +3427,7 @@ async function invSendToSheets(){
   const dateVal = document.getElementById('invDate').value;
   const dueVal = document.getElementById('invDue').value;
 
-  if(!url){ toast('Connect your Google Sheet to continue — opening Settings…'); setTimeout(openSettings, 400); return; }
+  if(!url){ toast('Connect your Google Sheet first — complete onboarding or check Settings'); return; }
   if(!client){ toast('Please enter a client name first'); return; }
 
   const taxRate = USER_CONFIG?.taxRate || 0.13;
@@ -3610,8 +3584,7 @@ async function rcptSendToSheets(){
   const cat = document.getElementById('rcptCatSel')?.value || r.category || 'Other';
  
   if(!url){
-    toast('Connect your Google Sheet to continue — opening Settings…');
-    setTimeout(openSettings, 400);
+    toast('Connect your Google Sheet first — complete onboarding or check Settings');
     return;
   }
  
@@ -5310,34 +5283,10 @@ function renderSettings(){
     <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">These will appear in all category dropdowns alongside the standard categories. The AI will learn to use them when categorizing your transactions.</div>
 
     <hr class="divider">
-    <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Google Sheet Connection</div>
-    ${C.scriptUrl ? `
-      <div style="background:var(--greenlt);border:1px solid #b8ddc8;border-radius:var(--radius);padding:.85rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:.65rem">
-        <span style="font-size:1.1rem">✅</span>
-        <div style="flex:1;font-size:.82rem;color:var(--green)">
-          <strong>Connected</strong>
-          ${C.sheetUrl ? `<br><a href="${C.sheetUrl}" target="_blank" style="color:var(--green);text-decoration:underline;font-size:.75rem">Open your Sheet ↗</a>` : ''}
-        </div>
-      </div>
-    ` : `
-      <div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:1rem;margin-bottom:1rem">
-        <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.35rem">⚠️ Your Google Sheet isn't connected yet</div>
-        <div style="font-size:.8rem;color:var(--ink2);line-height:1.5;margin-bottom:.75rem">Without this, importing statements, sending invoices, and scanning receipts won't work. Click below and we'll create your bookkeeping sheet automatically.</div>
-        <button id="settingsGoogleBtn" style="padding:.6rem 1.5rem;background:white;color:var(--ink);border:1px solid #ddd;border-radius:var(--radius);font-size:.88rem;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem;font-family:var(--sans)" onclick="settingsGoogleSetup()">
-          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-          Sign in with Google
-        </button>
-        <div id="settingsGoogleStatus" style="font-size:.78rem;color:var(--ink3);margin-top:.5rem;display:none"></div>
-      </div>
-    `}
-    <details style="margin-bottom:1rem">
-      <summary style="cursor:pointer;font-size:.78rem;color:var(--ink3);padding:.35rem 0">Advanced: paste Sheet ID and Script URL manually</summary>
-      <div style="padding-top:.6rem">
-        ${f('Google Sheet ID','set_sheetId',C.sheetId)}
-        ${f('Apps Script URL','set_scriptUrl',C.scriptUrl)}
-        <div style="font-size:.75rem;color:var(--ink3);margin-top:-.5rem">The Apps Script URL is the web app URL from Extensions → Apps Script → Deploy.</div>
-      </div>
-    </details>
+    <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Google Sheet Connection</div>
+    ${f('Google Sheet ID','set_sheetId',C.sheetId)}
+    ${f('Apps Script URL','set_scriptUrl',C.scriptUrl)}
+    <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">The Apps Script URL is the web app URL from Extensions → Apps Script → Deploy.</div>
 
     ${C.businessType==='incorporated'?`
     <hr class="divider">
@@ -5363,52 +5312,6 @@ function renderSettings(){
       Combined corp rate: ${((0.09 + prov.provSBD)*100).toFixed(1)}%
     </div>
   `;
-}
-
-// Kick off Google OAuth from Settings — reuses the same flow as onboarding
-function settingsGoogleSetup(){
-  const btn = document.getElementById('settingsGoogleBtn');
-  const status = document.getElementById('settingsGoogleStatus');
-  if (btn) btn.disabled = true;
-  if (status) { status.style.display = 'block'; status.textContent = 'Opening Google sign-in...'; }
-
-  // Seed obProfile with the user's current settings so the OAuth callback
-  // can create a sheet that matches what they already set up
-  const C = USER_CONFIG || {};
-  const seeded = {
-    businessName:      C.businessName || '',
-    tradingName:       C.tradingName || '',
-    ownerName:         C.ownerName || '',
-    email:             C.email || '',
-    city:              C.city || '',
-    province:          C.province || 'ON',
-    hstNumber:         C.hstNumber || '',
-    businessType:      C.businessType || 'sole_prop',
-    fiscalYearEnd:     C.fiscalYearEnd || 'December 31',
-    primaryBank:       C.primaryBank || 'BMO',
-    creditCard:        C.creditCard || 'AMEX',
-    invoiceStart:      C.invoiceStart || 1001,
-    homeOfficePercent: C.homeOfficePercent || 0,
-    structure:         C.structure || '',
-    activities:        C.activities || '',
-  };
-  Object.assign(obProfile, seeded);
-
-  // CRITICAL: Persist seeded values through the redirect.
-  // Plain JS variables (obProfile, USER_CONFIG) are wiped by the full page reload.
-  sessionStorage.setItem('tb_google_seeded_profile', JSON.stringify(seeded));
-
-  // Also stash the user's auth token so the callback can re-fetch the profile
-  // from the server after the redirect (token sessionStorage typically survives same-origin redirects,
-  // but we add this as an explicit marker too)
-  const token = sessionStorage.getItem(AUTH_KEY);
-  if (token) sessionStorage.setItem('tb_google_auth_token', token);
-
-  // Mark that we're running from Settings (so callback returns here, not onboarding)
-  sessionStorage.setItem('tb_google_from_settings', '1');
-
-  // Reuse the existing OAuth builder
-  googleAutoSetup();
 }
 
 async function saveSettings(){
@@ -5578,6 +5481,23 @@ function obBack(){obStep=Math.max(0,obStep-1);obRender()}
 
 async function obComplete(){
   const p=obProfile;
+
+  // Final validation — if any required field is missing, kick back to
+  // step 0 so the user can fix it, rather than showing a confusing
+  // backend 400 error.
+  if (!p.businessName || !p.businessName.trim()) {
+    toast('Your business name is required. Please fill it in to continue.');
+    obStep = 0;
+    obRender();
+    return;
+  }
+  if (!p.businessType) {
+    toast('Please select sole proprietor or incorporated.');
+    obStep = 0;
+    obRender();
+    return;
+  }
+
   p.ownerName=p.ownerName||USER_CONFIG.ownerName||'';
   p.email=p.email||USER_CONFIG.email||'';
   p.clients=p.clients.filter(Boolean);
@@ -5601,6 +5521,19 @@ const GOOGLE_CLIENT_ID = '156430400132-g1svqh7tu8c31lf10afu2hm1koqec1vo.apps.goo
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/script.deployments https://www.googleapis.com/auth/userinfo.email';
 
 function googleAutoSetup() {
+  // Validate required fields before redirecting to Google. If anything's
+  // missing, send the user back to step 0 to fill it in — don't create a
+  // sheet with empty business name / type.
+  const missing = [];
+  if (!obProfile.businessName || !obProfile.businessName.trim()) missing.push('business name');
+  if (!obProfile.businessType) missing.push('business type (sole prop / incorporated)');
+  if (missing.length) {
+    toast('Please fill in: ' + missing.join(', '));
+    obStep = 0;
+    obRender();
+    return;
+  }
+
   const btn = document.getElementById('googleSignInBtn');
   const status = document.getElementById('googleSetupStatus');
   if (btn) btn.disabled = true;
@@ -5610,6 +5543,12 @@ function googleAutoSetup() {
   const redirectUri = window.location.origin + '/app/';
   const state = 'tradebooks_setup_' + Date.now();
   sessionStorage.setItem('google_oauth_state', state);
+
+  // Persist obProfile across the full-page redirect so businessName etc.
+  // survive the round-trip to Google and back. Without this, obProfile resets
+  // to empty when the page reloads and the sheet + profile get saved empty.
+  try { sessionStorage.setItem('tb_ob_profile', JSON.stringify(obProfile)); }
+  catch (e) { /* ignore — not critical */ }
 
   const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -5632,42 +5571,23 @@ async function handleGoogleCallback() {
 
   if (!code || !state) return false;
 
-  // Restore seeded obProfile values that were persisted before the OAuth redirect
-  try {
-    const seededRaw = sessionStorage.getItem('tb_google_seeded_profile');
-    if (seededRaw) {
-      const seeded = JSON.parse(seededRaw);
-      Object.assign(obProfile, seeded);
-      console.log('[TradeBooks OAuth] Restored seeded profile from sessionStorage');
-    }
-  } catch(_) { /* non-critical */ }
-
-  // If from Settings, also try to restore the auth token and refresh USER_CONFIG
-  // from the server so we don't wipe out anything when we merge later.
-  const fromSettingsEarly = sessionStorage.getItem('tb_google_from_settings') === '1';
-  if (fromSettingsEarly) {
-    let token = sessionStorage.getItem(AUTH_KEY) || sessionStorage.getItem('tb_google_auth_token');
-    if (token) {
-      sessionStorage.setItem(AUTH_KEY, token);
-      try {
-        const r = await fetch(`${API_BASE}/profile`, { headers: { 'Authorization': `Bearer ${token}` } });
-        if (r.ok) {
-          const d = await r.json();
-          if (d.profile) {
-            USER_CONFIG = applyProvinceConfig(d.profile);
-            console.log('[TradeBooks OAuth] Refreshed USER_CONFIG from server');
-          }
-        }
-      } catch(e) {
-        console.warn('[TradeBooks OAuth] Could not refresh profile:', e.message);
-      }
-    }
-  }
-
   // Verify state
   const savedState = sessionStorage.getItem('google_oauth_state');
   if (!savedState || !state.startsWith('tradebooks_setup_')) return false;
   sessionStorage.removeItem('google_oauth_state');
+
+  // Restore obProfile from before the Google redirect — business name, city,
+  // etc. were entered in onboarding steps 0–2 and would otherwise be lost
+  // when the page reloaded after coming back from Google.
+  try {
+    const saved = sessionStorage.getItem('tb_ob_profile');
+    if (saved) {
+      const restored = JSON.parse(saved);
+      // Merge — preserve defaults for any missing keys
+      obProfile = { ...obProfile, ...restored };
+      sessionStorage.removeItem('tb_ob_profile');
+    }
+  } catch (e) { /* ignore */ }
 
   // Clean URL
   window.history.replaceState({}, '', window.location.pathname);
@@ -5721,59 +5641,7 @@ async function handleGoogleCallback() {
     obProfile.email = obProfile.email || tokenData.email || '';
     obProfile.ownerName = obProfile.ownerName || tokenData.name || '';
 
-    // If this was triggered from Settings (existing user), save directly to their profile
-    // and drop them back into the app — don't send them through onboarding again.
-    const fromSettings = sessionStorage.getItem('tb_google_from_settings') === '1';
-    sessionStorage.removeItem('tb_google_from_settings');
-
-    if (fromSettings) {
-      // Clean up the persisted seeded profile — we don't need it anymore
-      sessionStorage.removeItem('tb_google_seeded_profile');
-      sessionStorage.removeItem('tb_google_auth_token');
-
-      try {
-        // Merge: start from server-refreshed USER_CONFIG, overlay the seeded
-        // obProfile values (in case USER_CONFIG is still empty after redirect),
-        // then apply the new Google Sheet details on top.
-        const merged = {
-          ...USER_CONFIG,
-          businessName:      USER_CONFIG.businessName      || obProfile.businessName      || '',
-          tradingName:       USER_CONFIG.tradingName       || obProfile.tradingName       || '',
-          ownerName:         obProfile.ownerName           || USER_CONFIG.ownerName       || '',
-          email:             obProfile.email               || USER_CONFIG.email           || '',
-          city:              USER_CONFIG.city              || obProfile.city              || '',
-          province:          USER_CONFIG.province          || obProfile.province          || 'ON',
-          hstNumber:         USER_CONFIG.hstNumber         || obProfile.hstNumber         || '',
-          businessType:      USER_CONFIG.businessType      || obProfile.businessType      || 'sole_prop',
-          fiscalYearEnd:     USER_CONFIG.fiscalYearEnd     || obProfile.fiscalYearEnd     || 'December 31',
-          primaryBank:       USER_CONFIG.primaryBank       || obProfile.primaryBank       || 'BMO',
-          creditCard:        USER_CONFIG.creditCard        || obProfile.creditCard        || 'AMEX',
-          invoiceStart:      USER_CONFIG.invoiceStart      || obProfile.invoiceStart      || 1001,
-          homeOfficePercent: USER_CONFIG.homeOfficePercent || obProfile.homeOfficePercent || 0,
-          structure:         USER_CONFIG.structure         || obProfile.structure         || '',
-          activities:        USER_CONFIG.activities        || obProfile.activities        || '',
-          sheetId:           obProfile.sheetId,
-          scriptUrl:         obProfile.scriptUrl,
-        };
-        if (!merged.businessName) {
-          // Last-resort fallback so the API validation doesn't reject the PUT
-          merged.businessName = 'My Business';
-        }
-        await saveProfile(merged);
-        USER_CONFIG = applyProvinceConfig(merged);
-        applyConfig();
-      } catch(e) {
-        console.error('Could not save Sheet connection:', e);
-        toast('Saved sheet but could not update profile: ' + e.message);
-      }
-      window.__tbOAuthInProgress = false;
-      showApp();
-      toast('✅ Sheet connected! You can now import statements and send invoices.');
-      return;
-    }
-
     // Skip to step 4 (confirmation)
-    window.__tbOAuthInProgress = false;
     obStep = 4;
     showOnboarding();
     obStep = 4;
@@ -5786,68 +5654,25 @@ async function handleGoogleCallback() {
   } catch (e) {
     console.error('Google setup error:', e);
     toast('Setup error: ' + e.message);
-    const fromSettings = sessionStorage.getItem('tb_google_from_settings') === '1';
-    sessionStorage.removeItem('tb_google_from_settings');
-    if (fromSettings) {
-      // Existing user — just send them back to the app and let them retry
-      showApp();
-      setTimeout(openSettings, 300);
-    } else {
-      // Fall back to onboarding step 3 (manual path)
-      showOnboarding();
-      obStep = 3;
-      obRender();
-    }
+    // Fall back to onboarding step 3 (manual path)
+    showOnboarding();
+    obStep = 3;
+    obRender();
   }
 }
 
-// Check for OAuth callback on page load — runs BEFORE anything else
+// Check for OAuth callback on page load
 (function() {
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  const state = params.get('state');
-  const error = params.get('error');
-
-  if (error) {
-    console.error('[TradeBooks OAuth] Google returned error:', error, params.get('error_description') || '');
-    window.history.replaceState({}, '', window.location.pathname);
-    return;
-  }
-
-  // Only intervene if we actually have a TradeBooks OAuth callback
-  if (!code || !state || !state.startsWith('tradebooks_setup_')) return;
-
-  console.log('[TradeBooks OAuth] Callback detected, code length:', code.length, 'state:', state);
-
-  // Flag so initAuth knows to stand down
-  window.__tbOAuthInProgress = true;
-
-  // Replace initAuth so DOMContentLoaded doesn't boot the app in parallel with our callback
-  window.initAuth = function() {
-    console.log('[TradeBooks OAuth] initAuth suppressed — OAuth callback in progress');
-  };
-
-  // Run the callback as soon as the DOM and script are both ready
-  function runCallback() {
-    console.log('[TradeBooks OAuth] Running handleGoogleCallback');
-    if (typeof handleGoogleCallback !== 'function') {
-      console.error('[TradeBooks OAuth] handleGoogleCallback is not defined yet — retrying in 100ms');
-      setTimeout(runCallback, 100);
+  const origInitAuth = initAuth;
+  initAuth = function() {
+    // Check for Google OAuth callback first
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('code') && params.get('state')?.startsWith('tradebooks_setup_')) {
+      handleGoogleCallback();
       return;
     }
-    handleGoogleCallback().catch(e => {
-      console.error('[TradeBooks OAuth] Callback failed:', e);
-      window.__tbOAuthInProgress = false;
-      // Fall back to a normal boot so the user isn't stranded
-      try { initAuthOriginal(); } catch(_) { location.reload(); }
-    });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', runCallback);
-  } else {
-    runCallback();
-  }
+    origInitAuth();
+  };
 })();
 
 // ════════════════════════════════════════════════════════════
@@ -5856,7 +5681,7 @@ async function handleGoogleCallback() {
 
 async function taxFetchSummary(){
   const url=getSheetsUrl();
-  if(!url){toast('Connect your Google Sheet — opening Settings…');setTimeout(openSettings,400);return}
+  if(!url){toast('Connect your Google Sheet first (Settings → Apps Script URL)');return}
   const btn=document.getElementById('taxRefreshBtn');
   if(btn){btn.disabled=true;btn.textContent='⏳ Loading…'}
   try{
@@ -5893,7 +5718,7 @@ async function taxFetchSummary(){
 
 async function taxRunHealthCheck(){
   const url=getSheetsUrl();
-  if(!url){toast('Connect your Google Sheet — opening Settings…');setTimeout(openSettings,400);return}
+  if(!url){toast('Connect your Google Sheet first');return}
   const btn=document.getElementById('healthCheckBtn');
   if(btn){btn.disabled=true;btn.textContent='⏳ Scanning…'}
   try{

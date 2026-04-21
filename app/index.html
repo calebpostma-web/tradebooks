@@ -2549,6 +2549,11 @@ function applyConfig() {
 
   // Invoice company config
   rebuildInvoiceCompanies();
+  // Re-render invoice preview so the new business name shows up immediately
+  // (otherwise the user has to interact with the invoice tab to see it)
+  if (typeof invUpdate === 'function') {
+    try { invUpdate(); } catch (e) { /* preview DOM may not exist yet on first load */ }
+  }
 
   // Show/hide corp-only sections (T2, salary vs dividend, trust planning)
   // NOTE: Payroll, PD7A, T4s are available to ALL business types — sole props can have employees
@@ -3306,18 +3311,26 @@ function dlFile(name,content,type){const b=new Blob([content],{type});const a=do
 // TAB 2 — INVOICE WIZARD
 // ════════════════════════════════════════════════════════════
 // ── COMPANY PROFILES — populated dynamically from USER_CONFIG by applyConfig() ──
-let INV_COMPANIES = { primary: { name:'', address:'', email:'', hst:'', clients:[] } };
+// NOTE: This MUST reference window.INV_COMPANIES rather than declaring its own
+// local variable with `let`. rebuildInvoiceCompanies() writes to window.INV_COMPANIES;
+// a local `let` would shadow it, leaving the invoice wizard with empty name/address/hst.
+if (!window.INV_COMPANIES) {
+  window.INV_COMPANIES = { primary: { name:'', address:'', email:'', hst:'', clients:[] } };
+}
+var INV_COMPANIES = window.INV_COMPANIES;
 let activeCompany = 'primary';
 
 function setInvCompany(key){
   activeCompany = key;
+  // Re-bind to latest window.INV_COMPANIES in case applyConfig() ran after this file
+  INV_COMPANIES = window.INV_COMPANIES;
   // Update toggle buttons
   document.querySelectorAll('.co-btn').forEach(b => b.classList.remove('active'));
   document.querySelector('.co-btn[data-co="'+key+'"]').classList.add('active');
   // Update client autocomplete
   const co = INV_COMPANIES[key];
   const dl = document.getElementById('clientSugg');
-  if(dl) dl.innerHTML = co.clients.map(c=>`<option value="${c}">`).join('');
+  if(dl) dl.innerHTML = (co.clients || []).map(c=>`<option value="${c}">`).join('');
   invUpdate();
 }
 

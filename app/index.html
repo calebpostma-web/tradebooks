@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TradeBooks — AI Bookkeeping</title>
+<title>AI Bookkeeper — Bookkeeping for Ontario Small Business</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
@@ -475,7 +475,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
 <div id="loginScreen" style="display:flex">
   <div class="lock-box">
     <div class="lock-logo">T</div>
-    <div class="lock-title">TradeBooks</div>
+    <div class="lock-title">AI Bookkeeper</div>
     <div class="lock-sub">AI Bookkeeping for Canadian Small Business</div>
     <div style="margin-bottom:.75rem">
       <label style="display:block;font-family:var(--mono);font-size:.6rem;letter-spacing:.1em;color:#5a7a8a;margin-bottom:.35rem;text-transform:uppercase">Email</label>
@@ -491,7 +491,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     <div style="text-align:center;margin-top:1rem;font-size:.82rem;color:#5a7a8a">
       Don't have an account? <a onclick="setScreen('signup')" style="color:#4caf7d;cursor:pointer;text-decoration:none">Sign up</a>
     </div>
-    <div class="lock-footer">TradeBooks · AI Bookkeeping</div>
+    <div class="lock-footer">AI Bookkeeper · Bookkeeping for Ontario small business</div>
   </div>
 </div>
 
@@ -560,7 +560,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
 
 <div id="appContent" style="display:none">
 <header>
-  <div class="brand"><div class="brand-dot"></div><span id="headerBrand">TradeBooks</span></div>
+  <div class="brand"><div class="brand-dot"></div><span id="headerBrand">AI Bookkeeper</span></div>
   <div style="display:flex;align-items:center;gap:1rem">
     <div class="header-sub"><span id="headerSub">Loading…</span></div>
     <button onclick="openSettings()" style="background:none;border:none;cursor:pointer;font-size:1.1rem;opacity:.6;transition:opacity .2s" title="Settings">⚙️</button>
@@ -2518,7 +2518,7 @@ function applyConfig() {
 
   // Header
   const brand = document.querySelector('.brand');
-  if (brand) brand.innerHTML = `<div class="brand-dot"></div>${C.businessName || 'TradeBooks'} — TradeBooks`;
+  if (brand) brand.innerHTML = `<div class="brand-dot"></div>${C.businessName || 'AI Bookkeeper'}`;
 
   const sub = document.querySelector('.header-sub');
   if (sub) {
@@ -2530,7 +2530,7 @@ function applyConfig() {
   }
 
   // Title tag
-  document.title = `${C.businessName || 'TradeBooks'} — Bookkeeping`;
+  document.title = C.businessName ? `${C.businessName} — AI Bookkeeper` : 'AI Bookkeeper';
 
   // Home tiles — update bank/CC references
   document.querySelectorAll('[data-dynamic]').forEach(el => {
@@ -3899,7 +3899,7 @@ function downloadSetupGuide() {
   const blob = new Blob([arr], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'TradeBooks-Receipt-Storage-Guide.pdf'; a.click();
+  a.href = url; a.download = 'AIBookkeeper-Receipt-Storage-Guide.pdf'; a.click();
   URL.revokeObjectURL(url);
 }
 // ── Income Splitting Calculator ──
@@ -4181,7 +4181,7 @@ function calcSred() {
     setupWarnings.push({
       icon: '⚠️',
       title: 'WSIB Registration Required',
-      detail: 'Ontario trades businesses must register with WSIB within 10 days of hiring an employee. If not registered, you\'re personally liable for any workplace injuries.',
+      detail: 'Ontario businesses must register with WSIB within 10 days of hiring an employee. If not registered, you\'re personally liable for any workplace injuries.',
       link: 'https://www.wsib.ca/en/registeringwsib',
       linkText: 'WSIB: Register now →'
     });
@@ -5688,7 +5688,7 @@ async function obComplete(){
     USER_CONFIG=applyProvinceConfig(p);
     applyConfig();
     showApp();
-    toast('Welcome to TradeBooks! Import a statement or scan a receipt to get started.');
+    toast('Welcome to AI Bookkeeper! Import a statement or scan a receipt to get started.');
   }catch(e){toast('Error saving: '+e.message)}
 }
 

@@ -208,24 +208,19 @@ async function handleCreateSheet(accessToken, profile, env, headers) {
 
   // ── 5. Deploy as web app ──
   let scriptUrl = null;
+  let deploymentDebug = {};
   try {
-    const deployResp = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
-      method: 'POST',
-      headers: authHeader,
-      body: JSON.stringify({
-        versionNumber: 1,
-        manifestFileName: 'appsscript',
-        description: 'TradeBooks Web App',
-      }),
-    });
-
     // First we need to create a version
     const versionResp = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
       method: 'POST',
       headers: authHeader,
       body: JSON.stringify({ description: 'TradeBooks v1' }),
     });
-    const versionData = await versionResp.json();
+    const versionRaw = await versionResp.text();
+    let versionData;
+    try { versionData = JSON.parse(versionRaw); } catch(_) { versionData = { error: 'parse_failed', raw: versionRaw }; }
+    deploymentDebug.versionStatus = versionResp.status;
+    deploymentDebug.versionData = versionData;
 
     if (versionData.versionNumber) {
       const deployResp2 = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
@@ -243,15 +238,22 @@ async function handleCreateSheet(accessToken, profile, env, headers) {
           }],
         }),
       });
-      const deployData = await deployResp2.json();
+      const deployRaw = await deployResp2.text();
+      let deployData;
+      try { deployData = JSON.parse(deployRaw); } catch(_) { deployData = { error: 'parse_failed', raw: deployRaw }; }
+      deploymentDebug.deployStatus = deployResp2.status;
+      deploymentDebug.deployData = deployData;
+
       if (deployData.entryPoints) {
         const webApp = deployData.entryPoints.find(e => e.entryPointType === 'WEB_APP');
-        if (webApp) scriptUrl = webApp.webApp.url;
+        if (webApp && webApp.webApp && webApp.webApp.url) scriptUrl = webApp.webApp.url;
       }
     }
   } catch (deployErr) {
-    // Deployment failed — not critical, user can deploy manually
+    deploymentDebug.exception = deployErr.message;
+    deploymentDebug.exceptionStack = deployErr.stack;
   }
+  console.log('[handleCreateSheet] Deployment debug:', JSON.stringify(deploymentDebug));
 
   // ── 6. Write the script URL back to the Config tab ──
   if (scriptUrl) {
@@ -270,6 +272,7 @@ async function handleCreateSheet(accessToken, profile, env, headers) {
     spreadsheetUrl,
     scriptId,
     scriptUrl,
+    deploymentDebug,
   }), { headers });
 }
 

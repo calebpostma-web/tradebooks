@@ -22,7 +22,7 @@ export async function onRequestPost(context) {
     const body = await request.json();
 
     if (body.code) {
-      return handleTokenExchange(body.code, env, headers);
+      return handleTokenExchange(body.code, origin, env, headers);
     }
 
     if (body.action === 'create-sheet' && body.accessToken) {
@@ -50,7 +50,7 @@ export async function onRequestOptions() {
 // ════════════════════════════════════════════════════════════════════
 // STEP 1: Exchange authorization code for access + refresh tokens
 // ════════════════════════════════════════════════════════════════════
-async function handleTokenExchange(code, env, headers) {
+async function handleTokenExchange(code, origin, env, headers) {
   const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -58,7 +58,7 @@ async function handleTokenExchange(code, env, headers) {
       code,
       client_id: env.GOOGLE_CLIENT_ID,
       client_secret: env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: 'https://tradebooks-bju.pages.dev/app/',
+      redirect_uri: origin + '/app/',
       grant_type: 'authorization_code',
     }),
   });
@@ -127,7 +127,7 @@ async function handleCreateSheet(accessToken, profile, env, headers) {
     headers: authHeader,
     body: JSON.stringify({
       properties: {
-        title: `${profile.businessName || 'My Business'} — TradeBooks`,
+        title: `${profile.businessName || 'My Business'} — AI Bookkeeper`,
         locale: 'en_CA',
         timeZone: 'America/Toronto',
       },
@@ -173,7 +173,7 @@ async function handleCreateSheet(accessToken, profile, env, headers) {
   const scriptResp = await fetch('https://script.googleapis.com/v1/projects', {
     method: 'POST',
     headers: authHeader,
-    body: JSON.stringify({ title: 'TradeBooks Add-on', parentId: spreadsheetId }),
+    body: JSON.stringify({ title: 'AI Bookkeeper Add-on', parentId: spreadsheetId }),
   });
 
   const scriptData = await scriptResp.json();
@@ -205,7 +205,7 @@ async function handleCreateSheet(accessToken, profile, env, headers) {
     const versionResp = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
       method: 'POST',
       headers: authHeader,
-      body: JSON.stringify({ description: 'TradeBooks v1' }),
+      body: JSON.stringify({ description: 'AI Bookkeeper v1' }),
     });
     const versionData = await versionResp.json();
 
@@ -216,7 +216,7 @@ async function handleCreateSheet(accessToken, profile, env, headers) {
         body: JSON.stringify({
           versionNumber: versionData.versionNumber,
           manifestFileName: 'appsscript',
-          description: 'TradeBooks Web App',
+          description: 'AI Bookkeeper Web App',
         }),
       });
       const deployData = await deployResp.json();
@@ -621,7 +621,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   ]});
 
   // CONFIG
-  data.push({ range: "'⚙️ Config'!A1", values: [['⚙️ TRADEBOOKS CONFIGURATION']] });
+  data.push({ range: "'⚙️ Config'!A1", values: [['⚙️ AI BOOKKEEPER CONFIGURATION']] });
   data.push({ range: "'⚙️ Config'!A2", values: [['Edit the yellow cells below. The app reads these settings automatically.']] });
   data.push({ range: "'⚙️ Config'!A4", values: [['  BUSINESS INFORMATION']] });
   data.push({ range: "'⚙️ Config'!B5:C13", values: [
@@ -828,12 +828,12 @@ function runSummary(){const r=buildSummary(SpreadsheetApp.getActiveSpreadsheet()
 
 function readConfig(ss){const c=ss.getSheetByName(CONFIG_TAB);if(!c)return{customExpenseCats:[],customIncomeCats:[],clients:[],employees:[]};const l=c.getRange('B5:C13').getValues(),r=c.getRange('E5:F13').getValues();const cfg={businessName:l[0][1],tradingName:l[1][1],ownerName:l[2][1],city:l[3][1],province:l[4][1]||'ON',taxRate:parseFloat(l[5][1])||0.13,hstNumber:l[6][1],businessType:l[7][1]||'sole_prop',fiscalYearEnd:l[8][1]||'December 31',primaryBank:r[0][1]||'BMO',creditCard:r[1][1]||'AMEX',startingInvoice:parseInt(r[2][1])||1001,homeOfficePercent:parseInt(r[3][1])||0,email:r[4][1]||'',appsScriptUrl:r[5][1]||'',structure:r[6][1]||'',activities:r[7][1]||''};cfg.customExpenseCats=c.getRange('E17:E36').getValues().flat().filter(v=>v&&String(v).trim());const all=c.getDataRange().getValues();cfg.customIncomeCats=[];cfg.clients=[];cfg.employees=[];let sec='';for(let i=0;i<all.length;i++){const a=String(all[i][0]||'');if(a.includes('CUSTOM INCOME'))sec='inc';if(a.includes('CLIENTS'))sec='cli';if(a.includes('EMPLOYEES'))sec='emp';if(sec==='inc'){const v=String(all[i][4]||'').trim();if(v&&!v.includes('Custom'))cfg.customIncomeCats.push(v)}if(sec==='cli'){const n=String(all[i][1]||'').trim(),cat=String(all[i][4]||'').trim();if(n&&n!=='Client Name')cfg.clients.push({name:n,defaultCategory:cat||'Consulting Revenue'})}if(sec==='emp'){const n=String(all[i][1]||'').trim(),s=String(all[i][2]||'').trim(),sal=parseFloat(all[i][4])||0,st=String(all[i][5]||'Active').trim();if(n&&n!=='Employee Name')cfg.employees.push({name:n,sin3:s,salary:sal,status:st})}}return cfg}
 
-function doGet(e){try{const ss=SpreadsheetApp.getActiveSpreadsheet(),a=(e&&e.parameter&&e.parameter.action)||'';if(a==='summary')return respond(buildSummary(ss));if(a==='health')return respond(buildHealthCheck(ss));if(a==='config')return respond({ok:true,config:readConfig(ss)});if(a==='categories')return respond(buildCategoryLists(ss));const c=readConfig(ss);return respond({ok:true,message:'TradeBooks v4 ✓',business:c.businessName||'Not configured',province:c.province||'ON'})}catch(e){return respond({ok:false,error:e.message})}}
+function doGet(e){try{const ss=SpreadsheetApp.getActiveSpreadsheet(),a=(e&&e.parameter&&e.parameter.action)||'';if(a==='summary')return respond(buildSummary(ss));if(a==='health')return respond(buildHealthCheck(ss));if(a==='config')return respond({ok:true,config:readConfig(ss)});if(a==='categories')return respond(buildCategoryLists(ss));const c=readConfig(ss);return respond({ok:true,message:'AI Bookkeeper v4 ✓',business:c.businessName||'Not configured',province:c.province||'ON'})}catch(e){return respond({ok:false,error:e.message})}}
 
 function doPost(e){try{const d=JSON.parse(e.postData.contents),ss=SpreadsheetApp.getActiveSpreadsheet();if(d.type==='invoice')return handleInvoice(ss,d.invoice);if(d.type==='receipt'&&d.image)return handleReceiptUpload(ss,d);return handleRows(ss,d.rows||[],d.bank||'AMEX',d.source||'Import')}catch(e){return respond({ok:false,error:e.message})}}
 
 function handleReceiptUpload(ss,d){try{const folder=getOrCreateReceiptFolder(),today=new Date(),year=today.getFullYear(),yf=getOrCreateYearFolder(folder,year);const bytes=Utilities.base64Decode(d.image.split(',').pop()||d.image),blob=Utilities.newBlob(bytes,d.mimeType||'image/jpeg',d.filename||('Receipt_'+today.getTime()+'.jpg'));const file=yf.createFile(blob);file.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);return respond({ok:true,driveUrl:file.getUrl(),fileId:file.getId()})}catch(e){return respond({ok:false,error:'Drive upload: '+e.message})}}
-function getOrCreateReceiptFolder(){const name='TradeBooks Receipts',fs=DriveApp.getFoldersByName(name);if(fs.hasNext())return fs.next();return DriveApp.createFolder(name)}
+function getOrCreateReceiptFolder(){const name='AI Bookkeeper Receipts',fs=DriveApp.getFoldersByName(name);if(fs.hasNext())return fs.next();return DriveApp.createFolder(name)}
 function getOrCreateYearFolder(parent,year){const fs=parent.getFoldersByName(String(year));if(fs.hasNext())return fs.next();return parent.createFolder(String(year))}
 
 function buildCategoryLists(ss){const c=readConfig(ss);const de=['Meals & Entertainment','Professional Fees','Wages & Salaries','Small Tools','Supplies','Uniforms','Dues & Memberships','Vehicle Repairs','Fuel','Insurance','Interest & Bank Charges','Repairs & Maintenance','Property Tax','Telephone','Utilities','Conferences','Equipment Purchase','Inventory — Materials (COGS)','Advertising & Marketing','Subcontractors','Office Supplies','Rent','Home Office','Vehicle Lease/Payments','Travel','Training & Education','Permits & Licenses','Tax Payments','Other','Bill Payment / Transfer','Owner Draw / Distribution','Income Received','SKIP — not a business expense'];const di=['Consulting Revenue','Service Revenue','Sales Revenue','Sales Revenue — Materials','Rental Income','Interest Income','Income Received','Other Income'];const me=[...de];const oi=me.indexOf('Other');(c.customExpenseCats||[]).forEach(x=>{if(!me.includes(x))me.splice(oi,0,x)});const mi=[...di];(c.customIncomeCats||[]).forEach(x=>{if(!mi.includes(x))mi.splice(mi.length-1,0,x)});return{ok:true,expenseCategories:me,incomeCategories:mi,clients:(c.clients||[]).map(x=>x.name),clientDefaults:c.clients||[]}}

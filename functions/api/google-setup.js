@@ -48,22 +48,42 @@ export async function onRequestOptions() {
 // STEP 1: Exchange authorization code for access + refresh tokens
 // ════════════════════════════════════════════════════════════════════
 async function handleTokenExchange(code, env, headers) {
+  // ─── TEMPORARY DEBUG (remove after secret issue is resolved) ───
+  const secret = env.GOOGLE_CLIENT_SECRET || '';
+  const clientId = env.GOOGLE_CLIENT_ID || '';
+  const debug = {
+    clientIdLength: clientId.length,
+    clientIdPrefix: clientId.slice(0, 20),
+    clientIdEnd: clientId.slice(-20),
+    secretLength: secret.length,
+    secretPrefix: secret.slice(0, 7),
+    secretEnd: secret.slice(-4),
+    secretHasWhitespace: /\s/.test(secret),
+    secretHasNonAscii: /[^\x20-\x7E]/.test(secret),
+    codeLength: (code || '').length,
+  };
+  console.log('[handleTokenExchange] DEBUG:', JSON.stringify(debug));
+
   const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       code,
-      client_id: env.GOOGLE_CLIENT_ID,
-      client_secret: env.GOOGLE_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: secret,
       redirect_uri: 'https://tradebooks-bju.pages.dev/app/',
       grant_type: 'authorization_code',
     }),
   });
 
   const tokenData = await tokenResp.json();
-  
+
   if (tokenData.error) {
-    return new Response(JSON.stringify({ ok: false, error: tokenData.error_description || tokenData.error }), { headers });
+    return new Response(JSON.stringify({
+      ok: false,
+      error: tokenData.error_description || tokenData.error,
+      debug,
+    }), { headers });
   }
 
   // Get user info

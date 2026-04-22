@@ -22,7 +22,7 @@ export async function onRequestPost(context) {
     const body = await request.json();
 
     if (body.code) {
-      return handleTokenExchange(body.code, env, headers);
+      return handleTokenExchange(body.code, origin, env, headers);
     }
 
     if (body.action === 'create-sheet' && body.accessToken) {
@@ -50,7 +50,7 @@ export async function onRequestOptions() {
 // ════════════════════════════════════════════════════════════════════
 // STEP 1: Exchange authorization code for access + refresh tokens
 // ════════════════════════════════════════════════════════════════════
-async function handleTokenExchange(code, env, headers) {
+async function handleTokenExchange(code, origin, env, headers) {
   const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -58,7 +58,7 @@ async function handleTokenExchange(code, env, headers) {
       code,
       client_id: env.GOOGLE_CLIENT_ID,
       client_secret: env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: 'https://tradebooks-bju.pages.dev/app/',
+      redirect_uri: origin + '/app/',
       grant_type: 'authorization_code',
     }),
   });

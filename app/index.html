@@ -2832,7 +2832,7 @@ async function callClaudeWithPDF(prompt, b64, maxTokens = 4096) {
 // ════════════════════════════════════════════════════════════════════
 // INIT — run on page load
 // ════════════════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', initAuth);
+document.addEventListener('DOMContentLoaded', () => initAuth());
 
 
 // SHARED UTILITIES

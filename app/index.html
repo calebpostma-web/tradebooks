@@ -5820,6 +5820,28 @@ async function handleManualCreateCallback(code) {
       throw new Error('Sheet creation returned no spreadsheet ID');
     }
 
+    // The sheet got created, but check if styling/data population failed silently
+    if (setupData.setupErrors && setupData.setupErrors.length) {
+      // Save what we have anyway (sheet ID is valid), but warn about partial setup
+      console.warn('Sheet created but partial setup failure:', setupData.setupErrors);
+      hideLoading();
+      if (typeof openSettings === 'function') openSettings();
+      setTimeout(() => {
+        showManualCreateError('Sheet was created but some parts failed to set up:\n\n• ' + setupData.setupErrors.join('\n• ') + '\n\nThe sheet ID has been saved — you may need to manually add formatting or report this to support.');
+      }, 200);
+      // Still save the sheet info so they can use the bare sheet
+      const updatedProfile = {
+        ...savedProfile,
+        sheetId: setupData.spreadsheetId,
+        sheetUrl: setupData.spreadsheetUrl || '',
+        scriptUrl: setupData.scriptUrl || '',
+        email: savedProfile.email || tokenData.email || '',
+        ownerName: savedProfile.ownerName || tokenData.name || '',
+      };
+      try { await saveProfile(updatedProfile); } catch (e) { console.error('saveProfile after partial:', e); }
+      return true;
+    }
+
     // Step 3: Save the new sheet info into the user's profile via the existing API
     showLoading('Saving to your profile...');
     const updatedProfile = {

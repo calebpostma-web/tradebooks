@@ -772,9 +772,9 @@ async function populateValues(accessToken, spreadsheetId, profile) {
     `=SUMIF('💰 Income'!G12:G500,"${cat}",'💰 Income'!F12:F500)`,
     '', '', '← from Income tab'
   ]);
-  data.push({ range: "'📅 Year-End'!B5:F10", values: [
+  data.push({ range: "'📅 Year-End'!B5:F11", values: [
     ...incomeRows,
-    ['TOTAL REVENUE', '=SUM(C5:C9)', '', '', '← T2 Schedule 1 Line 8000'],
+    ['TOTAL REVENUE', '=SUM(C5:C10)', '', '', '← T2 Schedule 1 Line 8000'],
   ]});
 
   data.push({ range: "'📅 Year-End'!A12", values: [['  DEDUCTIBLE EXPENSES (T2 Schedule 1)']] });

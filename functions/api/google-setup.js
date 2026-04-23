@@ -199,77 +199,19 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
     setupErrors.push(`Population threw: ${e.message}`);
   }
 
-  // Create Apps Script project
-  const scriptResp = await fetch('https://script.googleapis.com/v1/projects', {
-    method: 'POST',
-    headers: authHeader,
-    body: JSON.stringify({ title: 'TradeBooks Add-on', parentId: spreadsheetId }),
-  });
-
-  const scriptData = await scriptResp.json();
-  if (scriptData.error) {
-    return new Response(JSON.stringify({
-      ok: true, spreadsheetId, spreadsheetUrl,
-      scriptError: scriptData.error.message || 'Could not create Apps Script',
-      scriptUrl: null,
-    }), { headers });
-  }
-
-  const scriptId = scriptData.scriptId;
-
-  // Push Apps Script code
-  await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/content`, {
-    method: 'PUT',
-    headers: authHeader,
-    body: JSON.stringify({
-      files: [
-        { name: 'Code', type: 'SERVER_JS', source: getAppsScriptCode() },
-        { name: 'appsscript', type: 'JSON', source: getAppsScriptManifest() },
-      ],
-    }),
-  });
-
-  // Deploy as web app
-  let scriptUrl = null;
-  try {
-    const versionResp = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
-      method: 'POST',
-      headers: authHeader,
-      body: JSON.stringify({ description: 'TradeBooks v1' }),
-    });
-    const versionData = await versionResp.json();
-
-    if (versionData.versionNumber) {
-      const deployResp = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
-        method: 'POST',
-        headers: authHeader,
-        body: JSON.stringify({
-          versionNumber: versionData.versionNumber,
-          manifestFileName: 'appsscript',
-          description: 'TradeBooks Web App',
-        }),
-      });
-      const deployData = await deployResp.json();
-      if (deployData.entryPoints) {
-        const webApp = deployData.entryPoints.find(e => e.entryPointType === 'WEB_APP');
-        if (webApp && webApp.webApp && webApp.webApp.url) scriptUrl = webApp.webApp.url;
-      }
-    }
-  } catch (deployErr) { /* non-blocking */ }
-
-  // Write script URL back to Config F10
-  if (scriptUrl) {
+  // Persist sheet_id to the user's profile
+  if (userId) {
     try {
-      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/%E2%9A%99%EF%B8%8F%20Config!F10?valueInputOption=RAW`, {
-        method: 'PUT',
-        headers: authHeader,
-        body: JSON.stringify({ values: [[scriptUrl]] }),
-      });
-    } catch (e) { /* non-critical */ }
+      await env.DB.prepare('UPDATE profiles SET sheet_id = ? WHERE user_id = ?')
+        .bind(spreadsheetId, userId)
+        .run();
+    } catch (e) { /* non-blocking */ }
   }
 
   return new Response(JSON.stringify({
-    ok: true, spreadsheetId, spreadsheetUrl, scriptId, scriptUrl,
+    ok: true,
+    spreadsheetId,
+    spreadsheetUrl,
     setupErrors: setupErrors.length ? setupErrors : null,
   }), { headers });
 }

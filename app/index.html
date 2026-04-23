@@ -2326,7 +2326,6 @@ let USER_CONFIG = {
   activities: '',
   sheetId: '',
   sheetUrl: '',
-  scriptUrl: '',
   homeOfficePercent: 0,
   fedSBDRate: 0.09,
   provSBDRate: 0.032,
@@ -2662,19 +2661,6 @@ function calcHST() {
     }
   });
 }
-
-
-// ════════════════════════════════════════════════════════════════════
-// DYNAMIC SHEETS URL (replaces hardcoded SHEETS_URL)
-// ════════════════════════════════════════════════════════════════════
-
-function getSheetsUrl() {
-  return USER_CONFIG.scriptUrl || '';
-}
-
-// Replace all `SHEETS_URL` references with `getSheetsUrl()`
-// Or: const SHEETS_URL = () => USER_CONFIG.scriptUrl;
-
 
 // ════════════════════════════════════════════════════════════════════
 // DYNAMIC AI PROMPTS
@@ -3180,14 +3166,17 @@ function impReset(){
   const title=document.getElementById('impUploadTitle');if(title)title.textContent='Drop your statement here';
 }
 async function impRerun(){document.getElementById('impProgWrap').classList.remove('hidden');await runImpAI()}
-// getSheetsUrl defined in TRADEBOOKS CORE MODULE above
 
 async function sendToSheets(){
   const btn = document.getElementById('sendSheetsBtn');
   const status = document.getElementById('sendSheetsStatus');
-  const url = getSheetsUrl();
+  const token = sessionStorage.getItem(AUTH_KEY);
 
-  if(!url){
+  if(!token){
+    toast('Please sign in first');
+    return;
+  }
+  if(!USER_CONFIG.sheetId){
     toast('Connect your Google Sheet first — go to Settings or complete onboarding');
     return;
   }
@@ -3236,9 +3225,12 @@ const EXCLUDED = new Set(['SKIP — not a business expense','Bill Payment / Tran
   }
 
   try {
-    const r = await fetch(url, {
+    const r = await fetch('/api/import/statement', {
       method: 'POST',
-      headers: {'Content-Type': 'text/plain'},
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
       body: JSON.stringify(payload)
     });
     const d = await r.json();
@@ -3449,13 +3441,14 @@ function invPrint(){
 async function invSendToSheets(){
   const btn = document.getElementById('invSheetsBtn');
   const status = document.getElementById('invSheetsStatus');
-  const url = getSheetsUrl();
+  const token = sessionStorage.getItem(AUTH_KEY);
   const hst = document.getElementById('invHST').checked;
   const client = document.getElementById('invClient').value.trim();
   const dateVal = document.getElementById('invDate').value;
   const dueVal = document.getElementById('invDue').value;
 
-  if(!url){ toast('Connect your Google Sheet first — complete onboarding or check Settings'); return; }
+  if(!token){ toast('Please sign in first'); return; }
+  if(!USER_CONFIG.sheetId){ toast('Connect your Google Sheet first — complete onboarding or check Settings'); return; }
   if(!client){ toast('Please enter a client name first'); return; }
 
   const taxRate = USER_CONFIG?.taxRate || 0.13;
@@ -3474,8 +3467,8 @@ async function invSendToSheets(){
     invoice: {
       company: co.name || USER_CONFIG?.businessName || '',
       invNum, dateVal, dueVal, client,
-      desc, sub, taxAmt: hstAmt, total,
-      taxCharged: hst ? 'Yes' : 'No',
+      desc, sub, hstAmt, total,
+      hst: hst ? 'Yes' : 'No',
       lines: invLines.map(l=>({
         desc: l.desc,
         qty: parseFloat(l.qty)||0,
@@ -3486,9 +3479,12 @@ async function invSendToSheets(){
   };
 
   try {
-    const r = await fetch(url, {
+    const r = await fetch('/api/invoice/create', {
       method: 'POST',
-      headers: {'Content-Type': 'text/plain'},
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
       body: JSON.stringify(payload)
     });
     const d = await r.json();
@@ -3608,10 +3604,14 @@ async function rcptSendToSheets(){
   const r = rcptResult;
   const btn = document.getElementById('rcptSheetsBtn');
   const status = document.getElementById('rcptSheetsStatus');
-  const url = getSheetsUrl();
+  const token = sessionStorage.getItem(AUTH_KEY);
   const cat = document.getElementById('rcptCatSel')?.value || r.category || 'Other';
  
-  if(!url){
+  if(!token){
+    toast('Please sign in first');
+    return;
+  }
+  if(!USER_CONFIG.sheetId){
     toast('Connect your Google Sheet first — complete onboarding or check Settings');
     return;
   }
@@ -3623,8 +3623,11 @@ async function rcptSendToSheets(){
   btn.textContent = '⏳ Sending…';
   status.textContent = 'Sending to Google Sheets…';
  
-  const payload = {
-    bank: USER_CONFIG?.creditCard || 'Receipt',
+  // Two-call sequence: (1) upload image to Drive (best-effort), (2) write ledger row.
+  // No receipt→ledger clickthrough in Phase 1 — Drive URL lives in console/response only.
+  const statementPayload = {
+    bank: 'Receipt',
+    source: 'Receipt Scanner',
     rows: [{
       date: r.date || '',
       vendor: r.vendor || '',
@@ -3633,21 +3636,44 @@ async function rcptSendToSheets(){
       category: cat,
       hst: parseFloat(r.hst) || 0,
       net: -(parseFloat(r.net) || 0),
-      receiptVerified: true,
-      matchedStatement: matchedTxn ? matchedTxn.vendor : null
     }],
-    // ── NEW: include receipt image for Google Drive backup ──
-    receiptImage: rcptB64 || null,
-    receiptMimeType: rcptMediaType || null
   };
- 
+
   try {
-    const resp = await fetch(url, {
+    // Step 1: upload the receipt image to Drive (best-effort — don't block ledger write)
+    let driveUrl = null;
+    if (rcptB64) {
+      try {
+        const upResp = await fetch('/api/receipt/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token,
+          },
+          body: JSON.stringify({
+            image: rcptB64,
+            mimeType: rcptMediaType || 'image/jpeg',
+          }),
+        });
+        const upData = await upResp.json();
+        if (upData.ok) driveUrl = upData.driveUrl;
+        else console.warn('Receipt image upload failed:', upData.error);
+      } catch (e) {
+        console.warn('Receipt image upload threw:', e);
+      }
+    }
+
+    // Step 2: write the expense row to the ledger
+    const resp = await fetch('/api/import/statement', {
       method: 'POST',
-      headers: {'Content-Type': 'text/plain'},
-      body: JSON.stringify(payload)
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      body: JSON.stringify(statementPayload),
     });
     const d = await resp.json();
+    if (driveUrl) d.receiptDriveUrl = driveUrl; // existing success-branch code reads this
  
     if(d.ok) {
       btn.textContent = '✓ Sent!';
@@ -5315,14 +5341,12 @@ function renderSettings(){
     ${!C.sheetId ? `
       <div style="padding:1rem 1.1rem;background:var(--greenlt);border:1px solid #b8ddc8;border-radius:var(--radius);margin-bottom:1rem">
         <div style="font-weight:500;color:var(--greendark);margin-bottom:.4rem">📊 No sheet connected yet</div>
-        <div style="font-size:.82rem;color:var(--ink2);line-height:1.5;margin-bottom:.75rem">Click below to sign in with Google and we'll create your bookkeeping sheet automatically — all 7 styled tabs, formulas, and Apps Script ready to go.</div>
+        <div style="font-size:.82rem;color:var(--ink2);line-height:1.5;margin-bottom:.75rem">Click below to sign in with Google and we'll create your bookkeeping sheet automatically — all 7 styled tabs, formulas, and Categories ready to go.</div>
         <button class="btn btn-green btn-sm" onclick="manualCreateSheet()" id="manualCreateSheetBtn">🚀 Create my Google Sheet</button>
       </div>
     ` : ''}
     <div id="manualCreateError" style="display:none;padding:.9rem 1rem;background:#fff7f7;border:1px solid #f0c2c2;border-radius:var(--radius);margin-bottom:1rem;font-size:.85rem;line-height:1.55"></div>
     ${f('Google Sheet ID','set_sheetId',C.sheetId)}
-    ${f('Apps Script URL','set_scriptUrl',C.scriptUrl)}
-    <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">The Apps Script URL is the web app URL from Extensions → Apps Script → Deploy. If you used the "Create my Google Sheet" button above, both fields fill in automatically.</div>
 
     ${C.businessType==='incorporated'?`
     <hr class="divider">
@@ -5371,7 +5395,6 @@ async function saveSettings(){
     customExpenseCats: (document.getElementById('set_customExpenseCats')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
     customIncomeCats: (document.getElementById('set_customIncomeCats')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
     sheetId: document.getElementById('set_sheetId')?.value || '',
-    scriptUrl: document.getElementById('set_scriptUrl')?.value || '',
     structure: document.getElementById('set_structure')?.value || '',
     activities: document.getElementById('set_activities')?.value || '',
     ownerName: USER_CONFIG.ownerName || '',
@@ -5400,7 +5423,7 @@ let obProfile = {
   fiscalYearEnd:'December 31', primaryBank:'BMO', creditCard:'AMEX',
   invoiceStart:1001, homeOfficePercent:0,
   clients:['',''], employees:[], structure:'', activities:'',
-  sheetId:'', scriptUrl:''
+  sheetId:''
 };
 
 const OB_STEPS = [
@@ -5473,7 +5496,6 @@ function obRender(){
       <!-- PATH B: Manual setup -->
       <div id="obPathB">
         ${field('Google Sheet ID','ob_sheetId','Paste the long ID from your Sheet URL',p.sheetId)}
-        ${field('Apps Script URL (optional)','ob_scriptUrl','https://script.google.com/macros/s/...',p.scriptUrl)}
         ${hint('Create a sheet from the add-on or copy the template, then paste the ID here.')}
       </div>`; break;
     case 4:
@@ -5648,7 +5670,7 @@ function showManualCreateError(message) {
     errEl.style.display = 'block';
     errEl.innerHTML = `<div style="font-weight:500;color:var(--red);margin-bottom:.3rem">❌ Sheet creation failed</div>
       <div style="color:var(--ink2);font-size:.82rem">${esc(message)}</div>
-      <div style="margin-top:.6rem;font-size:.78rem;color:var(--ink3)">Try again, or paste the Sheet ID and Apps Script URL manually below.</div>`;
+      <div style="margin-top:.6rem;font-size:.78rem;color:var(--ink3)">Try again, or paste the Sheet ID manually below.</div>`;
     errEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   const btn = document.getElementById('manualCreateSheetBtn');
@@ -5743,7 +5765,6 @@ async function handleGoogleCallback() {
 
     // Success — populate the profile with the new sheet info
     obProfile.sheetId = setupData.spreadsheetId;
-    obProfile.scriptUrl = setupData.scriptUrl || '';
     obProfile.email = obProfile.email || tokenData.email || '';
     obProfile.ownerName = obProfile.ownerName || tokenData.name || '';
 
@@ -5802,7 +5823,7 @@ async function handleManualCreateCallback(code) {
       throw new Error('Google sign-in failed: ' + (tokenData.error || 'unknown'));
     }
 
-    // Step 2: Create the sheet + Apps Script
+    // Step 2: Create the sheet
     showLoading('Building your sheet — 7 tabs, formulas, formatting...');
     const setupResp = await fetch('/api/google-setup', {
       method: 'POST',
@@ -5855,7 +5876,6 @@ async function handleManualCreateCallback(code) {
         ...savedProfile,
         sheetId: setupData.spreadsheetId,
         sheetUrl: setupData.spreadsheetUrl || '',
-        scriptUrl: setupData.scriptUrl || '',
         email: savedProfile.email || tokenData.email || '',
         ownerName: savedProfile.ownerName || tokenData.name || '',
       };
@@ -5869,7 +5889,6 @@ async function handleManualCreateCallback(code) {
       ...savedProfile,
       sheetId:   setupData.spreadsheetId,
       sheetUrl:  setupData.spreadsheetUrl || '',
-      scriptUrl: setupData.scriptUrl || '',
       email:     savedProfile.email || tokenData.email || '',
       ownerName: savedProfile.ownerName || tokenData.name || '',
     };
@@ -5915,64 +5934,11 @@ async function handleManualCreateCallback(code) {
 // ════════════════════════════════════════════════════════════
 
 async function taxFetchSummary(){
-  const url=getSheetsUrl();
-  if(!url){toast('Connect your Google Sheet first (Settings → Apps Script URL)');return}
-  const btn=document.getElementById('taxRefreshBtn');
-  if(btn){btn.disabled=true;btn.textContent='⏳ Loading…'}
-  try{
-    const r=await fetch(url+'?action=summary');
-    const data=await r.json();
-    if(!data.ok) throw new Error(data.error||'Failed');
-    // Populate manual input fields with real data
-    const revEl=document.getElementById('ti-revenue');
-    const expEl=document.getElementById('ti-expenses');
-    const wageEl=document.getElementById('ti-wages');
-    if(revEl) revEl.value=data.totalRevenue||0;
-    if(expEl) expEl.value=data.totalExpenses||0;
-    if(wageEl) wageEl.value=data.expensesByCategory?.['Wages & Salaries']||0;
-    taxCalc();
-    // Show detail
-    const d=document.getElementById('taxSummaryDetail');
-    if(d){
-      let cats='';
-      if(data.topExpenses) cats=data.topExpenses.map(e=>`<div style="display:flex;justify-content:space-between;padding:.2rem 0;border-bottom:1px solid var(--paper2);font-size:.8rem"><span>${e.category}</span><span style="font-family:var(--mono)">$${fmtMoney(e.amount)}</span></div>`).join('');
-      d.innerHTML=`<div style="font-family:var(--mono);font-size:.6rem;color:var(--ink3);letter-spacing:.06em;margin-bottom:.5rem">AUTO-LOADED FROM GOOGLE SHEET</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.75rem">
-          <div style="background:var(--greenlt);border-radius:var(--radius);padding:.5rem;text-align:center"><div style="font-size:.62rem;color:var(--green);font-family:var(--mono)">HST COLLECTED</div><div style="font-family:var(--serif);font-size:1rem;color:var(--green)">$${fmtMoney(data.hstCollected||0)}</div></div>
-          <div style="background:var(--amberlt);border-radius:var(--radius);padding:.5rem;text-align:center"><div style="font-size:.62rem;color:var(--amber);font-family:var(--mono)">HST OWING</div><div style="font-family:var(--serif);font-size:1rem;color:var(--amber)">$${fmtMoney(data.hstNetOwing||0)}</div></div>
-        </div>
-        ${data.unpaidInvoices>0?`<div style="background:var(--redlt);border:1px solid #e8b8b8;border-radius:var(--radius);padding:.5rem;font-size:.78rem;color:var(--red);margin-bottom:.6rem">📌 ${data.unpaidInvoices} unpaid invoice(s) — $${fmtMoney(data.unpaidTotal||0)}</div>`:''}
-        ${cats?`<div style="font-size:.78rem;margin-bottom:.3rem"><strong>Top expenses:</strong></div>${cats}`:''}
-        ${data.missingCategories?.length?`<div style="font-size:.75rem;color:var(--amber);margin-top:.5rem">⚠️ No entries for: ${data.missingCategories.join(', ')}</div>`:''}
-        <div style="font-size:.72rem;color:var(--ink3);margin-top:.4rem">${data.transactionCount||0} transactions · ${data.invoiceCount||0} invoices</div>`;
-    }
-    toast('Numbers loaded from your Google Sheet');
-  }catch(e){toast('Could not load: '+e.message)}
-  if(btn){btn.disabled=false;btn.textContent='🔄 Refresh from Google Sheet'}
+  toast('Tax Intelligence is being rebuilt — available in the next update');
 }
 
 async function taxRunHealthCheck(){
-  const url=getSheetsUrl();
-  if(!url){toast('Connect your Google Sheet first');return}
-  const btn=document.getElementById('healthCheckBtn');
-  if(btn){btn.disabled=true;btn.textContent='⏳ Scanning…'}
-  try{
-    const r=await fetch(url+'?action=health');
-    const data=await r.json();
-    if(!data.ok) throw new Error(data.error||'Failed');
-    const div=document.getElementById('healthCheckResult');
-    if(div){
-      const gc={A:'var(--green)',B:'var(--green2)',C:'var(--amber)',D:'var(--red)',F:'var(--red)'};
-      div.innerHTML=`<div style="display:flex;align-items:center;gap:1rem;margin-bottom:.75rem">
-        <div style="width:56px;height:56px;border-radius:50%;background:${gc[data.grade]||'var(--ink3)'};color:white;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:1.6rem;font-weight:600;flex-shrink:0">${data.grade}</div>
-        <div><div style="font-family:var(--serif);font-size:1.1rem">${data.score}/100</div><div style="font-size:.8rem;color:var(--ink3)">${data.summary}</div></div>
-      </div>
-      ${data.issues.map(i=>`<div style="display:flex;gap:.5rem;padding:.5rem 0;border-bottom:1px solid var(--paper2);font-size:.8rem;line-height:1.5"><span style="flex-shrink:0">${i.severity==='error'?'🔴':i.severity==='warning'?'🟡':'ℹ️'}</span><span>${i.message}</span></div>`).join('')}
-      ${data.issues.length===0?'<div style="text-align:center;padding:.75rem;color:var(--green);font-size:.85rem">✅ No issues — your books look great!</div>':''}`;
-    }
-    toast(`Health: ${data.grade} (${data.score}/100)`);
-  }catch(e){toast('Health check failed: '+e.message)}
-  if(btn){btn.disabled=false;btn.textContent='🏥 Run Health Check'}
+  toast('Tax Intelligence is being rebuilt — available in the next update');
 }
 
 // ════════════════════════════════════════════════════════════

@@ -5695,10 +5695,14 @@ async function handleGoogleCallback() {
   showLoading('Setting up your bookkeeping sheet...');
 
   try {
+    const token = sessionStorage.getItem(AUTH_KEY);
     // Step 1: Exchange code for tokens
     const tokenResp = await fetch('/api/google-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({ code }),
     });
     const tokenData = await tokenResp.json();
@@ -5708,7 +5712,10 @@ async function handleGoogleCallback() {
     showLoading('Creating your bookkeeping sheet...');
     const setupResp = await fetch('/api/google-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({
         action: 'create-sheet',
         accessToken: tokenData.accessToken,
@@ -5782,10 +5789,14 @@ async function handleManualCreateCallback(code) {
   showLoading('Creating your bookkeeping sheet... this takes about 20 seconds.');
 
   try {
+    const token = sessionStorage.getItem(AUTH_KEY);
     // Step 1: Exchange OAuth code for access token
     const tokenResp = await fetch('/api/google-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({ code }),
     });
     const tokenData = await tokenResp.json();
@@ -5797,7 +5808,10 @@ async function handleManualCreateCallback(code) {
     showLoading('Building your sheet — 7 tabs, formulas, formatting...');
     const setupResp = await fetch('/api/google-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({
         action: 'create-sheet',
         accessToken: tokenData.accessToken,

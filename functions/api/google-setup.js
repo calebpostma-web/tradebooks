@@ -1,3 +1,6 @@
+import { authenticateRequest } from '../_shared.js';
+import { saveGoogleRefreshToken } from '../_google.js';
+
 // functions/api/google-setup.js
 // Handles Google OAuth token exchange and automatic sheet + script creation
 // POST /api/google-setup with { code } or { action: 'create-sheet', token }
@@ -20,13 +23,15 @@ export async function onRequestPost(context) {
 
   try {
     const body = await request.json();
+    const auth = await authenticateRequest(request, env);
+    const userId = auth?.ok ? auth.userId : null;
 
     if (body.code) {
-      return handleTokenExchange(body.code, origin, env, headers);
+      return handleTokenExchange(body.code, origin, env, headers, userId);
     }
 
     if (body.action === 'create-sheet' && body.accessToken) {
-      return handleCreateSheet(body.accessToken, body.profile || {}, env, headers);
+      return handleCreateSheet(body.accessToken, body.profile || {}, env, headers, userId);
     }
 
     return new Response(JSON.stringify({ ok: false, error: 'Invalid request' }), { headers });
@@ -50,7 +55,7 @@ export async function onRequestOptions() {
 // ════════════════════════════════════════════════════════════════════
 // STEP 1: Exchange authorization code for access + refresh tokens
 // ════════════════════════════════════════════════════════════════════
-async function handleTokenExchange(code, origin, env, headers) {
+async function handleTokenExchange(code, origin, env, headers, userId) {
   const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -77,10 +82,20 @@ async function handleTokenExchange(code, origin, env, headers) {
   });
   const userInfo = await userResp.json();
 
+  // Persist refresh token so the Worker can act on the user's sheet without re-OAuth
+  if (userId && tokenData.refresh_token) {
+    await saveGoogleRefreshToken(
+      env,
+      userId,
+      tokenData.refresh_token,
+      tokenData.access_token,
+      tokenData.expires_in,
+    );
+  }
+
   return new Response(JSON.stringify({
     ok: true,
     accessToken: tokenData.access_token,
-    refreshToken: tokenData.refresh_token,
     expiresIn: tokenData.expires_in,
     email: userInfo.email,
     name: userInfo.name,
@@ -118,7 +133,7 @@ const COLORS = {
 // ════════════════════════════════════════════════════════════════════
 // STEP 2: Create Google Sheet with full styling
 // ════════════════════════════════════════════════════════════════════
-async function handleCreateSheet(accessToken, profile, env, headers) {
+async function handleCreateSheet(accessToken, profile, env, headers, userId) {
   const authHeader = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
 
   // Create the Google Sheet with all 7 tabs

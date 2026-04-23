@@ -3192,8 +3192,10 @@ async function sendToSheets(){
     return;
   }
 
-  const EXCLUDED = new Set(['SKIP — not a business expense','Bill Payment / Transfer','Owner Draw / Distribution']);
-  const rows = impTxns.filter(tx => !tx.excluded && tx.category && !EXCLUDED.has(tx.category));
+const EXCLUDED = new Set(['SKIP — not a business expense','Bill Payment / Transfer','Owner Draw / Distribution','Income Received']);
+  const allCategorized = impTxns.filter(tx => !tx.excluded && tx.category);
+  const rows = allCategorized.filter(tx => !EXCLUDED.has(tx.category));
+  const skippedRows = allCategorized.filter(tx => EXCLUDED.has(tx.category));
 
   if(!rows.length){
     toast('No rows to send — all transactions are excluded or uncategorized');
@@ -3202,7 +3204,11 @@ async function sendToSheets(){
 
   btn.disabled = true;
   btn.textContent = '⏳ Sending…';
-  status.textContent = `Sending ${rows.length} rows to Google Sheets…`;
+  let statusMsg = `Sending ${rows.length} of ${allCategorized.length} rows to Google Sheets…`;
+  if(skippedRows.length){
+    statusMsg += ` (${skippedRows.length} skipped: bill payments, transfers, or owner draws — these don't go in the books)`;
+  }
+  status.textContent = statusMsg;
 
   const payload = {
     bank: impBank === 'CC' ? (USER_CONFIG?.creditCard || 'AMEX') : (USER_CONFIG?.primaryBank || 'BMO'),
@@ -3243,8 +3249,11 @@ async function sendToSheets(){
       btn.style.background = 'var(--green)';
 
       // Build result message
-      let msg = `✅ <strong>${(d.expenses||0)+(d.income||0)} entries</strong> added to your Google Sheet.`;
-      if(d.skipped) msg += ` ${d.skipped} transfers skipped.`;
+let msg = `✅ <strong>${(d.expenses||0)+(d.income||0)} entries</strong> added to your Google Sheet.`;
+      const totalSkipped = (d.skipped || 0) + skippedRows.length;
+      if(totalSkipped > 0){
+        msg += ` <span style="color:var(--ink3);font-size:.85rem">${totalSkipped} skipped — transfers, bill payments, and owner draws don't count as business expenses.</span>`;
+      }
 
       // Duplicate detection results from backend
       if(d.duplicatesBlocked > 0){

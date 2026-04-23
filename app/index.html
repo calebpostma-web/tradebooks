@@ -5753,9 +5753,7 @@ async function handleGoogleCallback() {
     obStep = 4;
     obRender();
 
-    toast(setupData.scriptUrl
-      ? '✅ Sheet created and script deployed automatically!'
-      : '✅ Sheet created! You may need to deploy the script manually for full features.');
+   toast('✅ Sheet created! Your books are ready to go.');
 
   } catch (e) {
     console.error('Google setup error:', e);
@@ -5879,10 +5877,7 @@ async function handleManualCreateCallback(code) {
 
     // Step 4: Reload so USER_CONFIG picks up the new sheet info from D1
     hideLoading();
-    const successMsg = setupData.scriptUrl
-      ? '✅ Sheet created and Apps Script deployed! Reloading...'
-      : '⚠️ Sheet created but Apps Script deployment failed — you may need to deploy it manually. Reloading...';
-    toast(successMsg);
+    toast('✅ Sheet created! Reloading...');
     setTimeout(() => { window.location.reload(); }, 1800);
 
   } catch (e) {

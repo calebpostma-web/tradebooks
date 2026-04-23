@@ -24,7 +24,7 @@ export async function onRequestPost(context) {
   try {
     const body = await request.json();
     const auth = await authenticateRequest(request, env);
-    const userId = auth?.ok ? auth.userId : null;
+    const userId = auth?.userId || null;
 
     if (body.code) {
       return handleTokenExchange(body.code, origin, env, headers, userId);

@@ -2066,11 +2066,46 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     </div>
   </div>
 
-  <!-- ─── Pay Runs sub-panel (Stage 3 — placeholder) ─── -->
+  <!-- ─── Pay Runs sub-panel ─── -->
   <div id="pay-sub-payruns" class="pay-sub-panel" style="display:none">
-    <div style="background:var(--paper2);border:1px dashed var(--rule);border-radius:var(--radius);padding:2rem;text-align:center;color:var(--ink3)">
-      <div style="font-size:1.2rem;margin-bottom:.5rem">🚧 Pay Runs coming in Stage 3</div>
-      <div style="font-size:.85rem">Select an employee + pay period → system pulls Work Log entries, runs age-aware deduction engine, previews gross/net, and commits to your Payroll ledger + Transactions tab.</div>
+    <div style="display:grid;grid-template-columns:380px 1fr;gap:1.5rem">
+      <!-- Left: Pay run inputs -->
+      <div>
+        <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:.6rem">New pay run</div>
+        <div style="display:flex;flex-direction:column;gap:.65rem">
+          <div class="field">
+            <label>Employee</label>
+            <select id="pr_employeeId" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;background:white" onchange="prReset()"></select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+            <div class="field"><label>Period start</label><input type="date" id="pr_periodStart" onchange="prReset()"></div>
+            <div class="field"><label>Period end</label><input type="date" id="pr_periodEnd" onchange="prReset()"></div>
+          </div>
+          <div class="field"><label>Pay date (when kid gets the money)</label><input type="date" id="pr_payDate" onchange="prReset()"></div>
+          <div class="field"><label>Adjustment (optional bonus/advance)</label><input type="number" step="0.01" id="pr_adjustment" placeholder="0.00" onchange="prReset()"></div>
+          <div class="field">
+            <label>Paid from account</label>
+            <select id="pr_account" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;background:white">
+              <option value="BMO">BMO (e-transfer)</option>
+              <option value="Cash">Cash</option>
+              <option value="Cheque">Cheque</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:.5rem;margin-top:.3rem">
+            <button class="btn btn-outline" onclick="prPreview()" id="prPreviewBtn">🔍 Preview</button>
+            <button class="btn btn-green" onclick="prCommit()" id="prCommitBtn" disabled title="Preview first">✅ Commit pay run</button>
+          </div>
+          <div id="prStatus" style="font-size:.8rem;color:var(--ink3);margin-top:.3rem"></div>
+        </div>
+      </div>
+
+      <!-- Right: Preview / result -->
+      <div>
+        <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:.6rem">Breakdown</div>
+        <div id="prBreakdown" style="font-size:.85rem;color:var(--ink3);font-style:italic;padding:1rem;background:var(--paper2);border-radius:var(--radius);border:1px solid var(--rule)">
+          Select an employee, period, and pay date, then click Preview to see the deductions.
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -5472,6 +5507,7 @@ function payrollSub(which){
   ['employees','worklog','payruns'].forEach(k => {
     document.getElementById('pay-sub-'+k).style.display = (k === which) ? '' : 'none';
   });
+  if(which === 'payruns') { try { prSetDefaults(); } catch(e) { console.warn(e); } }
 }
 
 // ── Employees ──
@@ -5486,6 +5522,7 @@ async function empReload(){
       PAYROLL_EMPLOYEES = Array.isArray(d.employees) ? d.employees : [];
       empRender();
       wlRenderEmployeeDropdown();
+      prRenderEmployeeDropdown();
     } else {
       document.getElementById('empList').innerHTML = `<div style="color:var(--red)">Error: ${esc(d.error||'unknown')}</div>`;
     }
@@ -5597,6 +5634,7 @@ async function empSave(){
       PAYROLL_EMPLOYEES = d.employees || PAYROLL_EMPLOYEES;
       empRender();
       wlRenderEmployeeDropdown();
+      prRenderEmployeeDropdown();
       empClear();
       setTimeout(() => status.textContent = '', 2000);
     } else {
@@ -5625,6 +5663,7 @@ async function empDelete(id){
       PAYROLL_EMPLOYEES = d.employees;
       empRender();
       wlRenderEmployeeDropdown();
+      prRenderEmployeeDropdown();
       toast(`${e.name} removed from active roster`);
     } else {
       toast('Remove failed: ' + (d.error || 'unknown'));
@@ -5742,6 +5781,249 @@ function wlRenderRecent(){
       <div style="color:var(--ink3);font-family:var(--mono);font-size:.65rem;margin-top:.25rem">stamped ${new Date(e.stamped).toLocaleString()}</div>
     </div>
   `).join('');
+}
+
+// ── Pay Runs ──
+
+let _prLastPreview = null;  // holds the most recent preview payload for commit validation
+
+function prRenderEmployeeDropdown(){
+  const sel = document.getElementById('pr_employeeId');
+  if(!sel) return;
+  const active = PAYROLL_EMPLOYEES.filter(e => e.active !== false);
+  if(!active.length){
+    sel.innerHTML = '<option value="">(add an employee first)</option>';
+    return;
+  }
+  sel.innerHTML = active.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+}
+
+function prSetDefaults(){
+  // Default payDate to today; period = last 14 days ending today.
+  const today = new Date();
+  const todayIso = today.toISOString().slice(0,10);
+  const twoWeeksAgo = new Date(today.getTime() - 14*24*60*60*1000).toISOString().slice(0,10);
+  const pd = document.getElementById('pr_payDate');
+  const ps = document.getElementById('pr_periodStart');
+  const pe = document.getElementById('pr_periodEnd');
+  if(pd && !pd.value) pd.value = todayIso;
+  if(ps && !ps.value) ps.value = twoWeeksAgo;
+  if(pe && !pe.value) pe.value = todayIso;
+}
+
+function prReset(){
+  _prLastPreview = null;
+  const btn = document.getElementById('prCommitBtn');
+  if(btn){ btn.disabled = true; btn.title = 'Preview first'; }
+  document.getElementById('prStatus').textContent = '';
+}
+
+async function prPreview(){
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ toast('Please sign in first'); return; }
+  const status = document.getElementById('prStatus');
+  const breakdown = document.getElementById('prBreakdown');
+
+  const payload = prReadForm();
+  if(!payload) return;
+
+  status.textContent = '⏳ Calculating…';
+  status.style.color = 'var(--ink3)';
+
+  try {
+    const r = await fetch('/api/payroll/calculate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if(!d.ok){
+      status.textContent = '❌ ' + (d.error || 'Preview failed');
+      status.style.color = 'var(--red)';
+      breakdown.innerHTML = `<div style="color:var(--red)">${esc(d.error || 'Preview failed')}</div>`;
+      return;
+    }
+    _prLastPreview = { ...payload, result: d };
+    status.textContent = '✓ Preview ready. Review the breakdown, then click Commit.';
+    status.style.color = 'var(--green)';
+    const btn = document.getElementById('prCommitBtn');
+    btn.disabled = false;
+    btn.title = 'Commit pay run to sheet';
+    breakdown.innerHTML = prRenderBreakdown(d);
+  } catch(err){
+    status.textContent = '❌ ' + err.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+async function prCommit(){
+  if(!_prLastPreview){ toast('Preview first'); return; }
+  const token = sessionStorage.getItem(AUTH_KEY);
+  const status = document.getElementById('prStatus');
+  const breakdown = document.getElementById('prBreakdown');
+
+  const payload = { ...prReadForm(), account: document.getElementById('pr_account').value };
+  if(!payload) return;
+
+  // Quick sanity: form values should match the previewed ones.
+  if(payload.employeeId !== _prLastPreview.employeeId || payload.payDate !== _prLastPreview.payDate){
+    if(!confirm('The form changed since you previewed. Commit with the current values anyway?')) return;
+  }
+
+  status.textContent = '⏳ Committing…';
+  status.style.color = 'var(--ink3)';
+  document.getElementById('prCommitBtn').disabled = true;
+
+  try {
+    const r = await fetch('/api/payroll/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+
+    if(r.status === 409 && !d.ok){
+      const overwrite = confirm(`${d.error}\n\nOverwrite? (This adds ANOTHER row — it does NOT delete the existing one. If you want to cancel the existing run, manually set its Status to 'Cancelled' in the Payroll tab first.)`);
+      if(!overwrite){
+        status.textContent = 'Commit cancelled.';
+        status.style.color = 'var(--ink3)';
+        document.getElementById('prCommitBtn').disabled = false;
+        return;
+      }
+      const r2 = await fetch('/api/payroll/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ ...payload, overwrite: true }),
+      });
+      const d2 = await r2.json();
+      if(!d2.ok){
+        status.textContent = '❌ ' + (d2.error || 'Commit failed');
+        status.style.color = 'var(--red)';
+        document.getElementById('prCommitBtn').disabled = false;
+        return;
+      }
+      prRenderCommitResult(d2);
+      return;
+    }
+
+    if(!d.ok){
+      status.textContent = '❌ ' + (d.error || 'Commit failed');
+      status.style.color = 'var(--red)';
+      document.getElementById('prCommitBtn').disabled = false;
+      return;
+    }
+    prRenderCommitResult(d);
+  } catch(err){
+    status.textContent = '❌ ' + err.message;
+    status.style.color = 'var(--red)';
+    document.getElementById('prCommitBtn').disabled = false;
+  }
+}
+
+function prRenderCommitResult(d){
+  const status = document.getElementById('prStatus');
+  const breakdown = document.getElementById('prBreakdown');
+  const sheetLink = USER_CONFIG?.sheetUrl
+    ? `<a href="${USER_CONFIG.sheetUrl}" target="_blank" style="color:var(--green);font-weight:500">Open Sheet ↗</a>`
+    : '';
+  status.textContent = '✓ Pay run committed.';
+  status.style.color = 'var(--green)';
+  _prLastPreview = null;
+  breakdown.innerHTML = `
+    <div style="border-left:3px solid var(--green);padding:.8rem 1rem;background:#e8f5ee;border-radius:var(--radius)">
+      <div style="font-weight:600;margin-bottom:.4rem">✅ Pay run committed for ${esc(d.employee.name)}</div>
+      <div style="font-size:.85rem;line-height:1.7">
+        Pay date: <strong>${esc(d.payDate)}</strong><br>
+        Gross: <strong>$${d.gross.toFixed(2)}</strong> · Deductions: $${d.deductions.total.toFixed(2)} · Net: <strong style="color:var(--green)">$${d.netPay.toFixed(2)}</strong><br>
+        ${d.remittanceDue ? `Remittance due to CRA: <strong>${esc(d.remittanceDue)}</strong> (monthly remitter, 15th of month after pay)` : `<em>No remittance owed — all deductions zero.</em>`}
+      </div>
+      <div style="font-size:.78rem;color:var(--ink3);margin-top:.7rem">
+        Wrote row to 💼 Payroll (${esc(d.payrollRow || '')}) + matching −$${d.netPay.toFixed(2)} Wages entry to 📒 Transactions. ${sheetLink}
+      </div>
+      <div style="margin-top:.8rem"><button class="btn btn-outline btn-sm" onclick="prReset();document.getElementById('prBreakdown').innerHTML='Select an employee, period, and pay date, then click Preview to see the deductions.'">Start another pay run →</button></div>
+    </div>`;
+  document.getElementById('prCommitBtn').disabled = true;
+}
+
+function prReadForm(){
+  const employeeId = document.getElementById('pr_employeeId').value;
+  const periodStart = document.getElementById('pr_periodStart').value;
+  const periodEnd = document.getElementById('pr_periodEnd').value;
+  const payDate = document.getElementById('pr_payDate').value;
+  const adjustment = parseFloat(document.getElementById('pr_adjustment').value) || 0;
+  const status = document.getElementById('prStatus');
+
+  if(!employeeId){ status.textContent = '❌ Select an employee'; status.style.color = 'var(--red)'; return null; }
+  if(!periodStart || !periodEnd){ status.textContent = '❌ Period start and end are required'; status.style.color = 'var(--red)'; return null; }
+  if(!payDate){ status.textContent = '❌ Pay date is required'; status.style.color = 'var(--red)'; return null; }
+  if(periodEnd < periodStart){ status.textContent = '❌ Period end is before period start'; status.style.color = 'var(--red)'; return null; }
+
+  return { employeeId, periodStart, periodEnd, payDate, adjustment };
+}
+
+function prRenderBreakdown(d){
+  const c = d.calculation;
+  const wl = d.workLog;
+  const emp = d.employee;
+  const flags = c.flags || {};
+  const flagChips = [];
+  if(flags.isUnder18) flagChips.push('<span style="background:#dff7e0;color:#1a5c38;font-size:.7rem;padding:.1rem .45rem;border-radius:3px">Under 18 · CPP exempt</span>');
+  if(flags.familyEiExempt) flagChips.push('<span style="background:#e8eefc;color:#203a75;font-size:.7rem;padding:.1rem .45rem;border-radius:3px">Family-EI exempt</span>');
+
+  const wlRows = wl.entries.length
+    ? wl.entries.map(e => `<tr>
+        <td style="padding:.25rem .5rem">${esc(e.date)}</td>
+        <td style="padding:.25rem .5rem">${esc(e.task)}</td>
+        <td style="padding:.25rem .5rem;text-align:right">${e.hours}</td>
+        <td style="padding:.25rem .5rem;text-align:right">$${Number(e.rate).toFixed(2)}</td>
+        <td style="padding:.25rem .5rem;text-align:right">$${(e.hours*e.rate).toFixed(2)}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="5" style="padding:.5rem;color:var(--ink3);font-style:italic">No Work Log entries in this period.</td></tr>`;
+
+  return `
+    <div style="background:white;border:1px solid var(--rule);border-radius:var(--radius);padding:1.1rem 1.2rem">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:.6rem">
+        <div style="font-weight:600;font-size:1.05rem">${esc(emp.name)} <span style="color:var(--ink3);font-weight:400;font-size:.85rem">· age ${c.age ?? '?'}</span></div>
+        <div>${flagChips.join(' ')}</div>
+      </div>
+      <div style="font-size:.8rem;color:var(--ink3);margin-bottom:1rem">Period ${esc(d.period.start)} → ${esc(d.period.end)} · Pay date ${esc(d.period.payDate)}</div>
+
+      <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.3rem">Work Log (${wl.entries.length} entries, $${wl.sumGross.toFixed(2)})</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:1rem">
+        <thead><tr style="border-bottom:1px solid var(--rule);color:var(--ink3);font-size:.72rem">
+          <th style="padding:.25rem .5rem;text-align:left">Date</th>
+          <th style="padding:.25rem .5rem;text-align:left">Task</th>
+          <th style="padding:.25rem .5rem;text-align:right">Hours</th>
+          <th style="padding:.25rem .5rem;text-align:right">Rate</th>
+          <th style="padding:.25rem .5rem;text-align:right">Gross</th>
+        </tr></thead>
+        <tbody>${wlRows}</tbody>
+      </table>
+      ${wl.adjustment ? `<div style="font-size:.8rem;margin-bottom:.8rem">+ Adjustment: <strong>$${wl.adjustment.toFixed(2)}</strong></div>` : ''}
+
+      <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.3rem">Deductions (2026 CRA rates)</div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:.2rem .8rem;font-size:.85rem;line-height:1.5;margin-bottom:.8rem">
+        <div>Gross this run</div><div style="text-align:right;font-family:var(--mono)">$${c.gross.toFixed(2)}</div>
+        <div>CPP (5.95%)</div><div style="text-align:right;font-family:var(--mono)">$${(c.cpp+c.cpp2).toFixed(2)}</div>
+        <div>EI</div><div style="text-align:right;font-family:var(--mono);color:${c.ei===0?'var(--ink3)':'var(--ink)'}">$${c.ei.toFixed(2)}</div>
+        <div>Federal tax</div><div style="text-align:right;font-family:var(--mono)">$${c.fedTax.toFixed(2)}</div>
+        <div>Ontario tax</div><div style="text-align:right;font-family:var(--mono)">$${c.onTax.toFixed(2)}</div>
+        <div style="padding-top:.3rem;border-top:1px solid var(--rule);font-weight:600">Net Pay</div>
+        <div style="text-align:right;font-family:var(--mono);font-weight:600;padding-top:.3rem;border-top:1px solid var(--rule);color:var(--green)">$${c.netPay.toFixed(2)}</div>
+      </div>
+
+      <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.3rem">YTD Projection</div>
+      <div style="font-size:.78rem;color:var(--ink3);line-height:1.55;margin-bottom:.8rem">
+        Before: gross $${d.ytdBefore.gross.toFixed(2)} · CPP $${d.ytdBefore.cppBase.toFixed(2)} · Fed $${d.ytdBefore.fedTax.toFixed(2)} · ON $${d.ytdBefore.onTax.toFixed(2)}<br>
+        After: gross <strong>$${d.ytdAfter.gross.toFixed(2)}</strong> · CPP <strong>$${d.ytdAfter.cppBase.toFixed(2)}</strong> · Fed <strong>$${d.ytdAfter.fedTax.toFixed(2)}</strong> · ON <strong>$${d.ytdAfter.onTax.toFixed(2)}</strong>
+      </div>
+
+      ${d.remittanceDue
+        ? `<div style="font-size:.82rem;background:#fff8e8;border:1px solid #e6c97a;border-left:3px solid #b88a00;border-radius:4px;padding:.55rem .8rem">
+             📅 <strong>Source deduction remittance due ${esc(d.remittanceDue)}</strong> — CPP + Federal + Ontario tax totaling $${(c.cpp+c.cpp2+c.fedTax+c.onTax).toFixed(2)} must reach CRA by this date. (Monthly remitter, 15th of month after pay.)
+           </div>`
+        : `<div style="font-size:.82rem;color:var(--ink3);font-style:italic">No deductions — nothing to remit to CRA for this run.</div>`}
+    </div>`;
 }
 
 

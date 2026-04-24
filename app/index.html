@@ -2072,7 +2072,6 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
             <label>Business</label>
             <select id="wl_business" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;background:white">
               <option value="Postma">Postma Contracting</option>
-              <option value="HVAC">HVAC</option>
               <option value="PCTires">PCTires</option>
             </select>
           </div>
@@ -2596,12 +2595,20 @@ let USER_CONFIG = {
   invoicePaymentInstructions: '',         // multi-line; rendered in its own block
   invoiceDefaultTerms: 'Payment due within 30 days. Late payments subject to 1.5% monthly interest.',
   invoiceFooterText: 'Thank you for your business.',
+  // Trading-name overrides — when the user operates under a DBA (e.g. PCTires
+  // under Postma Contracting Inc.), these let the trading-name invoice carry
+  // its own brand. Empty values fall back to the primary company's values.
+  tradingSubline: '',                     // default auto-computed "o/a <businessName>"
+  tradingLogo: '',                        // separate logo for the trading name
+  tradingPaymentInstructions: '',         // optional — different email, etc.
+  tradingFooterText: '',                  // optional alt tagline
 };
 
 // ── Invoice settings persistence (localStorage) ──────────────────
 const INV_SETTINGS_KEYS = [
   'invoicePhone','invoiceWebsite','invoiceLogo',
   'invoicePaymentInstructions','invoiceDefaultTerms','invoiceFooterText',
+  'tradingSubline','tradingLogo','tradingPaymentInstructions','tradingFooterText',
 ];
 const INV_SETTINGS_STORAGE_KEY = 'tradebooks_invoice_settings';
 
@@ -2654,6 +2661,33 @@ function invLogoClear() {
   const wrap = document.getElementById('set_invoiceLogoPreview');
   if (wrap) wrap.style.display = 'none';
   const file = document.getElementById('set_invoiceLogoFile');
+  if (file) file.value = '';
+}
+
+/** Same mechanics as invLogoPickHandler but for the trading-name override. */
+function tradingLogoPickHandler(ev) {
+  const f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  if (f.size > 400 * 1024) { toast('Logo too large — keep it under 400KB'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = String(reader.result || '');
+    invLogoDownscale(dataUrl, 400).then(small => {
+      USER_CONFIG.tradingLogo = small;
+      const img = document.getElementById('tradingLogoImg');
+      const wrap = document.getElementById('set_tradingLogoPreview');
+      if (img) img.src = small;
+      if (wrap) wrap.style.display = 'flex';
+    });
+  };
+  reader.readAsDataURL(f);
+}
+
+function tradingLogoClear() {
+  USER_CONFIG.tradingLogo = '';
+  const wrap = document.getElementById('set_tradingLogoPreview');
+  if (wrap) wrap.style.display = 'none';
+  const file = document.getElementById('set_tradingLogoFile');
   if (file) file.value = '';
 }
 
@@ -2958,14 +2992,20 @@ function rebuildInvoiceCompanies() {
   };
 
   if (C.tradingName) {
+    // PCTires etc. — same corp (same address/phone/HST), but optional override for
+    // logo / payment instructions / footer tagline so the brand identity can differ.
     window.INV_COMPANIES.trading = {
       name: C.tradingName,
-      subline: `o/a ${C.businessName}`,
+      subline: C.tradingSubline || `o/a ${C.businessName}`,
       address: `${C.city || ''}, ${C.province || ''}`,
       email: C.email || '',
       hst: C.hstNumber || '',
       clients: [],
       ...sharedContact,
+      // Per-trading overrides: if set, use them; else inherit from primary.
+      logo: C.tradingLogo || sharedContact.logo,
+      paymentInstructions: C.tradingPaymentInstructions || sharedContact.paymentInstructions,
+      footerText: C.tradingFooterText || sharedContact.footerText,
     };
   }
 
@@ -2978,9 +3018,33 @@ function rebuildInvoiceCompanies() {
   const dl = document.getElementById('clientSugg');
   if (dl) dl.innerHTML = (C.clients || []).map(c => `<option value="${c}">`).join('');
 
-  // Show/hide company switcher
+  // Populate + show/hide company switcher
+  renderCompanySwitcher();
+}
+
+/** Paint the Billing-From toggle on the invoice wizard. Called by rebuildInvoiceCompanies
+ *  at config time and by setInvCompany whenever the active company changes. */
+function renderCompanySwitcher() {
   const switcher = document.getElementById('companySwitch');
-  if (switcher) switcher.style.display = C.tradingName ? '' : 'none';
+  if (!switcher) return;
+  const C = USER_CONFIG;
+  if (!C.tradingName) {
+    switcher.style.display = 'none';
+    switcher.innerHTML = '';
+    return;
+  }
+  const entries = [
+    { key: 'primary', label: C.businessName || 'Primary' },
+    { key: 'trading', label: C.tradingName },
+  ];
+  switcher.innerHTML = entries.map(e => {
+    const on = e.key === activeCompany;
+    return `<button class="co-btn${on ? ' active' : ''}" data-co="${esc(e.key)}" onclick="setInvCompany('${esc(e.key)}')"
+      style="padding:.55rem .95rem;border:1px solid ${on ? 'var(--green)' : 'var(--rule)'};background:${on ? 'var(--greenlt,#eef7f2)' : 'white'};color:${on ? 'var(--green)' : 'var(--ink)'};border-radius:var(--radius);font-size:.82rem;font-weight:${on ? '600' : '400'};cursor:pointer;transition:all .15s">
+      ${esc(e.label)}
+    </button>`;
+  }).join('');
+  switcher.style.display = 'flex';
 }
 
 function updateTaxProfile() {
@@ -3746,9 +3810,8 @@ function setInvCompany(key){
   activeCompany = key;
   // Re-bind to latest window.INV_COMPANIES in case applyConfig() ran after this file
   INV_COMPANIES = window.INV_COMPANIES;
-  // Update toggle buttons
-  document.querySelectorAll('.co-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector('.co-btn[data-co="'+key+'"]').classList.add('active');
+  // Repaint the switcher so active styling reflects the new choice
+  renderCompanySwitcher();
   // Update client autocomplete
   const co = INV_COMPANIES[key];
   const dl = document.getElementById('clientSugg');
@@ -7010,6 +7073,34 @@ function renderSettings(){
       <input type="text" id="set_invoiceFooterText" value="${esc(C.invoiceFooterText||'')}" style="font-size:.88rem" placeholder="Thank you for your business.">
     </div>
 
+    ${C.tradingName ? `
+    <hr class="divider">
+    <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">${esc(C.tradingName)} Branding <span style="text-transform:none;font-weight:400;color:var(--ink3)">— overrides for your trading-name invoices</span></div>
+    <div style="font-size:.78rem;color:var(--ink3);margin-bottom:1rem;line-height:1.5">When you bill under <strong>${esc(C.tradingName)}</strong> instead of <strong>${esc(C.businessName)}</strong>, these fields replace the defaults above. Leave blank to use the primary values. Address, phone, email, HST# stay the same because it's the same corporation.</div>
+    <div class="field">
+      <label>Subline (shown under the trading name)</label>
+      <input type="text" id="set_tradingSubline" value="${esc(C.tradingSubline||'')}" style="font-size:.88rem" placeholder="o/a ${esc(C.businessName||'')}">
+    </div>
+    <div class="field">
+      <label>Logo for ${esc(C.tradingName)} (optional — blank uses primary)</label>
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <input type="file" id="set_tradingLogoFile" accept="image/png,image/jpeg,image/svg+xml" onchange="tradingLogoPickHandler(event)" style="font-size:.82rem">
+        <div id="set_tradingLogoPreview" style="display:${C.tradingLogo?'flex':'none'};align-items:center;gap:.5rem">
+          <img src="${C.tradingLogo||''}" id="tradingLogoImg" style="max-height:36px;max-width:120px;border:1px solid var(--rule);border-radius:3px;background:white;padding:2px">
+          <button type="button" onclick="tradingLogoClear()" style="background:none;border:1px solid var(--rule);border-radius:3px;padding:.2rem .5rem;font-size:.7rem;cursor:pointer;color:var(--red)">Remove</button>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Payment instructions for ${esc(C.tradingName)} (optional)</label>
+      <textarea id="set_tradingPaymentInstructions" rows="3" placeholder="Leave blank to use primary — or override with a different e-transfer email, etc." style="font-size:.85rem;font-family:inherit;width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);resize:vertical">${esc(C.tradingPaymentInstructions||'')}</textarea>
+    </div>
+    <div class="field">
+      <label>Footer tagline for ${esc(C.tradingName)} (optional)</label>
+      <input type="text" id="set_tradingFooterText" value="${esc(C.tradingFooterText||'')}" style="font-size:.88rem" placeholder="Leave blank to use primary">
+    </div>
+    ` : ''}
+
     <hr class="divider">
     <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Custom Categories</div>
     <div class="field">
@@ -7094,7 +7185,11 @@ async function saveSettings(){
   USER_CONFIG.invoicePaymentInstructions = document.getElementById('set_invoicePaymentInstructions')?.value || '';
   USER_CONFIG.invoiceDefaultTerms        = document.getElementById('set_invoiceDefaultTerms')?.value || '';
   USER_CONFIG.invoiceFooterText          = document.getElementById('set_invoiceFooterText')?.value || '';
-  // invoiceLogo is already on USER_CONFIG via invLogoPickHandler
+  // Trading-name branding overrides (only present in DOM when tradingName is set)
+  USER_CONFIG.tradingSubline             = document.getElementById('set_tradingSubline')?.value || '';
+  USER_CONFIG.tradingPaymentInstructions = document.getElementById('set_tradingPaymentInstructions')?.value || '';
+  USER_CONFIG.tradingFooterText          = document.getElementById('set_tradingFooterText')?.value || '';
+  // invoiceLogo + tradingLogo are already on USER_CONFIG via their pick handlers
   saveInvoiceSettings();
 
   try {

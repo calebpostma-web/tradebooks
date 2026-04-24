@@ -940,7 +940,15 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.6rem">Line items</div>
         <div id="lineItemsWrap"></div>
         <button class="btn-add-li" onclick="addLine()">+ Add line item</button>
-        <div class="toggle-row">
+        <div class="toggle-row" style="align-items:flex-start">
+          <div class="toggle-lbl">Currency<small id="invCurLabel">CAD — HST applies</small></div>
+          <div id="currencySwitch" style="display:flex;gap:.35rem"></div>
+        </div>
+        <div id="invFxField" class="field" style="display:none;margin-top:.5rem">
+          <label>Exchange rate (USD → CAD)<small style="color:var(--ink3);font-weight:400;margin-left:.35rem">— CAD booked = USD × this rate</small></label>
+          <input type="number" id="invFxRate" step="0.0001" min="0" placeholder="e.g. 1.3742" oninput="invUpdate()" style="font-family:var(--mono)">
+        </div>
+        <div class="toggle-row" id="invHSTRow">
           <div class="toggle-lbl">Charge tax<small id="invTaxLabel">HST 13%</small></div>
           <label class="toggle-sw"><input type="checkbox" id="invHST" checked onchange="invUpdate()"><div class="t-track"></div><div class="t-knob"></div></label>
         </div>
@@ -1008,6 +1016,10 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           </div>
           <div class="inv-thanks" id="prevFooterTagline">Thank you for your business.</div>
         </div>
+      </div>
+      <div id="invCadEqvBox" style="display:none;margin-top:.85rem;padding:.75rem 1rem;background:var(--paper2);border-left:3px solid var(--green);border-radius:4px;font-size:.78rem">
+        <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.35rem">Your records (CAD equivalent) — not printed on invoice</div>
+        <div id="invCadEqvBody" style="font-family:var(--mono);line-height:1.7"></div>
       </div>
       <div class="btn-row" style="margin-top:.75rem">
         <button class="btn btn-primary btn-sm" onclick="invPrint()">⬇ Save as PDF</button>
@@ -3846,6 +3858,39 @@ function setInvCompany(key){
 
 let invLines=[{desc:'',qty:1,rate:''}];
 let invNum=String(USER_CONFIG?.invoiceStart||1001);
+let invCurrency='CAD';
+
+function renderCurrencySwitch(){
+  const el=document.getElementById('currencySwitch');
+  if(!el) return;
+  const opts=[{key:'CAD',label:'CAD'},{key:'USD',label:'USD'}];
+  el.innerHTML=opts.map(o=>{
+    const on=o.key===invCurrency;
+    return `<button type="button" onclick="setInvCurrency('${o.key}')" style="padding:.35rem .8rem;border:1px solid ${on?'var(--green)':'var(--rule)'};background:${on?'var(--greenlt,#eef7f2)':'white'};color:${on?'var(--green)':'var(--ink)'};border-radius:var(--radius);font-size:.78rem;font-weight:${on?'600':'400'};cursor:pointer;font-family:var(--mono);letter-spacing:.04em">${o.label}</button>`;
+  }).join('');
+}
+
+function setInvCurrency(c){
+  invCurrency=(c==='USD')?'USD':'CAD';
+  const hst=document.getElementById('invHST');
+  const hstRow=document.getElementById('invHSTRow');
+  const fxField=document.getElementById('invFxField');
+  const curLbl=document.getElementById('invCurLabel');
+  if(invCurrency==='USD'){
+    if(hst){ hst.checked=false; hst.disabled=true; }
+    if(hstRow) hstRow.style.opacity='0.45';
+    if(fxField) fxField.style.display='';
+    if(curLbl) curLbl.textContent='USD — no tax charged (zero-rated export)';
+  } else {
+    if(hst){ hst.disabled=false; hst.checked=true; }
+    if(hstRow) hstRow.style.opacity='';
+    if(fxField) fxField.style.display='none';
+    const taxType=USER_CONFIG?.taxType||'HST';
+    if(curLbl) curLbl.textContent=`CAD — ${taxType} applies`;
+  }
+  renderCurrencySwitch();
+  invUpdate();
+}
 
 (function initInv(){
   const today=new Date();
@@ -3853,6 +3898,7 @@ let invNum=String(USER_CONFIG?.invoiceStart||1001);
   document.getElementById('invDate').value=fmt(today);
   const due=new Date(today);due.setDate(due.getDate()+30);
   document.getElementById('invDue').value=fmt(due);
+  renderCurrencySwitch();
   renderLines();invUpdate();
 })();
 
@@ -3873,7 +3919,7 @@ function addLine(){invLines.push({desc:'',qty:1,rate:''});renderLines();invUpdat
 function rmLine(i){invLines.splice(i,1);renderLines();invUpdate()}
 
 function invUpdate(){
-  const hst=document.getElementById('invHST').checked;
+  const hst=document.getElementById('invHST').checked && invCurrency==='CAD';
   const client=document.getElementById('invClient').value.trim();
   const addr=document.getElementById('invAddr').value.trim();
   const email=document.getElementById('invEmail').value.trim();
@@ -3881,6 +3927,7 @@ function invUpdate(){
   const dueVal=document.getElementById('invDue').value;
   const poVal=document.getElementById('invPO')?.value.trim() || '';
   const notes=document.getElementById('invNotes').value.trim();
+  const fxRate=parseFloat(document.getElementById('invFxRate')?.value)||0;
 
   let sub=0;
   invLines.forEach((l,i)=>{
@@ -3895,11 +3942,13 @@ function invUpdate(){
   const taxLabel = `${taxType} ${taxPct}%`;
   const hstAmt = hst ? Math.round(sub*taxRate*100)/100 : 0;
   const total = sub + hstAmt;
+  const curCode = invCurrency; // 'CAD' or 'USD'
 
+  const noTaxLbl = invCurrency==='USD' ? `No tax (USD — zero-rated)` : `No ${taxType}`;
   document.getElementById('invTotalsBox').innerHTML=`
-    <div class="tot-row"><span class="tot-lbl">Subtotal</span><span class="tot-val">$${fmtMoney(sub)}</span></div>
-    ${hst?`<div class="tot-row"><span class="tot-lbl">${taxLabel}</span><span class="tot-val">$${fmtMoney(hstAmt)}</span></div>`:`<div class="tot-row"><span class="tot-lbl" style="color:var(--red)">No ${taxType}</span><span class="tot-val">—</span></div>`}
-    <div class="tot-row final"><span>Total</span><span class="tot-val big">$${fmtMoney(total)}</span></div>`;
+    <div class="tot-row"><span class="tot-lbl">Subtotal</span><span class="tot-val">$${fmtMoney(sub)} ${curCode}</span></div>
+    ${hst?`<div class="tot-row"><span class="tot-lbl">${taxLabel}</span><span class="tot-val">$${fmtMoney(hstAmt)} ${curCode}</span></div>`:`<div class="tot-row"><span class="tot-lbl" style="color:var(--red)">${noTaxLbl}</span><span class="tot-val">—</span></div>`}
+    <div class="tot-row final"><span>Total</span><span class="tot-val big">$${fmtMoney(total)} ${curCode}</span></div>`;
 
   // Update company header in preview
   const co = INV_COMPANIES[activeCompany] || {};
@@ -3962,7 +4011,27 @@ function invUpdate(){
   document.getElementById('prevFoot').innerHTML = `
     <tr><td colspan="3" class="flbl" style="text-align:right">Subtotal</td><td class="mono" style="text-align:right">$${fmtMoney(sub)}</td></tr>
     ${hst?`<tr><td colspan="3" class="flbl" style="text-align:right">${taxLabel}</td><td class="mono" style="text-align:right">$${fmtMoney(hstAmt)}</td></tr>`:''}
-    <tr class="gtotal"><td colspan="3" style="color:var(--ink3);font-size:.74rem;font-family:var(--mono)">TOTAL DUE (CAD)</td><td style="text-align:right;color:var(--green)">$${fmtMoney(total)}</td></tr>`;
+    <tr class="gtotal"><td colspan="3" style="color:var(--ink3);font-size:.74rem;font-family:var(--mono)">TOTAL DUE (${curCode})</td><td style="text-align:right;color:var(--green)">$${fmtMoney(total)}</td></tr>`;
+
+  // Builder-only CAD equivalent panel (hidden from PDF)
+  const cadBox=document.getElementById('invCadEqvBox');
+  const cadBody=document.getElementById('invCadEqvBody');
+  if(cadBox && cadBody){
+    if(invCurrency==='USD' && fxRate>0){
+      const cadSub=Math.round(sub*fxRate*100)/100;
+      const cadTotal=Math.round(total*fxRate*100)/100;
+      cadBody.innerHTML=
+        `USD subtotal:&nbsp; $${fmtMoney(sub)} USD<br>`+
+        `FX rate:&nbsp; <strong>${fxRate.toFixed(4)}</strong><br>`+
+        `<span style="color:var(--green)">CAD equivalent:&nbsp; <strong>$${fmtMoney(cadTotal)} CAD</strong></span> &nbsp;<span style="color:var(--ink3)">← this is what posts to your Sheet</span>`;
+      cadBox.style.display='';
+    } else if(invCurrency==='USD'){
+      cadBody.innerHTML=`<span style="color:var(--red)">Enter an exchange rate above to see the CAD equivalent.</span>`;
+      cadBox.style.display='';
+    } else {
+      cadBox.style.display='none';
+    }
+  }
 
   document.getElementById('prevNotes').innerHTML = notes
     ? `<div style="font-size:.77rem;color:var(--ink3);border-top:1px solid var(--paper2);padding-top:.7rem;margin-bottom:.7rem;line-height:1.6">${notes.replace(/\n/g,'<br>')}</div>` : '';
@@ -4059,11 +4128,26 @@ async function invSendToSheets(){
   if(!USER_CONFIG.sheetId){ toast('Connect your Google Sheet first — complete onboarding or check Settings'); return; }
   if(!client){ toast('Please enter a client name first'); return; }
 
+  const fxRate = parseFloat(document.getElementById('invFxRate')?.value) || 0;
+  if(invCurrency==='USD' && fxRate<=0){
+    toast('Enter a USD → CAD exchange rate before sending to Sheets');
+    return;
+  }
+
   const taxRate = USER_CONFIG?.taxRate || 0.13;
-  const sub = invLines.reduce((s,l)=>s+(parseFloat(l.qty)||0)*(parseFloat(l.rate)||0),0);
-  const hstAmt = hst ? Math.round(sub*taxRate*100)/100 : 0;
-  const total = sub + hstAmt;
-  const desc = invLines.map(l=>l.desc).filter(Boolean).join('; ') || 'Services';
+  const effectiveHst = hst && invCurrency==='CAD';
+  const subNative = invLines.reduce((s,l)=>s+(parseFloat(l.qty)||0)*(parseFloat(l.rate)||0),0);
+  const hstNative = effectiveHst ? Math.round(subNative*taxRate*100)/100 : 0;
+  const totalNative = subNative + hstNative;
+  // Convert to CAD for the sheet
+  const conv = invCurrency==='USD' ? fxRate : 1;
+  const sub = Math.round(subNative*conv*100)/100;
+  const hstAmt = Math.round(hstNative*conv*100)/100;
+  const total = Math.round(totalNative*conv*100)/100;
+  let desc = invLines.map(l=>l.desc).filter(Boolean).join('; ') || 'Services';
+  if(invCurrency==='USD'){
+    desc += ` [Billed USD $${fmtMoney(totalNative)} @ ${fxRate.toFixed(4)}]`;
+  }
 
   btn.disabled = true;
   btn.textContent = '⏳ Sending…';
@@ -4077,7 +4161,7 @@ async function invSendToSheets(){
       company: co.name || USER_CONFIG?.businessName || '',
       invNum, dateVal, dueVal, client,
       desc, sub, hstAmt, total,
-      hst: hst ? 'Yes' : 'No',
+      hst: effectiveHst ? 'Yes' : 'No',
       category,
       lines: invLines.map(l=>({
         desc: l.desc,
@@ -4114,7 +4198,7 @@ async function invSendToSheets(){
     btn.textContent = '📊 Send to Google Sheets';
   }
 }
-function invClear(){document.getElementById('invClient').value='';document.getElementById('invAddr').value='';document.getElementById('invEmail').value='';document.getElementById('invNotes').value='';invLines=[{desc:'',qty:1,rate:''}];renderLines();invUpdate()}
+function invClear(){document.getElementById('invClient').value='';document.getElementById('invAddr').value='';document.getElementById('invEmail').value='';document.getElementById('invNotes').value='';invLines=[{desc:'',qty:1,rate:''}];const fx=document.getElementById('invFxRate');if(fx)fx.value='';setInvCurrency('CAD');renderLines();invUpdate()}
 
 // ════════════════════════════════════════════════════════════
 // TAB 3 — RECEIPT SCANNER

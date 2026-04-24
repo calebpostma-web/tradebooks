@@ -1,0 +1,48 @@
+# Normalize line endings across Windows/Mac/Linux.
+# Files are stored as LF in the repo; checked out native on each platform.
+
+# Default: treat as text, auto-detect, store as LF in repo
+* text=auto eol=lf
+
+# Web / code — always LF (Cloudflare Workers and browsers both expect LF)
+*.html   text eol=lf
+*.css    text eol=lf
+*.js     text eol=lf
+*.mjs    text eol=lf
+*.cjs    text eol=lf
+*.jsx    text eol=lf
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.json   text eol=lf
+*.jsonc  text eol=lf
+*.md     text eol=lf
+*.sql    text eol=lf
+*.sh     text eol=lf
+*.toml   text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.txt    text eol=lf
+
+# Windows-only formats — keep CRLF so PowerShell / cmd parse them correctly
+*.ps1    text eol=crlf
+*.psm1   text eol=crlf
+*.psd1   text eol=crlf
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+
+# Binary files — never touch
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.ico    binary
+*.pdf    binary
+*.zip    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.otf    binary
+*.xlsx   binary
+*.docx   binary
+*.pptx   binary

@@ -630,13 +630,13 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div class="step-row"><div class="step-num">3</div><div class="step-body"><div class="step-title">Add your line items</div><div class="step-detail">Click <strong>+ Add line item</strong>. Enter a description (e.g. <em>Consulting — November 2025</em>), quantity (usually 1), and rate (dollar amount). The total calculates automatically.</div></div></div>
       <div class="step-row"><div class="step-num">4</div><div class="step-body"><div class="step-title">Check the HST toggle</div><div class="step-detail"><strong>For most business clients, leave HST ON.</strong> Ontario 13% HST is added automatically. You collect this on behalf of CRA and remit it quarterly. Only turn it OFF if the client is HST-exempt.</div></div></div>
       <div class="step-row"><div class="step-num">5</div><div class="step-body"><div class="step-title">Download PDF and send to client</div><div class="step-detail">Click <strong>⬇ Download PDF</strong> to save the invoice, then email it. Most clients pay by e-transfer.</div></div></div>
-      <div class="step-row"><div class="step-num">6</div><div class="step-body"><div class="step-title">Copy the row to your Google Sheet</div><div class="step-detail">Click <strong>→ Copy for Google Sheets</strong>. Open your <a href="" target="_blank" style="color:var(--green)">Google Sheet ↗</a>, go to the <strong>Invoices</strong> tab, click the first empty row in column A, press <kbd>Ctrl+V</kbd>. Then go to the <strong>Income</strong> tab and paste again.</div></div></div>
+      <div class="step-row"><div class="step-num">6</div><div class="step-body"><div class="step-title">Copy the row to your Google Sheet</div><div class="step-detail">Click <strong>→ Copy for Google Sheets</strong>. Open your <a href="" target="_blank" style="color:var(--green)">Google Sheet ↗</a>, go to the <strong>Invoices</strong> tab, click the first empty row in column A, press <kbd>Ctrl+V</kbd>. Revenue will post to <strong>Transactions</strong> automatically when the client's payment lands on your bank statement — no second paste needed (cash basis).</div></div></div>
       <div class="step-tip">💡 <strong>HST reminder:</strong> The HST you charge (e.g. $433 on a $3,333 invoice) is not your money — you're holding it for CRA. Set it aside and pay it quarterly.</div>
     </div>
     <div class="guide-steps hidden" id="steps-sold-paid">
       <div class="step-row"><div class="step-num">1</div><div class="step-body"><div class="step-title">Create the invoice anyway</div><div class="step-detail">Even if they've already paid, create the invoice in the <strong>Invoice Wizard</strong>. It's your official paper trail — CRA requires documentation for every dollar of income.</div><button class="step-action" onclick="showTrackerFor('sold-paid')">Open Invoice Wizard →</button></div></div>
       <div class="step-row"><div class="step-num">2</div><div class="step-body"><div class="step-title">Note the payment in the Notes field</div><div class="step-detail">At the bottom of the Invoice Wizard, in the <strong>Notes</strong> field write: <em>Paid via e-transfer [date of payment]</em>. This creates a record of when money was received.</div></div></div>
-      <div class="step-row"><div class="step-num">3</div><div class="step-body"><div class="step-title">Paste into Google Sheet and mark Paid</div><div class="step-detail">Copy to Sheets, paste into the <strong>Invoices</strong> tab. In the <strong>Status</strong> column, change <em>Unpaid</em> to <em>Paid</em> and enter the payment date. Paste into <strong>Income</strong> tab too.</div></div></div>
+      <div class="step-row"><div class="step-num">3</div><div class="step-body"><div class="step-title">Paste into Google Sheet and mark Paid</div><div class="step-detail">Copy to Sheets, paste into the <strong>Invoices</strong> tab. In the <strong>Status</strong> column, change <em>Unpaid</em> to <em>Paid</em> and enter the payment date. When you import the bank statement showing the deposit, it will match the invoice and post revenue to <strong>Transactions</strong>.</div></div></div>
       <div class="step-tip">💡 <strong>Why create an invoice if they already paid?</strong> CRA can audit any transaction. An invoice proves the income was legitimate business revenue, not a personal gift or loan. It also helps you track who owes you money.</div>
     </div>
   </div>
@@ -665,7 +665,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     </div>
     <div class="guide-steps hidden" id="steps-bought-manual">
       <div class="step-row"><div class="step-num">1</div><div class="step-body"><div class="step-title">Have your receipt ready</div><div class="step-detail">You need: the date, vendor name, total amount paid (including HST), and what it was for. If you have a physical receipt, check if it shows HST separately — if not, it's still included in the total.</div></div></div>
-      <div class="step-row"><div class="step-num">2</div><div class="step-body"><div class="step-title">Open your Google Sheet — Expenses tab</div><div class="step-detail">Go to your <a href="" target="_blank" style="color:var(--green)">Google Sheet ↗</a> and click the <strong>Expenses</strong> tab. Find the first empty row.</div></div></div>
+      <div class="step-row"><div class="step-num">2</div><div class="step-body"><div class="step-title">Open your Google Sheet — Transactions tab</div><div class="step-detail">Go to your <a href="" target="_blank" style="color:var(--green)">Google Sheet ↗</a> and click the <strong>Transactions</strong> tab. Find the first empty row. Remember: expense Amount entries are <strong>negative</strong> (e.g. −148.50).</div></div></div>
       <div class="step-row"><div class="step-num">3</div><div class="step-body"><div class="step-title">Enter the date, vendor, and total amount</div><div class="step-detail">Fill in columns: Date, Vendor/Payee, Description, and Total Charged (the full amount including HST).</div></div></div>
       <div class="step-row"><div class="step-num">4</div><div class="step-body"><div class="step-title">Pick the right category and let the sheet calculate HST</div><div class="step-detail">Select the expense category from the dropdown. The sheet will automatically extract the tax portion and calculate the net amount. You don't need to do the math.</div></div></div>
       <div class="step-tip">💡 <strong>Keep your receipts.</strong> CRA requires receipts for any expense over $30. Take a photo with your phone right away — the Receipt Scanner tab can log it digitally.</div>
@@ -684,7 +684,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div class="step-row"><div class="step-num">2</div><div class="step-body"><div class="step-title">Open the Receipt Scanner tab</div><div class="step-detail">Click <strong>📷 Receipt Scanner</strong> above. On a phone, this will open your camera directly. On a computer, you can upload the photo from your files.</div><button class="step-action" onclick="showTrackerFor('receipt')">Open Receipt Scanner →</button></div></div>
       <div class="step-row"><div class="step-num">3</div><div class="step-body"><div class="step-title">Upload the photo and click "Scan receipt with AI"</div><div class="step-detail">Drag the photo in or click to browse. Then click <strong>Scan receipt with AI →</strong>. The AI reads the vendor, total, HST (or calculates it), date, and suggests a category.</div></div></div>
       <div class="step-row"><div class="step-num">4</div><div class="step-body"><div class="step-title">Review and correct if needed</div><div class="step-detail">Check that the vendor name, amount, and category all look right. Use the <strong>Category</strong> dropdown to change it if the AI guessed wrong. Common corrections: Costco might come up as Supplies when it's actually a Membership.</div></div></div>
-      <div class="step-row"><div class="step-num">5</div><div class="step-body"><div class="step-title">Send to Google Sheets</div><div class="step-detail">Click <strong>📊 Send to Google Sheets</strong>. The row goes directly into your Expenses tab. If you've already imported your AMEX statement, it will also match and verify the receipt against that transaction automatically.</div></div></div>
+      <div class="step-row"><div class="step-num">5</div><div class="step-body"><div class="step-title">Send to Google Sheets</div><div class="step-detail">Click <strong>📊 Send to Google Sheets</strong>. The row goes directly into your Transactions ledger. If you've already imported your AMEX statement, it will also match and verify the receipt against that transaction automatically.</div></div></div>
       <div class="step-tip">💡 <strong>Do this the same day.</strong> It takes 30 seconds. Letting receipts pile up turns a 5-minute job into a 3-hour nightmare at tax time.</div>
     </div>
   </div>
@@ -697,7 +697,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <button class="guide-close" onclick="homeClose()">✕ Back</button>
     </div>
     <div class="guide-steps" id="steps-wage-main">
-      <div class="step-row"><div class="step-num">1</div><div class="step-body"><div class="step-title">Record the payment in your Google Sheet</div><div class="step-detail">Open the <a href="" target="_blank" style="color:var(--green)">Google Sheet ↗</a> → <strong>Expenses</strong> tab. Add a new row:<br>• Date: today's date<br>• Vendor/Payee: Employee's name (e.g. <em>Employee Name</em>)<br>• Description: <em>Payroll — [month]</em><br>• Total: gross wages paid<br>• Category: <em>Wages &amp; Salaries</em><br>• HST: $0 (wages are not subject to HST)</div></div></div>
+      <div class="step-row"><div class="step-num">1</div><div class="step-body"><div class="step-title">Record the payment in your Google Sheet</div><div class="step-detail">Open the <a href="" target="_blank" style="color:var(--green)">Google Sheet ↗</a> → <strong>Transactions</strong> tab. Add a new row:<br>• Date: today's date<br>• Party: Employee's name (e.g. <em>Employee Name</em>)<br>• Description: <em>Payroll — [month]</em><br>• Amount: <strong>negative</strong> gross wages paid (e.g. −2,400.00)<br>• Category: <em>Wages &amp; Salaries</em><br>• HST: $0 (wages are not subject to HST)</div></div></div>
       <div class="step-row"><div class="step-num">2</div><div class="step-body"><div class="step-title">Calculate CPP, EI, and income tax deductions</div><div class="step-detail">Go to the <strong>🗂 CRA Tax Filing</strong> tab → <strong>👥 Payroll (PD7A)</strong>. Enter each employee's gross wages in the Employee Roster. The tool calculates CPP (5.95%), EI (1.66%), and estimated income tax automatically.</div><button class="step-action" onclick="showTrackerFor('payroll')">Open CRA Payroll →</button></div></div>
       <div class="step-row"><div class="step-num">3</div><div class="step-body"><div class="step-title">Remit deductions to CRA by the 15th</div><div class="step-detail">The total shown in the PD7A section is what you owe CRA. Pay via BMO online banking: add payee <strong>"Canada Revenue Agency – Payroll"</strong>, use your Business Number. <strong>Due date: 15th of the following month</strong> (e.g. January wages → remit by February 15).</div></div></div>
       <div class="step-row"><div class="step-num">4</div><div class="step-body"><div class="step-title">Issue T4 slips by end of February each year</div><div class="step-detail">At year-end (or by Feb 28), go to <strong>🗂 CRA Tax Filing → 📋 T4 Slips</strong>. The T4 slips auto-fill from your Employee Roster. Print or email one to each employee — they need it to file their personal taxes.</div></div></div>
@@ -730,7 +730,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     </div>
     <div class="guide-steps hidden" id="steps-tax-t2">
       <div class="step-row"><div class="step-num">1</div><div class="step-body"><div class="step-title">Know your deadlines</div><div class="step-detail">Year-end is <strong>March 31</strong>.<br>• <strong>Tax payment due: June 30</strong> (3 months after year-end)<br>• <strong>T2 return filing due: September 30</strong> (6 months after year-end)<br>Pay the tax first even if you're not ready to file the full return.</div></div></div>
-      <div class="step-row"><div class="step-num">2</div><div class="step-body"><div class="step-title">Compile your full year from the Google Sheet</div><div class="step-detail">Open your <a href="" target="_blank" style="color:var(--green)">Google Sheet ↗</a>. You need the annual totals from the <strong>Income</strong> and <strong>Expenses</strong> tabs by category for the full April 1 – March 31 period.</div></div></div>
+      <div class="step-row"><div class="step-num">2</div><div class="step-body"><div class="step-title">Compile your full year from the Google Sheet</div><div class="step-detail">Open your <a href="" target="_blank" style="color:var(--green)">Google Sheet ↗</a>. You need the annual totals from the <strong>Transactions</strong> tab by category — or pull the pre-computed totals from the <strong>Year-End</strong> tab which already splits income (positive amounts) and expenses (negative amounts) for the April 1 – March 31 period.</div></div></div>
       <div class="step-row"><div class="step-num">3</div><div class="step-body"><div class="step-title">Fill in the T2 Schedule 1 form</div><div class="step-detail">Go to <strong>🗂 CRA Tax Filing → Corporate Tax (T2)</strong>. Enter revenue by type (consulting, lawn care) and expenses by CRA line number. The estimated tax calculates automatically at the 12.2% combined rate.</div><button class="step-action" onclick="showTrackerFor('yearend')">Open T2 Form →</button></div></div>
       <div class="step-row"><div class="step-num">4</div><div class="step-body"><div class="step-title">Pay the balance owing by June 30</div><div class="step-detail">BMO online banking → payee <strong>"CRA – Corporate Tax"</strong> → account number is your Business Number (15 digits ending in RC0001). Pay the estimated amount shown in the tool.</div></div></div>
       <div class="step-tip">💡 <strong>The T2 return itself is complex.</strong> The CRA Tax Filing tab gives you a solid estimate and prepares your numbers — but for your first few years, having an accountant review the actual T2 filing once is worth it. After that you'll have the template.</div>
@@ -738,7 +738,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     <div class="guide-steps hidden" id="steps-tax-payroll">
       <div class="step-row"><div class="step-num">1</div><div class="step-body"><div class="step-title">Calculate what you owe</div><div class="step-detail">Go to <strong>🗂 CRA Tax Filing → Payroll (PD7A)</strong>. Update the Employee Roster with each employee's gross wages for the pay period. The tool calculates employee CPP + EI + income tax, plus employer's share.</div><button class="step-action" onclick="showTrackerFor('payroll')">Open Payroll (PD7A) →</button></div></div>
       <div class="step-row"><div class="step-num">2</div><div class="step-body"><div class="step-title">Pay via BMO by the 15th</div><div class="step-detail">Log in to BMO online banking. Add payee <strong>"Canada Revenue Agency – Payroll Deductions"</strong>. Your account number is your Business Number + <strong>RP0001</strong>. Pay the total shown on the PD7A form.</div></div></div>
-      <div class="step-row"><div class="step-num">3</div><div class="step-body"><div class="step-title">Record the remittance in your Google Sheet</div><div class="step-detail">Add a row in the <strong>Expenses</strong> tab: Date = payment date, Payee = <em>CRA Payroll Remittance</em>, Category = <em>Wages &amp; Salaries</em>, Amount = total remitted. No HST.</div></div></div>
+      <div class="step-row"><div class="step-num">3</div><div class="step-body"><div class="step-title">Record the remittance in your Google Sheet</div><div class="step-detail">Add a row in the <strong>Transactions</strong> tab: Date = payment date, Party = <em>CRA Payroll Remittance</em>, Category = <em>Wages &amp; Salaries</em>, Amount = <strong>negative</strong> total remitted. No HST.</div></div></div>
       <div class="step-tip">💡 <strong>Due the 15th, every month.</strong> Set a recurring reminder. A 10% penalty applies for late remittances — it's one of CRA's strictest penalties.</div>
     </div>
   </div>
@@ -1097,7 +1097,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <div class="box-code">LINE 101</div>
           <div class="box-name">Total sales and other revenue (include HST-exempt and zero-rated)</div>
           <input class="box-input" id="hst_101" type="text" placeholder="0.00" oninput="craCalcHST()">
-          <div class="box-note">Your total invoiced amount including HST collected. From the Income tab.</div>
+          <div class="box-note">Your total revenue incl HST collected — from positive-amount rows in the Transactions tab (cash basis: deposits received, not invoices issued).</div>
         </div>
         <div class="cra-box">
           <div class="box-code">LINE 103</div>
@@ -1132,7 +1132,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <div class="box-code">LINE 106</div>
           <div class="box-name">Input tax credits (ITCs) — HST paid on eligible business purchases</div>
           <input class="box-input auto" id="hst_106" type="text" placeholder="0.00" oninput="craCalcHST()">
-          <div class="box-note">From Expenses tab: sum of all HST Paid (extracted) column. Auto-filled if Importer was used.</div>
+          <div class="box-note">From Transactions tab: sum of HST column on negative-amount (expense) rows, excluding Internal Transfer. Auto-filled if Importer was used.</div>
         </div>
         <div class="cra-box">
           <div class="box-code">LINE 107</div>
@@ -1222,7 +1222,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
   <div class="cra-panel" id="cra-panel-t2">
 
     <div class="autofill-bar">
-      <span class="autofill-text">📊 T2 Schedule 1 maps directly to your Expenses tab categories. Fill in totals from your Google Sheet year-end columns.</span>
+      <span class="autofill-text">📊 T2 Schedule 1 maps directly to your Transactions tab categories (negative-amount rows). Fill in totals from your Google Sheet Year-End tab.</span>
       <button class="btn btn-outline btn-sm" onclick="craAutoFillT2()">⬇ Pull from Sheet totals</button>
     </div>
 
@@ -2247,6 +2247,8 @@ const PROVINCE_CONFIG = {
 };
 
 // ── Universal expense categories (defaults) ──
+// Phase 2A: "Bill Payment / Transfer" → "Internal Transfer" (tracked in ledger,
+// excluded from P&L and HST math server-side and in formulas).
 const DEFAULT_EXP_CATS = [
   'Meals & Entertainment','Professional Fees','Wages & Salaries','Small Tools',
   'Supplies','Uniforms','Dues & Memberships','Vehicle Repairs','Fuel',
@@ -2255,7 +2257,7 @@ const DEFAULT_EXP_CATS = [
   'Inventory — Materials (COGS)','Advertising & Marketing','Subcontractors',
   'Office Supplies','Rent','Home Office','Vehicle Lease/Payments','Travel',
   'Training & Education','Permits & Licenses','Tax Payments','Other',
-  'Bill Payment / Transfer','Owner Draw / Distribution',
+  'Internal Transfer','Owner Draw / Distribution',
   'Income Received','SKIP — not a business expense'
 ];
 
@@ -2295,7 +2297,7 @@ function refreshCategoryLists() {
 
 const NO_HST = new Set([
   'Wages & Salaries','Insurance','Interest & Bank Charges','Property Tax',
-  'Bill Payment / Transfer','Owner Draw / Distribution',
+  'Internal Transfer','Owner Draw / Distribution',
   'Income Received','SKIP — not a business expense'
 ]);
 
@@ -2693,7 +2695,7 @@ function getCategorizePrompt(batch, isBankStatement) {
   const bankContext = isBankStatement
     ? `This is a ${C.primaryBank} BANK ACCOUNT statement for ${C.businessName} (${prov.name} ${C.businessType === 'incorporated' ? 'corporation' : 'sole proprietorship'}).
 IMPORTANT BANK CONTEXT:
-- Credit card bill payments (${C.creditCard} BILL PYMT etc.) = paying the credit card bill from the bank. Mark as "Bill Payment / Transfer" — individual purchases are captured in the credit card statement. NEVER double-count these.
+- Credit card bill payments (${C.creditCard} BILL PYMT etc.) = paying the credit card bill from the bank. Mark as "Internal Transfer" — individual purchases are captured in the credit card statement. NEVER double-count these.
 - Owner distributions, draws, transfers to personal = "Owner Draw / Distribution"
 - Interac e-Transfer received from clients = "Income Received"
 - CRA / HST / tax payments = "Tax Payments"
@@ -2702,7 +2704,7 @@ IMPORTANT BANK CONTEXT:
     : `This is a ${C.creditCard} CREDIT CARD statement for ${C.businessName} (${prov.name} ${C.businessType === 'incorporated' ? 'corporation' : 'sole proprietorship'}).
 IMPORTANT CREDIT CARD CONTEXT:
 - Every charge is a real purchase — categorize by what was bought
-- PAYMENT RECEIVED / THANK YOU = bank paying off this credit card. Mark as "Bill Payment / Transfer"
+- PAYMENT RECEIVED / THANK YOU = bank paying off this credit card. Mark as "Internal Transfer"
 - ${prov.type} is embedded in every purchase (divide total by ${1+prov.rate} to get net)
 - Annual fees = "Interest & Bank Charges"`;
 
@@ -3081,15 +3083,15 @@ function ruleCategory(d,amt,bank='AMEX'){
   const isBMO=bank==='BMO';
   d=d.toUpperCase();
   // BMO-specific: AMEX bill payment is always a transfer, not an expense
-  if(isBMO&&/AMEX.*BILL|BILL.*PYMT|BILL.*PMT/.test(d))return'Bill Payment / Transfer';
+  if(isBMO&&/AMEX.*BILL|BILL.*PYMT|BILL.*PMT/.test(d))return'Internal Transfer';
   if(isBMO&&/MSP.*DIV|DIV.*MSP|OWNER.*DIV/.test(d))return'Owner Draw / Distribution';
-  if(isBMO&&/INTERAC.*RCVD|ETRNSFR.*RCVD|E-TRANSFER.*RCVD/.test(d))return amt>0?'Income Received':'Bill Payment / Transfer';
+  if(isBMO&&/INTERAC.*RCVD|ETRNSFR.*RCVD|E-TRANSFER.*RCVD/.test(d))return amt>0?'Income Received':'Internal Transfer';
   if(isBMO&&amt>0&&/RCVD|RECEIVED|DEPOSIT/.test(d))return'Income Received';
   // AMEX-specific: payment received = BMO paying the bill
-  if(!isBMO&&/PAYMENT.*RECEIVED|THANK YOU|ONLINE PAYMENT/.test(d))return'Bill Payment / Transfer';
+  if(!isBMO&&/PAYMENT.*RECEIVED|THANK YOU|ONLINE PAYMENT/.test(d))return'Internal Transfer';
   // Credit card bill payments & internal transfers — always skip/flag
-  if(/AMEX.*BILL|BILL.*PYMT|BILL.*PMT|MSP.*DIV|DIV.*MSP/.test(d))return'Bill Payment / Transfer';
-  if(/INTERAC.*ETRNSFR.*RCVD|ETRNSFR.*RCVD/.test(d))return amt>0?'Income Received':'Bill Payment / Transfer';
+  if(/AMEX.*BILL|BILL.*PYMT|BILL.*PMT|MSP.*DIV|DIV.*MSP/.test(d))return'Internal Transfer';
+  if(/INTERAC.*ETRNSFR.*RCVD|ETRNSFR.*RCVD/.test(d))return amt>0?'Income Received':'Internal Transfer';
   if(/PAYROLL|WAGES/.test(d))return'Wages & Salaries';
   if(/CRA|HST PAYMENT|GST PAYMENT/.test(d))return'Interest & Bank Charges';
   if(/BANK FEE|BMO FEE|BMO MONTHLY|SERVICE FEE/.test(d))return'Interest & Bank Charges';
@@ -3108,7 +3110,7 @@ function ruleCategory(d,amt,bank='AMEX'){
   // Credits / positive amounts that look like income
   if(amt>0&&/RCVD|RECEIVED|DEPOSIT/.test(d))return'Income Received';
   // Generic transfer/payment catch-all
-  if(/PAYMENT|TRANSFER|PYMT|PMT/.test(d))return'Bill Payment / Transfer';
+  if(/PAYMENT|TRANSFER|PYMT|PMT/.test(d))return'Internal Transfer';
   return'Other';
 }
 
@@ -3149,7 +3151,11 @@ function impRenderStats(){
     <div class="stat-box"><div class="stat-lbl">CREDITS</div><div class="stat-val g">$${fmtMoney(totInc)}</div></div>`;
 }
 
-const EXCLUDED_CATS=new Set(['SKIP — not a business expense','Bill Payment / Transfer','Income Received','Owner Draw / Distribution']);
+// Cash-basis (Phase 2A): only truly non-business items are auto-excluded from the
+// ledger. Internal Transfer and Income Received DO flow through to the backend —
+// transfers land in Transactions as "Internal Transfer" (excluded from P&L),
+// deposits land as positive ledger entries and trigger invoice-match proposals.
+const EXCLUDED_CATS=new Set(['SKIP — not a business expense','Owner Draw / Distribution']);
 function impChangeCat(idx,cat){impTxns[idx].category=cat;impTxns[idx].excluded=EXCLUDED_CATS.has(cat);calcHST();impRenderStats()}
 function impToggleExcl(idx){impTxns[idx].excluded=!impTxns[idx].excluded;impRender();impRenderStats()}
 function impReset(){
@@ -3181,7 +3187,10 @@ async function sendToSheets(){
     return;
   }
 
-const EXCLUDED = new Set(['SKIP — not a business expense','Bill Payment / Transfer','Owner Draw / Distribution','Income Received']);
+  // Phase 2A: only personal/skip categories are filtered client-side.
+  // Internal Transfer and Income Received travel to the backend, which writes
+  // them to 📒 Transactions with proper signing and Internal-Transfer tagging.
+  const EXCLUDED = new Set(['SKIP — not a business expense','Owner Draw / Distribution']);
   const allCategorized = impTxns.filter(tx => !tx.excluded && tx.category);
   const rows = allCategorized.filter(tx => !EXCLUDED.has(tx.category));
   const skippedRows = allCategorized.filter(tx => EXCLUDED.has(tx.category));
@@ -3193,9 +3202,9 @@ const EXCLUDED = new Set(['SKIP — not a business expense','Bill Payment / Tran
 
   btn.disabled = true;
   btn.textContent = '⏳ Sending…';
-  let statusMsg = `Sending ${rows.length} of ${allCategorized.length} rows to Google Sheets…`;
+  let statusMsg = `Sending ${rows.length} of ${allCategorized.length} rows to your Transactions ledger…`;
   if(skippedRows.length){
-    statusMsg += ` (${skippedRows.length} skipped: bill payments, transfers, or owner draws — these don't go in the books)`;
+    statusMsg += ` (${skippedRows.length} skipped: owner draws and non-business items — these don't go in the books)`;
   }
   status.textContent = statusMsg;
 
@@ -3240,18 +3249,19 @@ const EXCLUDED = new Set(['SKIP — not a business expense','Bill Payment / Tran
       btn.disabled = false;
       btn.style.background = 'var(--green)';
 
-      // Build result message
-let msg = `✅ <strong>${(d.expenses||0)+(d.income||0)} entries</strong> added to your Google Sheet.`;
+      // Build result message — new cash-basis shape: { written, proposedMatches, skipped, duplicatesBlocked }
+      const writtenCount = d.written || 0;
+      let msg = `✅ <strong>${writtenCount} transactions</strong> added to your ledger.`;
       const totalSkipped = (d.skipped || 0) + skippedRows.length;
       if(totalSkipped > 0){
-        msg += ` <span style="color:var(--ink3);font-size:.85rem">${totalSkipped} skipped — transfers, bill payments, and owner draws don't count as business expenses.</span>`;
+        msg += ` <span style="color:var(--ink3);font-size:.85rem">${totalSkipped} skipped — owner draws and non-business items don't count.</span>`;
       }
 
       // Duplicate detection results from backend
       if(d.duplicatesBlocked > 0){
         msg += `<div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:.7rem .9rem;margin-top:.75rem;font-size:.82rem;color:var(--amber);line-height:1.6">`;
         msg += `<strong>⚠️ ${d.duplicatesBlocked} duplicate(s) detected and skipped</strong><br>`;
-        msg += `These transactions were already in your Google Sheet — they were not added again.`;
+        msg += `These transactions were already in your Transactions ledger — they were not added again.`;
         if(d.duplicateDetails && d.duplicateDetails.length > 0){
           msg += `<div style="margin-top:.5rem;font-size:.78rem">`;
           d.duplicateDetails.forEach(dup => {
@@ -3264,7 +3274,26 @@ let msg = `✅ <strong>${(d.expenses||0)+(d.income||0)} entries</strong> added t
         msg += `</div>`;
         btn.textContent = `✓ Sent (${d.duplicatesBlocked} dupes skipped)`;
       } else {
-        btn.textContent = '✓ Sent to Sheets';
+        btn.textContent = '✓ Sent to ledger';
+      }
+
+      // NEW — proposed invoice matches for deposits
+      const matches = Array.isArray(d.proposedMatches) ? d.proposedMatches : [];
+      if(matches.length){
+        msg += `<div style="background:var(--blueLight,#e3eefa);border:1px solid var(--blue);border-radius:var(--radius);padding:.8rem 1rem;margin-top:.85rem;font-size:.85rem;line-height:1.6">`;
+        msg += `<strong>💡 ${matches.length} deposit${matches.length>1?'s':''} look like open invoice${matches.length>1?'s':''}.</strong> Confirm to mark the invoice Paid.`;
+        msg += `<div style="margin-top:.5rem;display:flex;flex-direction:column;gap:.4rem">`;
+        matches.forEach((m, i) => {
+          const safeClient = esc(m.client || '');
+          const safeInv = esc(m.invNum || '');
+          msg += `<div id="match-${i}" style="background:#fff;border:1px solid var(--rule);border-radius:4px;padding:.55rem .75rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">`;
+          msg += `<div style="flex:1;min-width:180px;font-size:.8rem"><strong>$${Math.abs(m.amount||0).toFixed(2)}</strong> on ${esc(m.date||'')} → Invoice #${safeInv} (${safeClient})</div>`;
+          msg += `<div style="display:flex;gap:.3rem">`;
+          msg += `<button onclick="confirmInvoiceMatch(${m.txnRow}, '${safeInv}', ${i})" style="background:var(--green);color:#fff;border:none;border-radius:4px;padding:.3rem .75rem;cursor:pointer;font-size:.75rem">Confirm match</button>`;
+          msg += `<button onclick="confirmInvoiceMatch(${m.txnRow}, '', ${i})" style="background:var(--grey,#eee);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:.3rem .75rem;cursor:pointer;font-size:.75rem">Not a match</button>`;
+          msg += `</div></div>`;
+        });
+        msg += `</div></div>`;
       }
 
       msg += `<div style="margin-top:.75rem"><button onclick="impReset()" style="background:var(--ink);color:white;border:none;border-radius:4px;padding:.35rem .85rem;cursor:pointer;font-size:.78rem">Import another statement →</button></div>`;
@@ -3285,6 +3314,37 @@ let msg = `✅ <strong>${(d.expenses||0)+(d.income||0)} entries</strong> added t
   }
 }
 
+// Phase 2A — confirm or dismiss a proposed deposit → invoice match
+async function confirmInvoiceMatch(txnRow, invNum, cardIdx){
+  const token = sessionStorage.getItem(AUTH_KEY);
+  const card = document.getElementById(`match-${cardIdx}`);
+  if(!token){ toast('Please sign in first'); return; }
+  if(card) card.style.opacity = '0.5';
+  try {
+    const r = await fetch('/api/import/confirm-match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ txnRow, invNum }),
+    });
+    const d = await r.json();
+    if(d.ok){
+      if(card){
+        card.style.background = invNum ? '#e6f5e6' : '#f4f4f4';
+        card.innerHTML = invNum
+          ? `<div style="flex:1;font-size:.8rem;color:var(--green)">✓ Invoice #${esc(invNum)} marked Paid, deposit linked.</div>`
+          : `<div style="flex:1;font-size:.8rem;color:var(--ink3)">Dismissed — deposit left unmatched.</div>`;
+      }
+      toast(invNum ? `Invoice #${invNum} marked Paid` : 'Match dismissed');
+    } else {
+      if(card) card.style.opacity = '1';
+      toast('Match failed: ' + (d.error || 'unknown error'));
+    }
+  } catch(err){
+    if(card) card.style.opacity = '1';
+    toast('Match failed: ' + err.message);
+  }
+}
+
 function showReview(){document.getElementById('imp-step3').classList.add('hidden');document.getElementById('imp-step2').classList.remove('hidden')}
 
 function getExpRows(){return impTxns.filter(tx=>!tx.excluded&&!EXCLUDED_CATS.has(tx.category)&&tx.category!=='')}
@@ -3294,13 +3354,13 @@ function expCSV(){
   const header='DATE,VENDOR / PAYEE,DESCRIPTION,TOTAL CHARGED (incl HST),CATEGORY,HST PAID (extracted),NET EXPENSE (excl HST),PAYMENT METHOD,AMEX?,NOTES\n';
   const body=getExpRows().map(tx=>[tx.date,`"${tx.vendor}"`,`"${tx.description.replace(/"/g,'""')}"`,Math.abs(tx.amount).toFixed(2),`"${tx.category}"`,tx.hst.toFixed(2),Math.abs(tx.net).toFixed(2),pay,amex,''].join(',')).join('\n');
   dlFile('statement-import.csv',header+body,'text/csv');
-  toast(`Downloaded ${getExpRows().length} rows — import into your Expenses tab`);
+  toast(`Downloaded ${getExpRows().length} rows — import into your Transactions tab`);
 }
 function expClipboard(){
   const pay=impBank==='AMEX'?'AMEX':'BMO Bank Transfer';
   const amex=impBank==='AMEX'?'Yes':'No';
   const txt=getExpRows().map(tx=>[tx.date,tx.vendor,tx.description,Math.abs(tx.amount).toFixed(2),tx.category,tx.hst.toFixed(2),Math.abs(tx.net).toFixed(2),pay,amex,''].join('\t')).join('\n');
-  navigator.clipboard.writeText(txt).then(()=>toast(`${getExpRows().length} rows copied — click B12 in Expenses tab then Ctrl+V`));
+  navigator.clipboard.writeText(txt).then(()=>toast(`${getExpRows().length} rows copied — click B12 in Transactions tab then Ctrl+V`));
 }
 function expHSTSummary(){
   const rows=getExpRows().filter(tx=>tx.amount<0);
@@ -3492,7 +3552,7 @@ async function invSendToSheets(){
       btn.textContent = '✓ Sent!';
       btn.style.background = 'var(--green)';
       const sheetLink = USER_CONFIG?.sheetUrl ? `<a href="${USER_CONFIG.sheetUrl}" target="_blank" style="color:var(--green)">Open Sheet ↗</a>` : '';
-      status.innerHTML = `✅ Invoice #${invNum} added to <strong>Invoices</strong> and <strong>Income</strong> tabs. ${sheetLink}`;
+      status.innerHTML = `✅ Invoice #${invNum} added to <strong>Invoices</strong>. Revenue will post to <strong>Transactions</strong> when the deposit is imported and matched. ${sheetLink}`;
     } else {
       status.textContent = '❌ ' + (d.error || 'Unknown error');
       btn.disabled = false;
@@ -3686,11 +3746,11 @@ async function rcptSendToSheets(){
         msg = `<div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:.6rem .85rem;font-size:.82rem;color:var(--amber);line-height:1.5"><strong>⚠️ This receipt is already in your books.</strong><br>A matching transaction ($${fmtMoney(Math.abs(parseFloat(r.total)||0))} on ${r.date||'unknown date'}) was found in your Google Sheet. It was not added again.</div>`;
       } else if(matchedTxn){
         btn.style.background = 'var(--green)';
-        msg = `✅ Added to Expenses tab. <strong>Matches statement entry: ${esc(matchedTxn.vendor)} on ${matchedTxn.date}</strong> — receipt verified.`;
+        msg = `✅ Added to Transactions. <strong>Matches statement entry: ${esc(matchedTxn.vendor)} on ${matchedTxn.date}</strong> — receipt verified.`;
         matchedTxn.receiptVerified = true;
       } else {
         btn.style.background = 'var(--green)';
-        msg = '✅ Added to Expenses tab in your Google Sheet.';
+        msg = '✅ Added to your Transactions ledger.';
       }
  
       // ── NEW: Show Drive backup status ──

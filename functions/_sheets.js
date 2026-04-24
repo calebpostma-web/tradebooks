@@ -8,7 +8,7 @@ import { getGoogleAccessToken, getUserSheetId } from './_google.js';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /**
- * Read values from a range. e.g. range = "'💸 Expenses'!B12:L500"
+ * Read values from a range. e.g. range = "'📒 Transactions'!B12:M500"
  */
 export async function readRange(env, userId, range) {
     const sheetId = await getUserSheetId(env, userId);
@@ -29,7 +29,7 @@ export async function readRange(env, userId, range) {
 
 /**
  * Append rows to a sheet. rows = [[col1, col2, ...], [col1, col2, ...]]
- * range = "'💸 Expenses'!B:L" or similar — Google auto-finds the next empty row
+ * range = "'📒 Transactions'!B:M" or similar — Google auto-finds the next empty row
  */
 export async function appendRows(env, userId, range, rows) {
     const sheetId = await getUserSheetId(env, userId);

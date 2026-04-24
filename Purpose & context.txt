@@ -1,0 +1,202 @@
+Purpose & context
+Caleb is the developer of TradeBooks, a bookkeeping web application built for small Canadian trades businesses. The app is his only active project. Core goals are to deliver a polished, fully functional product without losing previously built features across development iterations — "I want things to get better not worse."
+The business context: Caleb and his wife co-run multiple businesses (Postma Contracting, an HVAC company, and PCTires) and are themselves users of the app, which has directly informed feature decisions (e.g., CRA compliance requirements learned from personal tax filing experience).
+Tech stack:
+
+Frontend: HTML/JS, hosted on Cloudflare Pages (auto-deploys from GitHub)
+Backend: Google Sheets + Apps Script (manual redeployment required via Google Script Editor)
+Infrastructure: Cloudflare Workers (API logic), Cloudflare D1 database (tradebooks-db, tables: users, profiles, api_usage)
+AI features: Anthropic Claude API
+Auth/storage: Google OAuth, Google Drive (receipt image backup)
+Version control: GitHub (Caleb edits directly in the GitHub web editor)
+
+Multi-business architecture: Each business requires its own Google Sheet, Apps Script deployment, and Drive receipt folder. A "business switcher" dropdown in the UI is planned to toggle between them.
+Multi-user access: Caleb's Google account hosts the Sheet, Apps Script deployment, and Drive folder. His wife creates her own TradeBooks login but points her profile to Caleb's existing Sheet ID and Script URL — no additional Google-side setup needed.
+
+Current state
+The app is deployed and operational at tradebooks-bju.pages.dev. Key recently completed features:
+
+Receipt image backup to Google Drive: Frontend sends base64 image data; Apps Script writes to Drive and stores the URL in column L of the Expenses tab. Redeployment pattern confirmed: always use "edit existing deployment" (pencil icon) to preserve the stable URL.
+Interactive Tax-Saving calculators: All seven CRA Tax Filing tab cards upgraded from static text to working calculators (Home Office, Vehicle Expenses, Technology/CCA, Income Splitting, Defer Income, EPSP/Bonuses, Charitable Donations, SR&ED checklist).
+CRA Compliance Timeline card on the Home tab, dynamically calculated from fiscal year end in Settings, with urgency colour-coding and CRA links.
+Settings placeholder text scrubbed of personal business references; Apps Script test functions confirmed deleted post-deployment.
+
+Immediate outstanding items (prioritized):
+
+Update getAppsScriptCode() in the Cloudflare Worker so new users automatically receive the Drive upload function during onboarding — flagged as highest-value medium-priority item
+Add auto-download trigger in rcptShowResult() (conditional on tb_receipt_tip_dismissed localStorage flag being set — should only fire post-setup-flow)
+Add payrollRpNumber field to Settings
+Mobile CSS fixes for the vehicle trip logger
+Verify button reset bug fix in rcptClear() post-deployment
+Add a "logged by" field to track which user entered each transaction (~30 min to implement)
+
+
+On the horizon
+
+Register tradebooks.ca via Cloudflare Registrar (~$12/year); update Google OAuth redirect URI in Google Cloud Console when domain changes (.pages.dev URL remains functional simultaneously)
+Create a fresh test account for full end-to-end flow validation
+Business switcher dropdown UI for toggling between multiple businesses
+Smart deduction flagging / smart card highlighting based on actual books data
+GPS trip logging
+Stripe billing integration
+Full public launch cleanup
+
+
+Key learnings & principles
+
+Google OAuth scope authorization for DriveApp must be triggered manually via a test function run in the Script Editor before the deployed web app can use it. Pattern: add test function → run it → approve permissions → delete test function → redeploy via edit existing deployment.
+New deployments generate a new URL (breaking Settings); editing existing deployments preserves the URL — always use the pencil icon.
+CRA compliance requirements (payroll RP number, WSIB registration, TD1 forms, T4/T5 deadlines, ROE, T5018 for subcontractors) must be set up before they're needed, not at year-end. This insight came from personal filing experience and shaped the compliance timeline feature.
+Cloudflare D1 dashboard may display "Tables: 0" incorrectly — the database and tables are confirmed operational; don't trust the dashboard display alone.
+
+
+Approach & patterns
+
+Preferred implementation format: One complete file per feature with clearly marked sections, exact search terms to locate insertion points, and explicit line number references where visible. Ready-to-paste code with "where to put it" instructions — no markdown explanation documents.
+Editor workflow: GitHub web editor, using Ctrl+F to locate code and selecting line ranges to replace functions.
+Session continuity: Caleb values having up-to-date project file snapshots (index.html, Code.gs, google-setup.js) carried forward to avoid re-establishing context.
+Feature preservation: Strong preference for incremental improvement without regression — new work should never remove or break existing functionality.
+
+Always easy, that is the focus. Up to date on Ontario tax code. Want to be able to take advantage of all tax refunds and rebates available. Want to use AI to the best advantage so that no duplicate entries, HST isn't missed, Year end is filed properly, T4 and other tax forms are filled out easily. Ideas and tax refunds are auto generated (or at the push of a button at least) and easy to use and install
+
+
+## TradeBooks — Status Summary (April 1, 2026)
+
+### What's live and working now:
+
+**Receipt Scanner:**
+- Scan receipt → AI extracts vendor, date, total, HST, category
+- Send to Google Sheets (with duplicate detection)
+- Receipt image auto-uploads to Google Drive (`TradeBooks Receipts / [year] /`)
+- Clickable "View in Drive" link in success message
+- Drive link written back to column L of Expenses tab
+- Button reset bug fixed on Clear / Scan another
+
+**Tax-Saving Cards (CRA Tax Filing → Tax-Saving Ideas):**
+All seven cards now have interactive calculators that expand inline:
+- Home Office Deduction — sq ft calculator, shows deduction + tax saved
+- Vehicle Expenses — mileage log with trip logger, compares actual cost vs CRA per-km rate
+- Technology & Equipment — CCA calculator with class selection, AII multiplier, 5-year schedule
+- Income Splitting — shows corp tax saved vs personal tax + CPP cost
+- Defer Income / Accelerate Expenses — year-end countdown + expense planner
+- EPSP / Bonuses — corp income before/after, net benefit, SBD warning
+- Charitable Donations — corporate vs personal credit side-by-side
+- SR&ED — 5-question eligibility checklist with verdict
+
+**CRA Compliance Timeline (Home tab):**
+- Smart deadline tracker based on fiscal year end and business type
+- Shows payroll remittance, HST, T4/T5, WSIB, T2, personal tax deadlines
+- Colour-coded urgency (red/amber/green) with day countdown
+- Setup warnings for RP number, WSIB registration, TD1 forms
+- Direct links to CRA pages
+
+**Placeholder cleanup:**
+- Settings fields now show generic examples instead of Postma/tire references
+- Apps Script test functions removed
+
+### Still to do:
+
+**Quick (under 30 min):**
+- Auto-download receipt trigger in `rcptShowResult()` after tip dismissed
+- Mobile CSS for vehicle trip logger
+- Add `payrollRpNumber` field to Settings
+- Fix remaining Costco/personal references in T2 form descriptions
+
+**Medium (1–2 hours):**
+- Update `getAppsScriptCode()` in Cloudflare Worker with new `doPost` + `uploadReceiptToDrive` so new users get Drive upload automatically during onboarding
+
+**Bigger features (future sessions):**
+- Smart card highlighting — read their books, flag missing deductions
+- GPS-based trip logger (PWA)
+- Stripe billing integration
+- Public launch cleanup (all personal references scrubbed)
+
+### Infrastructure:
+- Frontend: GitHub → Cloudflare Pages (`tradebooks-bju.pages.dev`)
+- Backend: Cloudflare Workers + D1
+- AI: Anthropic Claude API
+- Data: User's own Google Sheet + Google Drive
+- Apps Script: Version 9 deployed, Drive authorized
+
+
+Here you go — ready to paste into your `CURRENT_STATUS.md` or wherever you keep handoff notes:
+
+---
+
+# AI Bookkeeper — Status (April 22, 2026, ~3am)
+
+## Live URLs
+- **App:** https://aibookkeeper.ca/app/
+- **Marketing:** https://aibookkeeper.ca
+- **Pages project:** Cloudflare → Workers & Pages → `aibookkeeper` (freshly recreated today — OLD project `tradebooks-bju` was deleted)
+- **D1 database:** `tradebooks-db` (bound as `DB`)
+- **GitHub repo:** `calebpostma-web/tradebooks`
+
+## Accounts (verified in D1 last night)
+- **id 2** — `calebpostma@gmail.com` — sheet_id `1ZYGnskYB2duwGMvYDfR0xoBzZDJ44aBQbSp0h_hNWSw`, script_url active
+- **id 3** — `postmacontracting@gmail.com` (Andrea's login) — fresh styled sheet in `andreamariepostma@gmail.com`'s Drive, script_url active
+
+## Shipped today (April 21–22)
+
+### Domain migration + rebrand
+- Registered `aibookkeeper.ca` via Cloudflare Registrar
+- Full rebrand committed: TradeBooks → AI Bookkeeper across all files
+- Google OAuth client updated with new redirect URIs
+- 4 secrets regenerated in new Pages project (ANTHROPIC_API_KEY, JWT_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
+
+### Marketing page
+- Rebuilt with authentic founder story
+- Removed fake "Mike S." testimonial (Competition Bureau risk)
+
+### Invoice wizard fixes
+- Fixed leaked HTML from broken placeholder
+- Sequential invoice numbering (persists via localStorage `tb_lastInvNum`)
+- Added "Billing from" summary card
+- Operating Name / DBA support — shows on invoice, legal name as `o/a [Legal Name]` subtext
+
+### Send-to-Sheets diagnostic panel
+- Built for all 3 send paths (Statement Importer, Invoice Wizard, Receipt Scanner)
+- Auto-runs reachability test on failure, shows CORS vs URL vs HTTP error distinctly
+
+### Sheet creation bug (the big one — 5 layered fixes)
+1. **Manual "Create my Google Sheet" button** added to Settings (shows when sheet_id is empty)
+2. **initAuth wrapper bug** — `addEventListener('DOMContentLoaded', initAuth)` captured the original `initAuth` reference; the IIFE at line 5862 that wrapped it to handle OAuth callbacks never ran. Fixed by wrapping in a lambda: `() => initAuth()` so the lookup happens at call time
+3. **Redirect URI** — the file at `/mnt/project/google-setup__1_.js` was the old pre-rebrand version with hardcoded `tradebooks-bju.pages.dev`. When I built v3 on that base, I accidentally overwrote the deployed dynamic-origin version. Fixed to `redirect_uri: origin + '/app/'` with origin passed through from the POST handler
+4. **Silent styling/population failures** — added error capture so `applyStyling` and `populateValues` surface errors back to the frontend instead of swallowing them
+5. **Year-End tab off-by-one** — `populateValues` pushed 7 rows into range `B5:F10` (6 rows). Fixed range to `B5:F11` and SUM formula to `=SUM(C5:C10)`
+
+### Apps Script deployment (wife's send-to-sheets CORS issue)
+- Auto-deployed script has correct manifest (`access: 'ANYONE_ANONYMOUS'`) but Google's Apps Script API doesn't reliably apply CORS behaviour on programmatic deployments
+- **Workaround:** after onboarding completes, user must manually redeploy ONCE — Apps Script editor → Deploy → Manage deployments → pencil icon → Version: New version → Deploy
+- URL stays stable (pencil icon preserves it)
+
+## Still outstanding
+
+### Bugs / polish
+- **CORS on auto-deployed Apps Script** — every new user will hit "Failed to fetch" until they manually redeploy new version once. Needs either (a) better programmatic deployment (b) an onboarding step explicitly telling users to do the one-time redeploy (c) a "Finish Setup" button that opens their Apps Script with clear instructions
+- The invoice-wizard `showSheetsError` diagnostic panel didn't render when Andrea hit the CORS error — only the short "Connection error" message showed. Needs investigation
+
+### Deferred (from roadmap)
+- Year-end rollover system (Q3 2026, before public launch)
+- Business switcher dropdown (multi-business: Postma / HVAC / PCTires)
+- Mobile CSS for vehicle trip logger
+- payrollRpNumber field in Settings
+- Auto-download receipt trigger post-setup
+- "Logged by" user-tracking column
+- Smart card highlighting from real books data
+- Stripe billing, GPS trip logging
+- Public launch cleanup pass
+- **Big architectural question:** kill Apps Script entirely, do all sheet writes via Cloudflare Worker with stored Google refresh tokens. Would eliminate the 9-step deployment dance + CORS issue permanently. 2–3 focused sessions estimated
+
+### Admin cleanup
+- Remove stale `tradebooks-bju.pages.dev` from Google Cloud Console OAuth redirect URIs
+- Email forwarding: set up `hello@aibookkeeper.ca` → Caleb's Gmail via Cloudflare Email Routing
+- Update Project knowledge files to latest GitHub versions (delete `TRADEBOOKS_REFERENCE.md`)
+
+## How to start next session cold
+
+Paste this at the top of the first message:
+
+> Picking up AI Bookkeeper work. Read CURRENT_STATUS.md first before doing anything. Today's focus: [TOPIC]. Show me your plan before editing any files.
+
+The "show me your plan" line is the antidote to mid-stream pivots.

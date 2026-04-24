@@ -1,0 +1,162 @@
+That changes the scope a lot — and it's a genuinely good tax strategy done right, so I want to take it seriously rather than just rubber-stamping.
+
+What you're doing is income splitting via legitimate T4 wages to family members. The math is powerful: each kid can earn up to the federal basic personal amount (~$16,129 in 2026) federally tax-free, plus a chunk more before Ontario tax kicks in (~$12,747 Ontario BPA). With six kids, that's potentially $90K+ of income per year shifted from your marginal rate to zero. For an incorporated contractor in Ontario at the top bracket, that's tens of thousands in real tax savings annually, permanently.
+
+**But** — CRA audits this heavily, and the difference between "brilliant strategy" and "reassessment + penalties + interest" is paperwork. Three things CRA wants to see in an audit:
+
+1. **Work that actually happened.** Not "my kid exists." Real tasks: cleaning shop, organizing files, sorting inventory at PCTires, washing vehicles, helping with seasonal tire changeovers, social media for the HVAC Facebook page. Age-appropriate.
+2. **Reasonable pay for that work.** If your 8-year-old got paid $16K to "sweep the shop," that's not defensible. If your 16-year-old worked weekends at PCTires during tire season at $18/hr for 200 hours, that's $3,600 and perfectly defensible. The rate has to match what you'd pay a stranger.
+3. **Actual payment with a paper trail.** E-transfers to the kid's own bank account. Not "paid in cash" or "credited to an account I control on their behalf." CRA wants to see money leaving your corp and landing in theirs.
+
+Also important: TOSI (Tax on Split Income) — the 2018 rules that blew up dividend-splitting — **does not apply to wages**. Only dividends, capital gains from private corp shares, and related-debt interest. You're on solid legal ground paying T4 wages, full stop. This is explicitly carved out.
+
+So this should actually become a **feature** of your product, not just a tax calculator. The thing that makes or breaks the child-payroll strategy is audit-ready documentation, and that's something software can solve better than a shoebox of handwritten notes.
+
+## Questions I need before scoping
+
+**1. Ages of the six kids.** This is the biggest scope driver. CRA rules differ:
+- **Under 18:** CPP exempt (no contributions), EI exempt as family, just federal + provincial tax (which is usually $0 because of BPA)
+- **18 and over:** CPP kicks in at 5.95% each side, EI still exempt as family, tax calc standard
+Ontario child labour law also matters — under 14 is restricted to family-business work only (you're fine there), and there are hours-of-work caps during school. If you've got a range from toddlers to adults, I need that range.
+
+**2. What work are they actually doing?** This shapes the time-tracking feature. A 15-year-old doing 8 hours a weekend at PCTires is different from a 19-year-old doing admin for HVAC remotely. Different rates, different categories, different audit risk profiles.
+
+**3. Are you and Andrea also on T4 payroll,** or is it just the kids? I asked earlier and you answered re: the kids but didn't address you and Andrea. If you're taking dividends as owner compensation and the kids are on T4, that's one model. If everyone's on T4, that's another.
+
+**4. Which business runs the payroll?** Postma Contracting corporation, I'm assuming — but if HVAC or PCTires also employ the kids (seasonal tire changeovers), each business that pays needs its own RP payroll account with CRA, and separate remittances. Multi-business payroll is a real scope increase.
+
+**5. Are you already doing this,** or is this aspirational? If you've been paying the kids through 2025 already, we need to make sure the existing T4s were filed correctly and we're just building the tool to make it easier going forward. If 2026 is year one, we have more flexibility in how we set it up.
+
+## How this reshapes Phase 2B payroll
+
+Assuming a realistic answer — say, six kids ranging from maybe 8 to 20, doing a mix of shop work and admin across Postma Contracting primarily — here's the refined scope:
+
+**Core payroll engine** — 2026 CRA rates, age-aware (auto CPP-exempt under 18), family EI exempt flag, cumulative averaging for irregular pay (critical: kids don't work on regular schedules — tire season is concentrated in spring/fall, summer shop work is sporadic). The parked spec already covers most of this.
+
+**Time/work logbook** — this is the audit-defense feature, and it's arguably more important than the payroll calc itself. For each pay run, each employee: dates worked, hours, description of work, rate. Timestamped entry (so CRA can see it wasn't backfilled). Ideally tied to the business (Postma vs PCTires vs HVAC so the work makes contextual sense). This is the thing that turns "child labour tax scheme" into "legitimate family business compensation with documentation" in the eyes of a CRA auditor.
+
+**Per-employee YTD tracking** — each kid's YTD gross, CPP (if applicable), EI (if applicable), federal tax, Ontario tax. So you can run mid-year and see: "Kid #3 has earned $8,400 YTD, has $7,700 BPA headroom, can do ~400 more hours at $19/hr before tax kicks in." That's actionable planning, not just bookkeeping.
+
+**T4 generator** — at year-end, produces T4 slip data for each of the six kids, plus T4 Summary. Export CSV for filing on CRA My Business Account, or PDF for kids' own T1 filings (they need to file even with $0 owing, to establish the income history — which matters for RRSP contribution room they'll want later).
+
+**Source deduction remittance tracking** — if any kids cross the BPA threshold and owe actual tax, or any are 18+ and have CPP, the corp owes CRA a monthly remittance (15th of the following month for monthly remitters; quarterly for small employers). System tracks the accumulated liability, flags the deadline on the CRA Compliance Timeline you already built, generates the remittance voucher data.
+
+**TD1 + SIN collection** — each kid needs a TD1 (federal + Ontario) on file, and a SIN. For kids under 12, getting a SIN requires a parent's application. The system should track who's got paperwork on file. Not hard, but a real compliance gap if missed.
+
+## Scope decision — where does this land for Cowork?
+
+Two paths:
+
+**Path A — Phase 2A first, then 2B.** Ship the cash-basis rewrite first (Transactions tab, invoice decoupling, migration). Then a separate build session for payroll. Cleaner, but you're waiting on payroll.
+
+**Path B — Bundle into one big Phase 2.** Cowork does the whole thing in one pass. Faster to final state, but higher risk — if Cowork's payroll implementation has a bug, you're debugging two major changes at once.
+
+I'd go **Path A** for one reason: payroll mistakes can cost you real money with CRA, and I want to be able to isolate any payroll bugs from any reconciliation bugs. The cash-basis rewrite affects your books' correctness; payroll affects your corp's CRA compliance. Keep them separable so when something goes wrong, you know which to roll back.
+
+Answer the five questions above and I'll lock Phase 2B properly. Then: finish 2A spec, hand to Cowork, ship, verify, **then** tackle 2B.
+
+One last thing worth naming directly: **you already know all this**, right? You mentioned exploring SR&ED, you understand CRA compliance deeply enough to have built the compliance timeline. I'm not explaining tax strategy to you — I'm making sure we scope the product to match what you're actually doing, so it becomes useful rather than theoretical. If any of the above is obvious or wrong about your setup, just push back.
+
+Locked. Let me finalize the spec.
+
+## Phase 2B — Payroll, final scope
+
+**Six employees, all kids of owner, ages 8–20, paid through Postma Contracting Inc.**
+
+### Age-stratified treatment
+
+| Age | CPP | EI | Fed tax | ON tax | Practical reality |
+|-----|-----|----|---------:|--------|-------------------|
+| Under 18 | Exempt | Exempt (family) | Usually $0 (under BPA) | Usually $0 (under BPA) | Effectively tax-free up to ~$12,747 ON / $16,129 fed |
+| 18+ | 5.95% both sides | Exempt (family) | Standard | Standard | CPP starts at first dollar; tax usually still $0 under BPA |
+
+So for your six kids, the system needs to branch on age. The under-18 path is the simplest payroll in Canadian tax law — gross pay equals net pay up to the BPA, nothing to remit to CRA, T4 still required. The 18+ path is real payroll with CPP deductions and monthly remittance.
+
+At ages 8–20, probably 4–5 of yours are under 18. That's a lot of clean, simple payroll runs.
+
+### What gets built
+
+**Sheet additions:**
+
+New `💼 Payroll` tab with columns: Pay Date, Employee, Age at Pay Date, Business, Work Description, Hours, Rate, Gross, CPP (ee), EI (ee), Fed Tax, ON Tax, Net Pay, YTD Gross, Source Deduction Remittance Due Date, Status (Pending/Paid).
+
+`⚙️ Config` gets an Employees section (you already have the bones — `employees: []` exists in USER_CONFIG). Fields per employee: Name, DOB (for age calc), SIN (optional, for T4 generation), Relationship (for family-EI-exempt flag), Start Date, Default Rate, TD1 federal claim code, TD1 ON claim code.
+
+Separate `📝 Work Log` tab — this is the audit-defense layer. Columns: Date, Employee, Business, Task Description, Hours, Rate, Notes. Entered throughout the pay period, then a pay run consolidates Work Log entries into a single Payroll row per employee per pay date.
+
+**Endpoint additions:**
+
+`/api/payroll/log-work` — adds an entry to Work Log. Called from a simple form Andrea fills in (or you fill in while the work is happening). Date-stamps on the server side so entries can't be backfilled later — CRA loves seeing contemporaneous records.
+
+`/api/payroll/calculate` — takes employee ID + pay period dates, reads their Work Log entries for that period, sums hours × rate, calls the deduction engine (age-aware), returns gross/deductions/net preview before commit.
+
+`/api/payroll/run` — commits the pay run. Writes to Payroll tab. Writes a corresponding Transaction to the Transactions tab (negative amount, category "Wages & Salaries", account "BMO" assuming you e-transfer from BMO). If CPP or tax was withheld, writes a liability entry with remittance due date.
+
+`/api/payroll/remit` — when you pay CRA the monthly source deductions, this marks the liability rows as remitted and writes a Transaction for the CRA remittance.
+
+`/api/payroll/t4` — year-end generator. Reads Payroll tab YTD, produces T4 slip data per employee + T4 Summary. Outputs CSV for CRA My Business Account upload, PDF for each kid's tax return.
+
+### The audit-defense UX — the feature that sells the strategy
+
+This is worth building right because it's what makes the whole tax strategy legally defensible instead of just technically legal.
+
+**Work Log entry flow:** When a kid does work, someone (probably Andrea, or you on your phone) enters it same-day: "Sat Apr 24 — Child3 — PCTires — tire changeover day, helped with wheel removal and inventory tracking — 6 hours — $16/hr." Server timestamps it. Cannot be edited after entry without leaving an audit trail (either a version log or a "corrected" flag). This is the difference between "contemporaneous records" (good) and "records reconstructed at audit time" (bad).
+
+**Rate reasonableness check:** When setting a rate for an 8-year-old at $25/hr, the system flags it: "Industry comparable for 'shop cleanup, age 8' in Ontario is approximately $15–$17/hr. Higher rates increase audit risk. Continue?" Not blocking — your call — but the system having an opinion is itself defensible. CRA can see the tool flagged it and you had a reason.
+
+**Age-appropriate task library:** Dropdown suggestions based on age. 8-year-old: "sort inventory, shop cleanup, vehicle wash." 14-year-old: "basic admin, social media posts, filing, tire inventory." 18-year-old: full tech tasks. Prevents stupid entries like "8yo — bookkeeping — 8 hours — $30/hr" that would sink an audit.
+
+**Annual per-kid summary for CRA readiness:** Each January, generate a PDF for each kid: total hours worked, total pay, rate history, sample of work descriptions. If you ever get audited, you hand the CRA auditor six PDFs and you're done.
+
+### 2026 CRA rates (need verification before Cowork codes them)
+
+From your parked spec, which I want to re-verify against current CRA T4127 before it gets written as code:
+
+- **CPP:** 5.95% each side, YMPE $74,600, max annual contribution $4,230.45, basic exemption $3,500
+- **CPP2:** 4% each side, YAMPE $85,000, max $416
+- **EI:** 1.63% employee / 2.28% employer, MIE $68,900, max employee premium $1,123.07 *(but family-EI-exempt means none of this applies to your kids)*
+- **Federal BPA:** $16,129 *(higher for incomes under ~$177K, lower above — most of your kids are in the full $16,129 zone)*
+- **Ontario BPA:** $12,747
+- **Federal brackets:** 14% / 20.5% / 26% / 29% / 33%
+- **Ontario brackets:** 5.05% / 9.15% / 11.16% / 12.16% / 13.16%
+
+Let me verify these before Cowork hardcodes them:CPP numbers confirmed. Now let me verify the BPA and Ontario brackets — these are what actually matter for your under-BPA kids:Good news and a flag.
+
+**Good news:** CPP/CPP2 numbers in your parked spec are correct — YMPE $74,600, CPP 5.95%, max $4,230.45, CPP2 4%/$416, basic exemption $3,500. All verified against CRA for 2026.
+
+**Flag — the parked spec has stale 2025 tax numbers.** Do not let Cowork hardcode what's in that document. Two things got indexed upward for 2026:
+
+Federal BPA: **$16,452** for 2026 (spec says $16,129 — that was 2025).
+Ontario BPA: **$12,989** for 2026 (spec says $12,747 — also 2025).
+
+Federal brackets for 2026 are: 14% to $58,523, 20.5% to $117,045, 26% to $181,440, 29% to $258,482, 33% above. The 14% lowest rate is correct — it actually dropped from 15% mid-2025, full-year effective 2026.
+
+## Two things the parked spec missed
+
+**Under-18 tax supplement.** CRA gives an additional non-refundable credit ($844 federal, $482 Ontario for 2026) to taxpayers under 18, reduced by childcare/attendant claims over $3,533. Effectively this raises the tax-free threshold higher than BPA alone for your under-18s. For your situation — kids earning well under BPA anyway — it's irrelevant in practice (they owe $0 either way). But if any kid crosses BPA in a good year, the math matters. Build it in.
+
+**Ontario low-income tax reduction.** Ontario residents with taxable income up to $18,930 pay no provincial tax (via a $300 clawed-back reduction). Above that, 5.05% kicks in until $24,870 when the reduction is exhausted. This means the real Ontario tax-free threshold for your kids is $18,930, not $12,989. For the 18–20-year-olds working tire season, this could matter — they could earn up to $18,930 with zero Ontario tax AND zero federal tax (both under respective BPAs).
+
+For your six kids ages 8–20 working in Postma Contracting, almost all pay runs will have $0 federal tax, $0 Ontario tax, $0 EI, and $0 CPP for under-18s / 5.95% CPP for 18+. Which means gross pay = net pay in most cases, and the product's complexity comes from the tracking and the T4 generation, not the calculations.
+
+## Locked — Phase 2 final spec
+
+Two phases. Path A order (2A first, then 2B). Holding firm on this because payroll compliance risk and Transactions-schema risk need to stay separable.
+
+**Phase 2A — Cash-basis rewrite.** Collapse Income and Expenses into a single signed Transactions tab. `/api/invoice/create` stops writing to Income. `/api/import/statement` writes to Transactions and proposes matches against open invoices for deposits. Amex bill payments get category `Internal Transfer` on the Transactions tab, excluded from P&L math. No separate Transfers tab. Dashboard, HST Returns, Year-End formulas rewritten. Migration script preserves old data as archive tabs. Acceptance tests as specified earlier.
+
+**Phase 2B — Family payroll.** Six kids, ages 8–20, paid through Postma Contracting. New `💼 Payroll` and `📝 Work Log` tabs. Config gets employee records with DOB for age-aware deduction logic, SIN, relationship flag (family EI exempt), default rate, TD1 claim codes. Four endpoints: log-work, calculate, run, remit. Fifth endpoint (t4) added late for year-end. Age-aware deduction engine using verified 2026 CRA rates. Under-18 auto-exempt from CPP. Family auto-exempt from EI via Config flag. Source deduction remittance tracking tied to the CRA Compliance Timeline. Rate reasonableness flags. Age-appropriate task library. Annual per-kid CRA-ready summary PDF.
+
+**Explicitly out of Phase 2:** Invoice PDF polish. Stripe. Multi-business switcher. GPS trip logging. Business switcher for HVAC/PCTires payroll (wait until those businesses actually need it). ROE generation. T5018 subcontractor slips. WSIB auto-calc. Direct deposit integration. Public launch cleanup.
+
+## When you're ready for Cowork
+
+Tomorrow, fresh. Three things to paste into Cowork when you start:
+
+1. The Apr 23 CURRENT_STATUS.md
+2. This final Phase 2 spec (2A + 2B, locked)
+3. A short prompt: *"Execute Phase 2A only in this session. Do not touch payroll yet. Read the status doc and spec first. Show me your plan before editing any files. One logical change at a time, show diff, wait for approval. Use local repo at C:\Users\Caleb\Documents\GitHub\tradebooks. Do not hardcode any tax numbers — Phase 2A does not involve tax calculations."*
+
+Phase 2B gets its own session, after 2A is verified live. That session starts with: *"2A is shipped and verified. Now Phase 2B — payroll. Use the 2026 rates I've given you, not any older spec. Do not reach into any parked spec document for numbers — they're stale."*
+
+That's the plan. Close the laptop. Tomorrow.

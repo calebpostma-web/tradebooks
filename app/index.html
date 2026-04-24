@@ -933,7 +933,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         </div>
         <hr class="divider">
         <div class="field"><label>Client name</label><input type="text" id="invClient" placeholder="Client name" oninput="invUpdate()" list="clientSugg"><datalist id="clientSugg"></datalist></div>
-        <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;<span data-dynamic="city"></span>, <span data-dynamic="province"></span>" oninput="invUpdate()"></textarea></div>
+        <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;Chatham, ON  N7M 0A1" oninput="invUpdate()"></textarea></div>
         <div class="field"><label>Client email (optional)</label><input type="email" id="invEmail" placeholder="billing@client.com" oninput="invUpdate()"></div>
         <div class="field"><label>PO / Reference number (optional — if the client requires one)</label><input type="text" id="invPO" placeholder="e.g. PO-2026-0423" oninput="invUpdate()"></div>
         <hr class="divider">
@@ -3938,9 +3938,9 @@ function invUpdate(){
   if (footerTagline) footerTagline.textContent = co.footerText || 'Thank you for your business.';
 
   document.getElementById('prevNum').textContent='#'+invNum;
-  let billTo = client || '<em style="color:var(--ink3)">Client name</em>';
-  if(addr) billTo += '<br><span style="color:var(--ink3);font-size:.78rem">' + addr.replace(/\n/g,'<br>') + '</span>';
-  if(email) billTo += '<br><span style="color:var(--ink3);font-size:.78rem">' + email + '</span>';
+  let billTo = client ? esc(client) : '<em style="color:var(--ink3)">Client name</em>';
+  if(addr) billTo += '<br><span style="color:var(--ink3);font-size:.78rem">' + esc(addr).replace(/\n/g,'<br>') + '</span>';
+  if(email) billTo += '<br><span style="color:var(--ink3);font-size:.78rem">' + esc(email) + '</span>';
   document.getElementById('prevBillTo').innerHTML = billTo;
   document.getElementById('prevDate').textContent = dateVal ? fmtDate(dateVal) : '—';
   document.getElementById('prevDueDate').textContent = dueVal ? fmtDate(dueVal) : '—';

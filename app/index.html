@@ -910,6 +910,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         <div class="field"><label>Client name</label><input type="text" id="invClient" placeholder="Client name" oninput="invUpdate()" list="clientSugg"><datalist id="clientSugg"></datalist></div>
         <div class="field"><label>Client address (optional)</label><textarea id="invAddr" placeholder="123 Main St&#10;<span data-dynamic="city"></span>, <span data-dynamic="province"></span>" oninput="invUpdate()"></textarea></div>
         <div class="field"><label>Client email (optional)</label><input type="email" id="invEmail" placeholder="billing@client.com" oninput="invUpdate()"></div>
+        <div class="field"><label>PO / Reference number (optional — if the client requires one)</label><input type="text" id="invPO" placeholder="e.g. PO-2026-0423" oninput="invUpdate()"></div>
         <hr class="divider">
         <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.6rem">Line items</div>
         <div id="lineItemsWrap"></div>
@@ -938,12 +939,30 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Live preview</div>
       <div class="inv-doc" id="invDoc">
         <div class="inv-doc-header">
-          <div><div class="inv-co-name" id="prevCoName" id="prevCoName">Your Business</div><div class="inv-co-detail" id="prevCoDetail">Your City, Province</div></div>
-          <div><div class="inv-doc-title">Invoice</div><div class="inv-doc-num" id="prevNum">#1001</div></div>
+          <div class="inv-co-block">
+            <img id="prevLogo" style="display:none;max-height:48px;max-width:160px;margin-bottom:.5rem" alt="">
+            <div class="inv-co-name" id="prevCoName">Your Business</div>
+            <div class="inv-co-detail" id="prevCoDetail">Your City, Province</div>
+          </div>
+          <div class="inv-title-block">
+            <div class="inv-doc-title">Invoice</div>
+            <div class="inv-doc-num" id="prevNum">#1001</div>
+          </div>
         </div>
         <div class="inv-meta">
-          <div class="inv-meta-blk"><label>Bill to</label><p id="prevBillTo"><em style="color:var(--ink3)">Client name</em></p></div>
-          <div class="inv-meta-blk" style="text-align:right"><label>Invoice date</label><p id="prevDate" style="font-weight:500">—</p><label style="margin-top:.5rem">Due date</label><p id="prevDueDate">—</p><div class="due-badge" id="prevDueBadge" style="display:none">DUE</div></div>
+          <div class="inv-meta-blk">
+            <label>Bill to</label>
+            <p id="prevBillTo"><em style="color:var(--ink3)">Client name</em></p>
+          </div>
+          <div class="inv-meta-blk" style="text-align:right">
+            <label>Invoice date</label><p id="prevDate" style="font-weight:500">—</p>
+            <label style="margin-top:.5rem">Due date</label><p id="prevDueDate">—</p>
+            <div id="prevPOWrap" style="display:none;margin-top:.5rem">
+              <label style="margin-top:.5rem">PO / Reference</label>
+              <p id="prevPO" style="font-family:var(--mono);font-size:.78rem">—</p>
+            </div>
+            <div class="due-badge" id="prevDueBadge" style="display:none">DUE</div>
+          </div>
         </div>
         <table class="inv-tbl">
           <thead><tr><th style="width:46%">Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
@@ -951,7 +970,19 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <tfoot id="prevFoot"></tfoot>
         </table>
         <div id="prevNotes"></div>
-        <div class="inv-doc-footer"><div><div style="font-family:var(--mono);font-size:.68rem" id="prevFooterHST"></div><div style="font-size:.7rem;margin-top:.15rem" id="prevFooterName"></div></div><div class="inv-thanks">Thank you for your business.</div></div>
+        <div id="prevPayInstructions" style="display:none;margin-top:1rem;padding:.85rem 1rem;background:var(--greenlt,#eef7f2);border-left:3px solid var(--green);border-radius:4px">
+          <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--green);text-transform:uppercase;margin-bottom:.35rem">How to pay</div>
+          <div id="prevPayInstructionsBody" style="font-size:.82rem;line-height:1.55;white-space:pre-wrap"></div>
+        </div>
+        <div id="prevTerms" style="display:none;font-size:.75rem;color:var(--ink3);font-style:italic;margin-top:.5rem"></div>
+        <div class="inv-doc-footer">
+          <div>
+            <div style="font-family:var(--mono);font-size:.68rem" id="prevFooterHST"></div>
+            <div style="font-size:.7rem;margin-top:.15rem" id="prevFooterName"></div>
+            <div style="font-size:.68rem;color:var(--ink3);margin-top:.15rem" id="prevFooterContact"></div>
+          </div>
+          <div class="inv-thanks" id="prevFooterTagline">Thank you for your business.</div>
+        </div>
       </div>
       <div class="btn-row" style="margin-top:.75rem">
         <button class="btn btn-primary btn-sm" onclick="invPrint()">⬇ Save as PDF</button>
@@ -2558,7 +2589,92 @@ let USER_CONFIG = {
   combinedRate: 0.122,
   customExpenseCats: [],
   customIncomeCats: [],
+  // Invoice customization — persisted in localStorage (cross-device sync TBD)
+  invoicePhone: '',
+  invoiceWebsite: '',
+  invoiceLogo: '',                        // data URL for header logo
+  invoicePaymentInstructions: '',         // multi-line; rendered in its own block
+  invoiceDefaultTerms: 'Payment due within 30 days. Late payments subject to 1.5% monthly interest.',
+  invoiceFooterText: 'Thank you for your business.',
 };
+
+// ── Invoice settings persistence (localStorage) ──────────────────
+const INV_SETTINGS_KEYS = [
+  'invoicePhone','invoiceWebsite','invoiceLogo',
+  'invoicePaymentInstructions','invoiceDefaultTerms','invoiceFooterText',
+];
+const INV_SETTINGS_STORAGE_KEY = 'tradebooks_invoice_settings';
+
+function loadInvoiceSettings() {
+  try {
+    const raw = localStorage.getItem(INV_SETTINGS_STORAGE_KEY);
+    if (!raw) return;
+    const obj = JSON.parse(raw);
+    for (const k of INV_SETTINGS_KEYS) {
+      if (obj[k] != null) USER_CONFIG[k] = obj[k];
+    }
+  } catch { /* noop */ }
+}
+
+function saveInvoiceSettings() {
+  try {
+    const obj = {};
+    for (const k of INV_SETTINGS_KEYS) obj[k] = USER_CONFIG[k] || '';
+    localStorage.setItem(INV_SETTINGS_STORAGE_KEY, JSON.stringify(obj));
+  } catch (e) {
+    console.warn('Could not persist invoice settings:', e);
+  }
+}
+
+/** Settings panel: file-input → resized data URL stored on USER_CONFIG.invoiceLogo. */
+function invLogoPickHandler(ev) {
+  const f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  if (f.size > 400 * 1024) {
+    toast('Logo too large — keep it under 400KB for smooth PDF rendering');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = String(reader.result || '');
+    // Downscale to max 400px wide to keep storage + print size sensible
+    invLogoDownscale(dataUrl, 400).then(small => {
+      USER_CONFIG.invoiceLogo = small;
+      const img = document.getElementById('invoiceLogoImg');
+      const wrap = document.getElementById('set_invoiceLogoPreview');
+      if (img) img.src = small;
+      if (wrap) wrap.style.display = 'flex';
+    });
+  };
+  reader.readAsDataURL(f);
+}
+
+function invLogoClear() {
+  USER_CONFIG.invoiceLogo = '';
+  const wrap = document.getElementById('set_invoiceLogoPreview');
+  if (wrap) wrap.style.display = 'none';
+  const file = document.getElementById('set_invoiceLogoFile');
+  if (file) file.value = '';
+}
+
+async function invLogoDownscale(dataUrl, maxWidth) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      if (img.width <= maxWidth) return resolve(dataUrl);
+      const scale = maxWidth / img.width;
+      const canvas = document.createElement('canvas');
+      canvas.width = maxWidth;
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      // Use PNG to preserve transparency for logos
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
 // ── Derive tax config from province + business type ──
 function applyProvinceConfig(config) {
@@ -2735,6 +2851,9 @@ function setScreen(name) {
 // ════════════════════════════════════════════════════════════════════
 
 function applyConfig() {
+  // Merge invoice customization saved in localStorage onto the in-memory config
+  // before anything else reads USER_CONFIG (rebuildInvoiceCompanies, preview, etc.).
+  loadInvoiceSettings();
   const C = USER_CONFIG;
   const prov = PROVINCE_CONFIG[C.province] || PROVINCE_CONFIG.ON;
 
@@ -2818,7 +2937,15 @@ function applyConfig() {
 
 function rebuildInvoiceCompanies() {
   const C = USER_CONFIG;
-  // Clear and rebuild
+  // Extended contact block carried through to invoice rendering.
+  const sharedContact = {
+    phone: C.invoicePhone || '',
+    website: C.invoiceWebsite || '',
+    logo: C.invoiceLogo || '',
+    paymentInstructions: C.invoicePaymentInstructions || '',
+    defaultTerms: C.invoiceDefaultTerms || '',
+    footerText: C.invoiceFooterText || 'Thank you for your business.',
+  };
   window.INV_COMPANIES = {
     primary: {
       name: C.businessName || '',
@@ -2826,6 +2953,7 @@ function rebuildInvoiceCompanies() {
       email: C.email || '',
       hst: C.hstNumber || '',
       clients: C.clients || [],
+      ...sharedContact,
     }
   };
 
@@ -2837,6 +2965,7 @@ function rebuildInvoiceCompanies() {
       email: C.email || '',
       hst: C.hstNumber || '',
       clients: [],
+      ...sharedContact,
     };
   }
 
@@ -3662,6 +3791,7 @@ function invUpdate(){
   const email=document.getElementById('invEmail').value.trim();
   const dateVal=document.getElementById('invDate').value;
   const dueVal=document.getElementById('invDue').value;
+  const poVal=document.getElementById('invPO')?.value.trim() || '';
   const notes=document.getElementById('invNotes').value.trim();
 
   let sub=0;
@@ -3671,57 +3801,161 @@ function invUpdate(){
     const el=document.getElementById(`lit${i}`);
     if(el)el.textContent='$'+fmtMoney(amt);
   });
-  const hstAmt=hst?Math.round(sub*(USER_CONFIG?.taxRate||0.13)*100)/100:0;
-  const total=sub+hstAmt;
+  const taxRate = USER_CONFIG?.taxRate || 0.13;
+  const taxType = USER_CONFIG?.taxType || 'HST';
+  const taxPct = Math.round(taxRate*100);
+  const taxLabel = `${taxType} ${taxPct}%`;
+  const hstAmt = hst ? Math.round(sub*taxRate*100)/100 : 0;
+  const total = sub + hstAmt;
 
   document.getElementById('invTotalsBox').innerHTML=`
     <div class="tot-row"><span class="tot-lbl">Subtotal</span><span class="tot-val">$${fmtMoney(sub)}</span></div>
-    ${hst?`<div class="tot-row"><span class="tot-lbl">HST 13%</span><span class="tot-val">$${fmtMoney(hstAmt)}</span></div>`:`<div class="tot-row"><span class="tot-lbl" style="color:var(--red)">No HST</span><span class="tot-val">—</span></div>`}
+    ${hst?`<div class="tot-row"><span class="tot-lbl">${taxLabel}</span><span class="tot-val">$${fmtMoney(hstAmt)}</span></div>`:`<div class="tot-row"><span class="tot-lbl" style="color:var(--red)">No ${taxType}</span><span class="tot-val">—</span></div>`}
     <div class="tot-row final"><span>Total</span><span class="tot-val big">$${fmtMoney(total)}</span></div>`;
 
   // Update company header in preview
-  const co = INV_COMPANIES[activeCompany];
+  const co = INV_COMPANIES[activeCompany] || {};
+  const logoEl = document.getElementById('prevLogo');
   const nameEl = document.getElementById('prevCoName');
   const detailEl = document.getElementById('prevCoDetail');
   const footerHST = document.getElementById('prevFooterHST');
   const footerName = document.getElementById('prevFooterName');
-  if(nameEl) nameEl.textContent = co.name;
-  if(detailEl) detailEl.innerHTML = (co.subline?'<span style="font-size:.7rem;color:var(--ink3)">'+co.subline+'</span><br>':'') + co.address + '<br>' + co.email + '<br>HST# ' + co.hst;
-  if(footerHST) footerHST.textContent = 'HST Registration: ' + co.hst;
-  if(footerName) footerName.textContent = co.name + ' · <span data-dynamic="city"></span>, <span data-dynamic="province"></span>';
+  const footerContact = document.getElementById('prevFooterContact');
+  const footerTagline = document.getElementById('prevFooterTagline');
+
+  if (logoEl) {
+    if (co.logo) { logoEl.src = co.logo; logoEl.style.display = ''; }
+    else { logoEl.src = ''; logoEl.style.display = 'none'; }
+  }
+  if (nameEl) nameEl.textContent = co.name || '';
+  if (detailEl) {
+    const lines = [];
+    if (co.subline) lines.push(`<span style="font-size:.7rem;color:var(--ink3)">${esc(co.subline)}</span>`);
+    if (co.address) lines.push(esc(co.address));
+    if (co.phone) lines.push(esc(co.phone));
+    if (co.email) lines.push(esc(co.email));
+    if (co.website) lines.push(esc(co.website));
+    if (co.hst) lines.push(`${taxType}# ${esc(co.hst)}`);
+    detailEl.innerHTML = lines.join('<br>');
+  }
+  if (footerHST) footerHST.textContent = co.hst ? `${taxType} Registration: ${co.hst}` : '';
+  if (footerName) footerName.textContent = co.name || '';
+  if (footerContact) {
+    const bits = [];
+    if (co.phone) bits.push(co.phone);
+    if (co.email) bits.push(co.email);
+    if (co.website) bits.push(co.website);
+    footerContact.textContent = bits.join(' · ');
+  }
+  if (footerTagline) footerTagline.textContent = co.footerText || 'Thank you for your business.';
+
   document.getElementById('prevNum').textContent='#'+invNum;
-  let billTo=client||'<em style="color:var(--ink3)">Client name</em>';
-  if(addr)billTo+='<br><span style="color:var(--ink3);font-size:.78rem">'+addr.replace(/\n/g,'<br>')+'</span>';
-  if(email)billTo+='<br><span style="color:var(--ink3);font-size:.78rem">'+email+'</span>';
-  document.getElementById('prevBillTo').innerHTML=billTo;
-  document.getElementById('prevDate').textContent=dateVal?fmtDate(dateVal):'—';
-  document.getElementById('prevDueDate').textContent=dueVal?fmtDate(dueVal):'—';
-  const db=document.getElementById('prevDueBadge');
+  let billTo = client || '<em style="color:var(--ink3)">Client name</em>';
+  if(addr) billTo += '<br><span style="color:var(--ink3);font-size:.78rem">' + addr.replace(/\n/g,'<br>') + '</span>';
+  if(email) billTo += '<br><span style="color:var(--ink3);font-size:.78rem">' + email + '</span>';
+  document.getElementById('prevBillTo').innerHTML = billTo;
+  document.getElementById('prevDate').textContent = dateVal ? fmtDate(dateVal) : '—';
+  document.getElementById('prevDueDate').textContent = dueVal ? fmtDate(dueVal) : '—';
+
+  // PO block
+  const poWrap = document.getElementById('prevPOWrap');
+  const poEl = document.getElementById('prevPO');
+  if (poVal) { poWrap.style.display = ''; poEl.textContent = poVal; }
+  else { poWrap.style.display = 'none'; }
+
+  const db = document.getElementById('prevDueBadge');
   if(dueVal){db.style.display='inline-block';db.textContent='DUE '+fmtDate(dueVal)}else{db.style.display='none'}
 
-  document.getElementById('prevLines').innerHTML=invLines.map(l=>{
-    const amt=(parseFloat(l.qty)||0)*(parseFloat(l.rate)||0);
-    return`<tr><td>${esc(l.desc)||'<em style="color:var(--ink3)">Description</em>'}</td><td class="mono">${l.qty||1}</td><td class="mono">$${fmtMoney(parseFloat(l.rate)||0)}</td><td class="mono" style="text-align:right">$${fmtMoney(amt)}</td></tr>`;
+  document.getElementById('prevLines').innerHTML = invLines.map(l => {
+    const amt = (parseFloat(l.qty)||0)*(parseFloat(l.rate)||0);
+    return `<tr><td>${esc(l.desc)||'<em style="color:var(--ink3)">Description</em>'}</td><td class="mono">${l.qty||1}</td><td class="mono">$${fmtMoney(parseFloat(l.rate)||0)}</td><td class="mono" style="text-align:right">$${fmtMoney(amt)}</td></tr>`;
   }).join('');
 
-  document.getElementById('prevFoot').innerHTML=`
+  document.getElementById('prevFoot').innerHTML = `
     <tr><td colspan="3" class="flbl" style="text-align:right">Subtotal</td><td class="mono" style="text-align:right">$${fmtMoney(sub)}</td></tr>
-    ${hst?`<tr><td colspan="3" class="flbl" style="text-align:right">HST (13%)</td><td class="mono" style="text-align:right">$${fmtMoney(hstAmt)}</td></tr>`:''}
-    <tr class="gtotal"><td colspan="3" style="color:var(--ink3);font-size:.74rem;font-family:var(--mono)">TOTAL DUE</td><td style="text-align:right;color:var(--green)">$${fmtMoney(total)}</td></tr>`;
+    ${hst?`<tr><td colspan="3" class="flbl" style="text-align:right">${taxLabel}</td><td class="mono" style="text-align:right">$${fmtMoney(hstAmt)}</td></tr>`:''}
+    <tr class="gtotal"><td colspan="3" style="color:var(--ink3);font-size:.74rem;font-family:var(--mono)">TOTAL DUE (CAD)</td><td style="text-align:right;color:var(--green)">$${fmtMoney(total)}</td></tr>`;
 
-  document.getElementById('prevNotes').innerHTML=notes
-    ?`<div style="font-size:.77rem;color:var(--ink3);border-top:1px solid var(--paper2);padding-top:.7rem;margin-bottom:.7rem;line-height:1.6">${notes.replace(/\n/g,'<br>')}</div>`:'';
+  document.getElementById('prevNotes').innerHTML = notes
+    ? `<div style="font-size:.77rem;color:var(--ink3);border-top:1px solid var(--paper2);padding-top:.7rem;margin-bottom:.7rem;line-height:1.6">${notes.replace(/\n/g,'<br>')}</div>` : '';
+
+  // Payment instructions block (from Settings → Invoice Customization)
+  const payEl = document.getElementById('prevPayInstructions');
+  const payBody = document.getElementById('prevPayInstructionsBody');
+  if (co.paymentInstructions) {
+    payEl.style.display = '';
+    payBody.textContent = co.paymentInstructions;
+  } else {
+    payEl.style.display = 'none';
+  }
+  const termsEl = document.getElementById('prevTerms');
+  if (co.defaultTerms) { termsEl.style.display = ''; termsEl.textContent = co.defaultTerms; }
+  else { termsEl.style.display = 'none'; }
 }
 
 function invPrint(){
-  const win=window.open('','_blank');
-  const doc=document.getElementById('invDoc').outerHTML;
+  const win = window.open('','_blank');
+  const doc = document.getElementById('invDoc').outerHTML;
+  const coName = (INV_COMPANIES[activeCompany]||{}).name || 'Invoice';
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
     <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-    <title>Invoice #${invNum} — ${INV_COMPANIES[activeCompany].name}</title>
-    <style>*{box-sizing:border-box;margin:0;padding:0}:root{--ink:#151a18;--ink2:#3d4a44;--ink3:#7a8a82;--paper2:#ede9e0;--green:#1a5c38;--greenlt:#e8f5ee;--rule:#ccc8bc;--mono:'IBM Plex Mono',monospace;--serif:'Lora',serif;--sans:'DM Sans',sans-serif}body{font-family:var(--sans);font-weight:300;padding:40px;background:white;color:var(--ink)}.inv-doc{max-width:700px;margin:0 auto}.inv-doc-header{display:flex;justify-content:space-between;margin-bottom:1.75rem;padding-bottom:1.1rem;border-bottom:2px solid var(--ink)}.inv-co-name{font-family:var(--serif);font-size:1.2rem;font-weight:600}.inv-co-detail{font-size:.72rem;color:var(--ink3);line-height:1.7;margin-top:.15rem}.inv-doc-title{font-family:var(--serif);font-size:1.55rem;font-weight:400;text-align:right}.inv-doc-num{font-family:var(--mono);font-size:.72rem;color:var(--green);text-align:right;margin-top:.15rem}.inv-meta{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.4rem}.inv-meta-blk label{font-family:var(--mono);font-size:.58rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:.2rem}.inv-meta-blk p{font-size:.82rem;line-height:1.55}.inv-tbl{width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:1.1rem}.inv-tbl thead tr{border-bottom:1px solid var(--ink)}.inv-tbl th{font-family:var(--mono);font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:.4rem .35rem .4rem 0;text-align:left;font-weight:400}.inv-tbl th:last-child,.inv-tbl td:last-child{text-align:right;padding-right:0}.inv-tbl tbody tr{border-bottom:1px solid #f0ede6}.inv-tbl td{padding:.52rem .35rem .52rem 0}.inv-tbl tfoot td{padding:.3rem .35rem;font-size:.77rem}.inv-tbl tfoot tr.gtotal td{border-top:2px solid var(--ink);padding-top:.52rem;font-family:var(--serif);font-size:.9rem;font-weight:600}.mono{font-family:var(--mono);font-size:.77rem}.flbl{color:var(--ink3);font-family:var(--mono);font-size:.65rem;letter-spacing:.06em}.inv-doc-footer{border-top:1px solid var(--rule);padding-top:.9rem;display:flex;justify-content:space-between;font-size:.72rem;color:var(--ink3)}.inv-thanks{font-family:var(--serif);font-style:italic;color:var(--ink2);font-size:.82rem}.due-badge{display:inline-block;padding:.12rem .45rem;border-radius:3px;font-family:var(--mono);font-size:.6rem;background:var(--greenlt);color:var(--green);margin-top:.2rem}</style>
+    <title>Invoice #${invNum} — ${coName}</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      :root{
+        --ink:#151a18;--ink2:#3d4a44;--ink3:#7a8a82;
+        --paper2:#ede9e0;--green:#1a5c38;--greenlt:#e8f5ee;
+        --rule:#ccc8bc;--red:#8b2b2b;
+        --mono:'IBM Plex Mono',Consolas,monospace;
+        --serif:'Lora',Georgia,serif;
+        --sans:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
+      }
+      html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
+      body{font-family:var(--sans);font-weight:300;padding:40px;background:white;color:var(--ink)}
+      .inv-doc{max-width:700px;margin:0 auto}
+
+      .inv-doc-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.75rem;padding-bottom:1.1rem;border-bottom:2px solid var(--ink);gap:2rem}
+      .inv-co-block{flex:1;min-width:0}
+      .inv-co-block img{max-height:48px;max-width:160px;margin-bottom:.5rem;display:block}
+      .inv-co-name{font-family:var(--serif);font-size:1.25rem;font-weight:600;line-height:1.2}
+      .inv-co-detail{font-size:.72rem;color:var(--ink3);line-height:1.7;margin-top:.25rem}
+      .inv-title-block{text-align:right;min-width:120px}
+      .inv-doc-title{font-family:var(--serif);font-size:1.6rem;font-weight:400;letter-spacing:.02em}
+      .inv-doc-num{font-family:var(--mono);font-size:.75rem;color:var(--green);margin-top:.25rem;font-weight:500}
+
+      .inv-meta{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.4rem}
+      .inv-meta-blk label{font-family:var(--mono);font-size:.58rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:.2rem}
+      .inv-meta-blk p{font-size:.82rem;line-height:1.55}
+
+      .inv-tbl{width:100%;border-collapse:collapse;font-size:.82rem;margin-bottom:1.1rem}
+      .inv-tbl thead tr{border-bottom:1px solid var(--ink)}
+      .inv-tbl th{font-family:var(--mono);font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:.45rem .4rem .45rem 0;text-align:left;font-weight:400}
+      .inv-tbl th:last-child,.inv-tbl td:last-child{text-align:right;padding-right:0}
+      .inv-tbl tbody tr{border-bottom:1px solid #f0ede6;page-break-inside:avoid}
+      .inv-tbl td{padding:.55rem .4rem .55rem 0}
+      .inv-tbl tfoot td{padding:.3rem .4rem;font-size:.8rem}
+      .inv-tbl tfoot tr.gtotal td{border-top:2px solid var(--ink);padding-top:.55rem;font-family:var(--serif);font-size:.95rem;font-weight:600}
+      .mono{font-family:var(--mono);font-size:.78rem}
+      .flbl{color:var(--ink3);font-family:var(--mono);font-size:.65rem;letter-spacing:.06em}
+
+      /* Payment instructions block (green left-border card) */
+      #prevPayInstructions{margin-top:1.1rem;padding:.85rem 1rem;background:var(--greenlt);border-left:3px solid var(--green);border-radius:4px;page-break-inside:avoid}
+      #prevPayInstructionsBody{font-size:.82rem;line-height:1.6;white-space:pre-wrap}
+      #prevTerms{font-size:.75rem;color:var(--ink3);font-style:italic;margin-top:.6rem}
+
+      .inv-doc-footer{border-top:1px solid var(--rule);padding-top:.9rem;margin-top:1.4rem;display:flex;justify-content:space-between;align-items:flex-end;font-size:.72rem;color:var(--ink3);gap:1rem}
+      .inv-thanks{font-family:var(--serif);font-style:italic;color:var(--ink2);font-size:.85rem;text-align:right;max-width:240px}
+      .due-badge{display:inline-block;padding:.15rem .5rem;border-radius:3px;font-family:var(--mono);font-size:.6rem;background:var(--greenlt);color:var(--green);margin-top:.3rem;letter-spacing:.04em;font-weight:500}
+
+      @media print{
+        body{padding:25mm 20mm}
+        .inv-doc{max-width:none}
+        @page{margin:0;size:letter}
+      }
+    </style>
   </head><body>${doc}</body></html>`);
-  win.document.close();setTimeout(()=>win.print(),600);
+  win.document.close();
+  setTimeout(() => win.print(), 600);
 }
 
 async function invSendToSheets(){
@@ -6746,6 +6980,37 @@ function renderSettings(){
     </div>
 
     <hr class="divider">
+    <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Invoice Customization</div>
+    <div style="font-size:.78rem;color:var(--ink3);margin-bottom:1rem;line-height:1.5">These appear on every invoice you send. Logo, phone, website, payment instructions. Stored locally in this browser — add them once and they show up on every PDF you print.</div>
+    <div class="field-row">
+      ${f('Phone (shown on invoices)','set_invoicePhone',C.invoicePhone,'tel')}
+      ${f('Website (shown on invoices)','set_invoiceWebsite',C.invoiceWebsite,'url')}
+    </div>
+    <div class="field">
+      <label>Logo (PNG or JPG, appears in invoice header)</label>
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <input type="file" id="set_invoiceLogoFile" accept="image/png,image/jpeg,image/svg+xml" onchange="invLogoPickHandler(event)" style="font-size:.82rem">
+        <div id="set_invoiceLogoPreview" style="display:${C.invoiceLogo?'flex':'none'};align-items:center;gap:.5rem">
+          <img src="${C.invoiceLogo||''}" id="invoiceLogoImg" style="max-height:36px;max-width:120px;border:1px solid var(--rule);border-radius:3px;background:white;padding:2px">
+          <button type="button" onclick="invLogoClear()" style="background:none;border:1px solid var(--rule);border-radius:3px;padding:.2rem .5rem;font-size:.7rem;cursor:pointer;color:var(--red)">Remove</button>
+        </div>
+      </div>
+      <div style="font-size:.72rem;color:var(--ink3);margin-top:.3rem">Keep under ~200KB. Transparent PNG looks best.</div>
+    </div>
+    <div class="field">
+      <label>Payment instructions (appears prominently on invoice — tell the client how to pay)</label>
+      <textarea id="set_invoicePaymentInstructions" rows="3" placeholder="E-transfer: your@email.com (security answer: invoice number)&#10;Cheque payable to ${C.businessName||'Your Business'}, mailed to the address above&#10;Or contact us for credit card payment" style="font-size:.85rem;font-family:inherit;width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);resize:vertical">${esc(C.invoicePaymentInstructions||'')}</textarea>
+    </div>
+    <div class="field">
+      <label>Default payment terms (appears below payment instructions)</label>
+      <input type="text" id="set_invoiceDefaultTerms" value="${esc(C.invoiceDefaultTerms||'')}" style="font-size:.88rem" placeholder="Payment due within 30 days. Late payments subject to 1.5% monthly interest.">
+    </div>
+    <div class="field">
+      <label>Invoice footer tagline</label>
+      <input type="text" id="set_invoiceFooterText" value="${esc(C.invoiceFooterText||'')}" style="font-size:.88rem" placeholder="Thank you for your business.">
+    </div>
+
+    <hr class="divider">
     <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Custom Categories</div>
     <div class="field">
       <label>Custom Expense Categories (comma-separated)</label>
@@ -6822,9 +7087,22 @@ async function saveSettings(){
     employees: USER_CONFIG.employees || [],
   };
 
+  // Invoice customization — local-only for now (see INV_SETTINGS_KEYS).
+  // Pulled from the form and written into USER_CONFIG + localStorage.
+  USER_CONFIG.invoicePhone               = document.getElementById('set_invoicePhone')?.value || '';
+  USER_CONFIG.invoiceWebsite             = document.getElementById('set_invoiceWebsite')?.value || '';
+  USER_CONFIG.invoicePaymentInstructions = document.getElementById('set_invoicePaymentInstructions')?.value || '';
+  USER_CONFIG.invoiceDefaultTerms        = document.getElementById('set_invoiceDefaultTerms')?.value || '';
+  USER_CONFIG.invoiceFooterText          = document.getElementById('set_invoiceFooterText')?.value || '';
+  // invoiceLogo is already on USER_CONFIG via invLogoPickHandler
+  saveInvoiceSettings();
+
   try {
     await saveProfile(profile);
-    USER_CONFIG = applyProvinceConfig(profile);
+    // Merge: applyProvinceConfig returns a fresh object, so re-inject invoice fields
+    const next = applyProvinceConfig(profile);
+    for (const k of INV_SETTINGS_KEYS) next[k] = USER_CONFIG[k] || '';
+    USER_CONFIG = next;
     applyConfig();
     status.innerHTML = '<span style="color:var(--green)">✅ Settings saved!</span>';
     toast('Settings saved — your books are updated');

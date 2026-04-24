@@ -477,6 +477,21 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     <div class="lock-logo">T</div>
     <div class="lock-title">TradeBooks</div>
     <div class="lock-sub">AI Bookkeeping for Canadian Small Business</div>
+
+    <!-- Primary path: Sign in with Google -->
+    <button id="loginGoogleBtn" onclick="loginWithGoogle()" style="width:100%;padding:.78rem 1rem;background:white;color:#151a18;border:1px solid rgba(255,255,255,.18);border-radius:var(--radius);font-size:.95rem;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.6rem;margin-bottom:.85rem">
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Sign in with Google
+    </button>
+    <div style="font-size:.72rem;color:rgba(255,255,255,.55);text-align:center;margin-bottom:1.25rem;line-height:1.5">
+      New here? Signing in with Google creates your account<br>and sets up your books in one step.
+    </div>
+
+    <div style="text-align:center;font-size:.7rem;color:rgba(255,255,255,.35);margin:.8rem 0;position:relative">
+      <span style="background:var(--lock-bg,#0f1416);padding:0 .75rem;position:relative;z-index:1">or use email + password</span>
+      <div style="position:absolute;top:50%;left:0;right:0;border-top:1px solid rgba(255,255,255,.12)"></div>
+    </div>
+
     <div style="margin-bottom:.75rem">
       <label style="display:block;font-family:var(--mono);font-size:.6rem;letter-spacing:.1em;color:#5a7a8a;margin-bottom:.35rem;text-transform:uppercase">Email</label>
       <input class="lock-input" type="email" id="loginEmail" placeholder="you@yourbusiness.ca" style="text-align:left;letter-spacing:normal;margin-bottom:0">
@@ -489,18 +504,28 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     <button class="lock-btn" id="loginBtn" onclick="loginSubmit()">Log in →</button>
     <div class="lock-error" id="loginError"></div>
     <div style="text-align:center;margin-top:1rem;font-size:.82rem;color:#5a7a8a">
-      Don't have an account? <a onclick="setScreen('signup')" style="color:#4caf7d;cursor:pointer;text-decoration:none">Sign up</a>
+      No Google account? <a onclick="setScreen('signup')" style="color:#4caf7d;cursor:pointer;text-decoration:none">Create one with email →</a>
     </div>
     <div class="lock-footer">TradeBooks · AI Bookkeeping</div>
   </div>
 </div>
 
-<!-- SIGNUP SCREEN -->
+<!-- SIGNUP SCREEN — fallback for users without a Google account -->
 <div id="signupScreen" style="display:none">
   <div class="lock-box">
     <div class="lock-logo">T</div>
     <div class="lock-title">Create your account</div>
     <div class="lock-sub">14-day free trial · No credit card required</div>
+
+    <button onclick="loginWithGoogle()" style="width:100%;padding:.72rem 1rem;background:white;color:#151a18;border:none;border-radius:var(--radius);font-size:.9rem;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.55rem;margin-bottom:.75rem">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Sign up with Google (recommended)
+    </button>
+    <div style="text-align:center;font-size:.7rem;color:rgba(255,255,255,.35);margin:.9rem 0;position:relative">
+      <span style="background:var(--lock-bg,#0f1416);padding:0 .75rem;position:relative;z-index:1">or with email + password</span>
+      <div style="position:absolute;top:50%;left:0;right:0;border-top:1px solid rgba(255,255,255,.12)"></div>
+    </div>
+
     <div style="margin-bottom:.75rem">
       <label style="display:block;font-family:var(--mono);font-size:.6rem;letter-spacing:.1em;color:#5a7a8a;margin-bottom:.35rem;text-transform:uppercase">Your name</label>
       <input class="lock-input" type="text" id="signupName" placeholder="Mike Smith" style="text-align:left;letter-spacing:normal;margin-bottom:0">
@@ -7220,102 +7245,104 @@ let obProfile = {
   sheetId:''
 };
 
-const OB_STEPS = [
-  { label:'Business Type', title:'What kind of business are you?', sub:'This determines your tax forms and filing requirements.' },
-  { label:'Business Details', title:'Tell us about your business', sub:'Location, banking, and fiscal year.' },
-  { label:'Invoice Setup', title:'Set up your invoices', sub:'Starting number, clients, and home office.' },
-  { label:'Google Sheet', title:'Connect your books', sub:'Your data lives in a Google Sheet you own forever.' },
-  { label:'Ready!', title:"Let's get started", sub:"Everything's configured. Time to do some bookkeeping." },
-];
+// Legacy — kept so any lingering references don't break. Single-page now.
+const OB_STEPS = [{ label:'Business Info', title:'Tell us about your business', sub:'All on one page. Fill in carefully — these drive your tax forms.' }];
 
+/**
+ * Single-page Business Info form. Replaces the old 5-step wizard. Every
+ * field the app needs for accurate bookkeeping is on one scrollable page
+ * grouped by section. Save button triggers profile save + auto-builds the
+ * Google Sheet using the access token cached from the login OAuth.
+ */
 function obRender(){
-  const s = OB_STEPS[obStep];
-  document.getElementById('obStepLabel').textContent = `Step ${obStep+1} of 5 · ${s.label}`;
-  document.getElementById('obTitle').textContent = s.title;
-  document.getElementById('obSub').textContent = s.sub;
-  document.querySelectorAll('.ob-seg').forEach((seg,i) => {
-    seg.style.background = i < obStep ? 'var(--green)' : i === obStep ? 'var(--green2)' : 'var(--paper3)';
-  });
+  document.getElementById('obStepLabel').textContent = 'Business Info';
+  document.getElementById('obTitle').textContent = 'Tell us about your business';
+  document.getElementById('obSub').textContent = 'All on one page. These details drive your tax forms, so fill them in carefully.';
+  document.querySelectorAll('.ob-seg').forEach(seg => { seg.style.background = 'var(--green)'; });
 
   const body = document.getElementById('obBody');
   const p = obProfile;
-  const field = (lbl,id,ph,val,type) => `<div style="margin-bottom:1rem"><label style="display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);margin-bottom:.35rem;text-transform:uppercase">${lbl}</label><input type="${type||'text'}" id="${id}" placeholder="${ph||''}" value="${val||''}" style="width:100%;padding:.6rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem;color:var(--ink);outline:none" oninput="obField('${id}',this.value)"></div>`;
-  const sel = (lbl,id,opts,val) => `<div style="margin-bottom:1rem"><label style="display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);margin-bottom:.35rem;text-transform:uppercase">${lbl}</label><select id="${id}" style="width:100%;padding:.6rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem;color:var(--ink);outline:none;background:white" onchange="obField('${id}',this.value)">${opts.map(o=>{const v=typeof o==='string'?o:o.v;const t=typeof o==='string'?o:o.t;return`<option value="${v}"${v===val?' selected':''}>${t}</option>`}).join('')}</select></div>`;
-  const hint = (msg,color) => `<div style="background:${color||'var(--amberlt)'};border:1px solid ${color==='var(--bluelt)'?'#b8cfe8':'#e6c97a'};border-radius:var(--radius);padding:.65rem .85rem;font-size:.77rem;color:${color==='var(--bluelt)'?'var(--blue)':'var(--amber)'};line-height:1.5;margin-top:.5rem">${msg}</div>`;
 
-  const provOpts = Object.entries(PROVINCE_CONFIG).map(([code,cfg])=>({v:code,t:`${cfg.name} (${cfg.type} ${Math.round(cfg.rate*100)}%)`}));
+  const field = (lbl, id, ph, val, type, hint) => `
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);margin-bottom:.3rem;text-transform:uppercase">${lbl}</label>
+      <input type="${type||'text'}" id="${id}" placeholder="${ph||''}" value="${val==null?'':String(val).replace(/"/g,'&quot;')}"
+        style="width:100%;padding:.6rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem;color:var(--ink);outline:none"
+        oninput="obField('${id}',this.value)">
+      ${hint ? `<div style="font-size:.72rem;color:var(--ink3);margin-top:.25rem;line-height:1.5">${hint}</div>` : ''}
+    </div>`;
+  const select = (lbl, id, opts, val, hint) => `
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);margin-bottom:.3rem;text-transform:uppercase">${lbl}</label>
+      <select id="${id}" style="width:100%;padding:.6rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem;color:var(--ink);outline:none;background:white"
+        onchange="obField('${id}',this.value)">
+        ${opts.map(o => { const v = typeof o === 'string' ? o : o.v; const t = typeof o === 'string' ? o : o.t; return `<option value="${v}"${v === val ? ' selected' : ''}>${t}</option>`; }).join('')}
+      </select>
+      ${hint ? `<div style="font-size:.72rem;color:var(--ink3);margin-top:.25rem;line-height:1.5">${hint}</div>` : ''}
+    </div>`;
+  const section = (label) => `
+    <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin:1.6rem 0 .7rem;padding-bottom:.35rem;border-bottom:1px solid var(--rule)">${label}</div>`;
+  const provOpts = Object.entries(PROVINCE_CONFIG).map(([code, cfg]) => ({ v: code, t: `${cfg.name} (${cfg.type} ${Math.round(cfg.rate*100)}%)` }));
+  const fyOpts = ['January 31','February 28','March 31','April 30','May 31','June 30','July 31','August 31','September 30','October 31','November 30','December 31'];
 
-  let html = '';
-  switch(obStep){
-    case 0:
-      html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-        <div onclick="obProfile.businessType='sole_prop';obRender()" style="border:2px solid ${p.businessType==='sole_prop'?'var(--green)':'var(--rule)'};background:${p.businessType==='sole_prop'?'var(--greenlt)':'white'};border-radius:var(--radius);padding:1rem;cursor:pointer;text-align:center">
-          <div style="font-size:1.5rem;margin-bottom:.4rem">👤</div><div style="font-weight:500;font-size:.88rem;margin-bottom:.2rem">Sole Proprietor</div><div style="font-size:.72rem;color:var(--ink3)">Business income on my personal T1 (T2125)</div>
-        </div>
-        <div onclick="obProfile.businessType='incorporated';obRender()" style="border:2px solid ${p.businessType==='incorporated'?'var(--green)':'var(--rule)'};background:${p.businessType==='incorporated'?'var(--greenlt)':'white'};border-radius:var(--radius);padding:1rem;cursor:pointer;text-align:center">
-          <div style="font-size:1.5rem;margin-bottom:.4rem">🏢</div><div style="font-weight:500;font-size:.88rem;margin-bottom:.2rem">Incorporated</div><div style="font-size:.72rem;color:var(--ink3)">Corporation files its own T2 return</div>
-        </div>
+  const preFilledFromGoogle = p.ownerName || p.email;
+
+  const html = `
+    ${preFilledFromGoogle ? `<div style="background:#e8f5ee;border:1px solid #b2d9c0;border-radius:var(--radius);padding:.65rem .9rem;font-size:.8rem;color:#1a5c38;margin-bottom:1.1rem">✓ Signed in as <strong>${esc(p.ownerName || '')}</strong>${p.email ? ` · ${esc(p.email)}` : ''}</div>` : ''}
+
+    ${section('You')}
+    ${field('Owner name', 'ob_ownerName', 'Your full name', p.ownerName, 'text', 'Whose T4 or T4A would be issued if needed. Pre-filled from your Google account.')}
+    ${field('Email (shown on invoices)', 'ob_email', 'you@yourbusiness.ca', p.email, 'email', 'The email that appears on invoices you send to clients.')}
+
+    ${section('Your corporation')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.9rem">
+      <div onclick="obProfile.businessType='sole_prop';obRender()" style="border:2px solid ${p.businessType==='sole_prop'?'var(--green)':'var(--rule)'};background:${p.businessType==='sole_prop'?'var(--greenlt)':'white'};border-radius:var(--radius);padding:.85rem;cursor:pointer;text-align:center">
+        <div style="font-size:1.3rem;margin-bottom:.25rem">👤</div>
+        <div style="font-weight:500;font-size:.85rem">Sole Proprietor</div>
+        <div style="font-size:.7rem;color:var(--ink3);margin-top:.15rem">T2125 on your personal T1</div>
       </div>
-      ${field('Business name','ob_businessName',p.businessType==='incorporated'?'Smith Plumbing Inc.':'Smith Plumbing',p.businessName)}
-      ${field('Trading / DBA name (leave blank if same)','ob_tradingName','e.g. Smith Emergency Plumbing',p.tradingName)}`; break;
-    case 1:
-      html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">${field('City','ob_city','London',p.city)}${sel('Province','ob_province',provOpts,p.province)}</div>
-      <div style="margin-bottom:1rem"><label style="display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);margin-bottom:.35rem;text-transform:uppercase">HST / GST registration number (optional)</label><input type="text" id="ob_hstNumber" placeholder="123456789 RT 0001 — or leave blank" value="${p.hstNumber||''}" style="width:100%;padding:.6rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem;color:var(--ink);outline:none" oninput="obField('ob_hstNumber',this.value)"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">${sel('Primary bank','ob_primaryBank',['BMO','TD','RBC','Scotiabank','CIBC','Desjardins','Other'],p.primaryBank)}${sel('Business credit card','ob_creditCard',['AMEX','Visa','Mastercard','Capital One','None'],p.creditCard)}</div>
-      ${sel('Fiscal year end','ob_fiscalYearEnd',['January 31','February 28','March 31','April 30','May 31','June 30','July 31','August 31','September 30','October 31','November 30','December 31'],p.fiscalYearEnd)}
-      ${p.businessType==='sole_prop'&&p.fiscalYearEnd!=='December 31'?hint('⚠️ Sole proprietors in Canada must use December 31 as their fiscal year end.'):''}`; break;
-    case 2:
-      html = `${field('Starting invoice number','ob_invoiceStart','1001',p.invoiceStart,'number')}
-      ${hint('If you have been issuing invoices, enter the next number. Starting fresh? 1001 is fine.','var(--bluelt)')}
-      <div style="margin-top:1rem"><label style="display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);margin-bottom:.35rem;text-transform:uppercase">Common clients (optional)</label>
-        <input type="text" placeholder="Client 1" value="${p.clients[0]||''}" style="width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;margin-bottom:.4rem" oninput="obProfile.clients[0]=this.value">
-        <input type="text" placeholder="Client 2" value="${p.clients[1]||''}" style="width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem" oninput="obProfile.clients[1]=this.value">
-      </div>${field('Home office % (0 if none)','ob_homeOfficePercent','0',p.homeOfficePercent,'number')}`; break;
-    case 3:
-      html = `<div style="text-align:center;padding:.75rem 0 1rem"><div style="font-size:3rem;margin-bottom:.5rem">📊</div><div style="font-size:.85rem;color:var(--ink3);line-height:1.6;max-width:400px;margin:0 auto">Your books live in a Google Sheet you own. We never store your financial data.</div></div>
-      
-      <!-- PATH A: Automatic setup with Google sign-in -->
-      <div id="obPathA" style="background:var(--greenlt);border:2px solid #b8ddc8;border-radius:var(--radius);padding:1.25rem;margin-bottom:1rem;text-align:center">
-        <div style="font-weight:600;font-size:.95rem;color:var(--green);margin-bottom:.5rem">✨ Recommended: One-click setup</div>
-        <div style="font-size:.8rem;color:var(--ink2);line-height:1.5;margin-bottom:.75rem">Sign in with Google and we'll create your bookkeeping sheet automatically — tabs, formulas, categories, everything.</div>
-        <button id="googleSignInBtn" style="padding:.6rem 1.5rem;background:white;color:var(--ink);border:1px solid #ddd;border-radius:var(--radius);font-size:.88rem;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem" onclick="googleAutoSetup()">
-          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-          Sign in with Google
-        </button>
-        <div id="googleSetupStatus" style="font-size:.78rem;color:var(--ink3);margin-top:.5rem;display:none"></div>
+      <div onclick="obProfile.businessType='incorporated';obRender()" style="border:2px solid ${p.businessType==='incorporated'?'var(--green)':'var(--rule)'};background:${p.businessType==='incorporated'?'var(--greenlt)':'white'};border-radius:var(--radius);padding:.85rem;cursor:pointer;text-align:center">
+        <div style="font-size:1.3rem;margin-bottom:.25rem">🏢</div>
+        <div style="font-weight:500;font-size:.85rem">Incorporated</div>
+        <div style="font-size:.7rem;color:var(--ink3);margin-top:.15rem">Corporation files its own T2</div>
       </div>
+    </div>
+    ${field('Legal business name', 'ob_businessName', p.businessType==='incorporated'?'Postma Contracting Inc.':'Your name or business name', p.businessName, 'text', 'Exactly as registered — this goes on every invoice and tax form.')}
+    ${field('Trading / DBA name (optional)', 'ob_tradingName', 'e.g. PCTires — leave blank if not applicable', p.tradingName, 'text', 'Use this if you operate under a different public name. It creates a second invoice template you can switch to.')}
+    ${field('HST / GST registration number', 'ob_hstNumber', '123456789 RT0001', p.hstNumber, 'text', 'Your CRA-assigned number. Required to charge HST; leave blank if not registered.')}
 
-      <div style="text-align:center;font-size:.75rem;color:var(--ink3);margin:1rem 0;position:relative"><span style="background:var(--paper);padding:0 .75rem;position:relative;z-index:1">or set up manually</span><div style="position:absolute;top:50%;left:0;right:0;border-top:1px solid var(--rule)"></div></div>
+    ${section('Location')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      ${field('City', 'ob_city', 'Chatham', p.city)}
+      ${select('Province', 'ob_province', provOpts, p.province, 'Determines the sales tax type + rate applied on invoices.')}
+    </div>
 
-      <!-- PATH B: Manual setup -->
-      <div id="obPathB">
-        ${field('Google Sheet ID','ob_sheetId','Paste the long ID from your Sheet URL',p.sheetId)}
-        ${hint('Create a sheet from the add-on or copy the template, then paste the ID here.')}
-      </div>`; break;
-    case 4:
-      const prov = PROVINCE_CONFIG[p.province]||PROVINCE_CONFIG.ON;
-      html = `<div style="text-align:center;padding:1.5rem 0"><div style="font-size:3.5rem;margin-bottom:.75rem">🎉</div>
-        <div style="font-family:var(--serif);font-size:1.3rem;margin-bottom:.5rem">You're all set${p.ownerName?', '+p.ownerName:''}!</div>
-        <div style="font-size:.85rem;color:var(--ink3);line-height:1.6;margin-bottom:1.25rem"><strong>${p.businessName||'Your business'}</strong> is ready. ${prov.type} at ${Math.round(prov.rate*100)}% calculated automatically.</div>
-        <div style="background:var(--white);border:1px solid var(--rule);border-radius:var(--radius);padding:1rem;text-align:left;display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.8rem">
-          <div><span style="color:var(--ink3);font-size:.65rem;font-family:var(--mono)">BUSINESS</span><br>${p.businessName||'—'}</div>
-          <div><span style="color:var(--ink3);font-size:.65rem;font-family:var(--mono)">TYPE</span><br>${p.businessType==='incorporated'?'Corporation':'Sole Proprietor'}</div>
-          <div><span style="color:var(--ink3);font-size:.65rem;font-family:var(--mono)">LOCATION</span><br>${p.city||'—'}, ${p.province}</div>
-          <div><span style="color:var(--ink3);font-size:.65rem;font-family:var(--mono)">TAX</span><br>${prov.type} ${Math.round(prov.rate*100)}%</div>
-          <div><span style="color:var(--ink3);font-size:.65rem;font-family:var(--mono)">BANK</span><br>${p.primaryBank}</div>
-          <div><span style="color:var(--ink3);font-size:.65rem;font-family:var(--mono)">CREDIT CARD</span><br>${p.creditCard}</div>
-        </div></div>`; break;
-  }
-  // Buttons
-  let btns = '<div></div>';
-  if(obStep>0&&obStep<4) btns = `<button style="padding:.55rem 1.2rem;border-radius:var(--radius);font-size:.85rem;cursor:pointer;background:transparent;border:1px solid var(--rule);color:var(--ink3)" onclick="obBack()">← Back</button>`;
-  let nextBtn = '';
-  if(obStep<3) nextBtn = `<button style="padding:.55rem 1.2rem;border-radius:var(--radius);font-size:.85rem;cursor:pointer;background:var(--ink);color:white;border:none" onclick="obNext()">Continue →</button>`;
-  else if(obStep===3) nextBtn = `<button style="padding:.55rem 1.2rem;border-radius:var(--radius);font-size:.85rem;cursor:pointer;background:var(--ink);color:white;border:none" onclick="obNext()">Finish setup →</button>`;
-  else nextBtn = `<button style="padding:.6rem 1.5rem;border-radius:var(--radius);font-size:.92rem;cursor:pointer;background:var(--green);color:white;border:none;margin:0 auto" onclick="obComplete()">Open my books →</button>`;
+    ${section('Tax basics')}
+    ${select('Fiscal year end', 'ob_fiscalYearEnd', fyOpts, p.fiscalYearEnd, p.businessType==='sole_prop' ? '⚠️ Sole props must use December 31.' : 'Most incorporated trades use March 31. Check with your accountant.')}
+    ${field('Home office % of household (0 if none)', 'ob_homeOfficePercent', '0', p.homeOfficePercent, 'number', 'Portion of your home used exclusively for business. Used for CCA and utilities deductions.')}
 
-  html += `<div style="display:flex;justify-content:space-between;margin-top:1.5rem">${btns}${nextBtn}</div>`;
-  if(obStep===3) html += `<div style="text-align:center;margin-top:.4rem;font-size:.75rem;color:var(--ink3);cursor:pointer" onclick="obNext()">Skip — set up later</div>`;
+    ${section('Banking')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      ${select('Primary business bank', 'ob_primaryBank', ['BMO','TD','RBC','Scotiabank','CIBC','Desjardins','Other'], p.primaryBank, 'We use this name on statement imports so rows tag to the right account.')}
+      ${select('Business credit card', 'ob_creditCard', ['AMEX','Visa','Mastercard','Capital One','None'], p.creditCard, 'Same — helps auto-route Amex bill payments as Internal Transfer.')}
+    </div>
+
+    ${section('Invoicing')}
+    ${field('Starting invoice number', 'ob_invoiceStart', '1001', p.invoiceStart, 'number', 'If you\'ve been issuing invoices, enter the next number. Starting fresh? 1001 is fine.')}
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink3);margin-bottom:.3rem;text-transform:uppercase">Common clients (optional)</label>
+      <input type="text" placeholder="Client 1" value="${(p.clients&&p.clients[0])||''}" style="width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;margin-bottom:.35rem" oninput="if(!obProfile.clients)obProfile.clients=['',''];obProfile.clients[0]=this.value">
+      <input type="text" placeholder="Client 2" value="${(p.clients&&p.clients[1])||''}" style="width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem" oninput="if(!obProfile.clients)obProfile.clients=['',''];obProfile.clients[1]=this.value">
+      <div style="font-size:.72rem;color:var(--ink3);margin-top:.25rem">Pre-fills the client dropdown in the invoice wizard. Add more later in Settings.</div>
+    </div>
+
+    <div style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:.6rem">
+      <button style="padding:.8rem 1.5rem;border-radius:var(--radius);font-size:.95rem;cursor:pointer;background:var(--green);color:white;border:none;font-weight:500" onclick="obComplete()">
+        Save &amp; build my books →
+      </button>
+      <div id="obCompleteStatus" style="font-size:.78rem;color:var(--ink3);text-align:center;min-height:1em"></div>
+    </div>`;
+
   body.innerHTML = html;
 }
 
@@ -7350,16 +7377,64 @@ async function obComplete(){
     return;
   }
 
-  p.ownerName=p.ownerName||USER_CONFIG.ownerName||'';
-  p.email=p.email||USER_CONFIG.email||'';
-  p.clients=p.clients.filter(Boolean);
-  try{
+  p.ownerName = p.ownerName || USER_CONFIG.ownerName || '';
+  p.email = p.email || USER_CONFIG.email || '';
+  p.clients = (p.clients || []).filter(Boolean);
+
+  const statusEl = document.getElementById('obCompleteStatus');
+  const setStatus = (msg, color) => { if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color || 'var(--ink3)'; } };
+
+  try {
+    setStatus('Saving your business profile…');
     await saveProfile(p);
-    USER_CONFIG=applyProvinceConfig(p);
+    USER_CONFIG = applyProvinceConfig(p);
     applyConfig();
+
+    // If we came here via Sign-in-with-Google, we have a short-lived access
+    // token cached. Use it to build the sheet immediately — no second OAuth.
+    const cachedTok = sessionStorage.getItem('tb_google_access_token');
+    const cachedExp = parseInt(sessionStorage.getItem('tb_google_access_expires') || '0', 10);
+    const tokenStillValid = cachedTok && cachedExp > Date.now();
+
+    if (tokenStillValid && !USER_CONFIG.sheetId) {
+      setStatus('Building your Google Sheet — this takes about 30 seconds…');
+      try {
+        const token = sessionStorage.getItem(AUTH_KEY);
+        const resp = await fetch('/api/google-setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            action: 'create-sheet',
+            accessToken: cachedTok,
+            profile: p,
+          }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          // Persist the new sheetId on the profile
+          p.sheetId = data.spreadsheetId;
+          USER_CONFIG.sheetId = data.spreadsheetId;
+          USER_CONFIG.sheetUrl = data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit`;
+          try { await saveProfile(p); } catch (e) { console.warn('Profile re-save after sheet build:', e); }
+          applyConfig();
+        } else {
+          toast('Sheet build failed — you can retry from Settings: ' + (data.error || 'unknown'));
+        }
+      } catch (e) {
+        toast('Sheet build error: ' + e.message + ' — you can retry from Settings.');
+      }
+      sessionStorage.removeItem('tb_google_access_token');
+      sessionStorage.removeItem('tb_google_access_expires');
+    }
+
     showApp();
-    toast('Welcome to TradeBooks! Import a statement or scan a receipt to get started.');
-  }catch(e){toast('Error saving: '+e.message)}
+    toast(USER_CONFIG.sheetId
+      ? 'Welcome to TradeBooks! Your books are ready.'
+      : 'Welcome! You can build your Google Sheet later from Settings.');
+  } catch (e) {
+    setStatus('Save failed: ' + e.message, 'var(--red)');
+    toast('Error saving: ' + e.message);
+  }
 }
 
 // Patch showOnboarding to init wizard
@@ -7370,7 +7445,88 @@ showOnboarding=function(){_origShowOB();obStep=0;obProfile.ownerName=USER_CONFIG
 // GOOGLE OAUTH — Sign in with Google + auto-create sheet
 // ════════════════════════════════════════════════════════════
 const GOOGLE_CLIENT_ID = '156430400132-g1svqh7tu8c31lf10afu2hm1koqec1vo.apps.googleusercontent.com';
-const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/script.deployments https://www.googleapis.com/auth/userinfo.email';
+// Scopes: openid+email+profile for sign-in identity; spreadsheets+drive for
+// creating & editing the user's bookkeeping workbook. One consent for both.
+const GOOGLE_SCOPES = 'openid email profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/script.deployments https://www.googleapis.com/auth/userinfo.email';
+
+/**
+ * OAuth callback handler for Sign-in-with-Google. Called from
+ * handleGoogleCallback when state starts with `tradebooks_login_`.
+ * Exchanges the code via /api/auth/google, stores the JWT, routes to
+ * app or onboarding, and stashes the short-lived access token for the
+ * onboarding save-and-build-sheet path.
+ */
+async function handleLoginCallback(code) {
+  window.history.replaceState({}, '', window.location.pathname);
+  showLoading('Signing you in with Google…');
+  try {
+    const redirectUri = window.location.origin + '/app/';
+    const r = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, redirectUri }),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Google sign-in failed');
+
+    // Persist the TradeBooks JWT just like email/password login does
+    sessionStorage.setItem(AUTH_KEY, d.token);
+    if (d.user) sessionStorage.setItem(PROFILE_KEY, JSON.stringify(d.user));
+
+    // Stash the short-lived Google access token so onboarding can create the
+    // sheet without triggering a second OAuth popup. Expires in ~1h; after
+    // that /api/google-setup can refresh via the saved refresh_token.
+    if (d.accessToken) {
+      sessionStorage.setItem('tb_google_access_token', d.accessToken);
+      sessionStorage.setItem('tb_google_access_expires', String(Date.now() + ((d.expiresIn || 3600) - 60) * 1000));
+    }
+    if (d.googleProfile) sessionStorage.setItem('tb_google_profile', JSON.stringify(d.googleProfile));
+
+    // Route: if the user has a saved business profile, go to the app;
+    // otherwise drop into onboarding.
+    if (d.profile) {
+      USER_CONFIG = applyProvinceConfig(d.profile);
+      applyConfig();
+      setScreen('app');
+    } else {
+      // Seed obProfile with what Google gave us so the onboarding page
+      // shows the user's name pre-filled and isn't a blank slate.
+      if (typeof obProfile !== 'undefined') {
+        obProfile.ownerName = d.googleProfile?.name || obProfile.ownerName;
+        obProfile.email = d.googleProfile?.email || obProfile.email;
+      }
+      setScreen('onboarding');
+      // Render the initial step if the existing wizard is still in use
+      if (typeof obRender === 'function') obRender();
+    }
+    return true;
+  } catch (err) {
+    toast('Sign-in failed: ' + err.message);
+    setScreen('login');
+    return false;
+  }
+}
+
+/**
+ * Kick off Google Sign-In from the landing screen. Creates or finds the
+ * TradeBooks account based on Google identity; if new, drops the user in
+ * single-page onboarding; if returning, loads the app directly.
+ */
+function loginWithGoogle() {
+  const state = 'tradebooks_login_' + Date.now();
+  sessionStorage.setItem('google_oauth_state', state);
+  const redirectUri = window.location.origin + '/app/';
+  const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: GOOGLE_SCOPES,
+    state: state,
+    access_type: 'offline',
+    prompt: 'consent',
+  }).toString();
+  window.location.href = authUrl;
+}
 
 function googleAutoSetup() {
   // Validate required fields before redirecting to Google. If anything's
@@ -7479,10 +7635,15 @@ async function handleGoogleCallback() {
 
   if (!code || !state) return false;
 
-  // Verify state
+  // Verify state — accept either the login or setup flavours
   const savedState = sessionStorage.getItem('google_oauth_state');
-  if (!savedState || !state.startsWith('tradebooks_setup_')) return false;
+  if (!savedState || !(state.startsWith('tradebooks_setup_') || state.startsWith('tradebooks_login_'))) return false;
   sessionStorage.removeItem('google_oauth_state');
+
+  // Branch A — Sign-in-with-Google flow from the landing screen
+  if (state.startsWith('tradebooks_login_')) {
+    return await handleLoginCallback(code);
+  }
 
   // Branch: is this a manual sheet-create from Settings, or initial onboarding?
   const isManualCreate = sessionStorage.getItem('tb_manual_create_sheet') === '1';

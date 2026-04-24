@@ -39,7 +39,7 @@ export async function appendRows(env, userId, range, rows) {
     if (!tok.ok) return tok;
 
   const resp = await fetch(
-        `${SHEETS_API}/${sheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        `${SHEETS_API}/${sheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=OVERWRITE`,
     {
             method: 'POST',
             headers: {

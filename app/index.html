@@ -2045,11 +2045,16 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
               <option value="PCTires">PCTires</option>
             </select>
           </div>
-          <div class="field"><label>Task description</label><input type="text" id="wl_task" placeholder="e.g. Shop cleanup, inventory sort, vehicle wash"></div>
+          <div class="field">
+            <label>Task description <small style="color:var(--ink3);font-weight:400;margin-left:.4rem" id="wl_taskHint">— age-appropriate suggestions appear after you pick an employee</small></label>
+            <input type="text" id="wl_task" list="wlTaskSuggestions" placeholder="e.g. Shop cleanup, inventory sort, vehicle wash">
+            <datalist id="wlTaskSuggestions"></datalist>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
             <div class="field"><label>Hours</label><input type="number" step="0.25" id="wl_hours" placeholder="4"></div>
             <div class="field"><label>Rate ($/hr)</label><input type="number" step="0.01" id="wl_rate" placeholder="16.00"></div>
           </div>
+          <div id="wl_rateWarning" style="font-size:.78rem;padding:.45rem .7rem;border-radius:var(--radius);display:none"></div>
           <div class="field"><label>Notes (optional)</label><textarea id="wl_notes" rows="2"></textarea></div>
           <div id="wl_preview" style="font-size:.82rem;color:var(--ink3);padding:.5rem .7rem;background:var(--paper2);border-radius:var(--radius)"></div>
           <div style="display:flex;gap:.5rem">
@@ -5520,13 +5525,74 @@ window.addEventListener('load',()=>{
 });
 
 // ════════════════════════════════════════════════════════════
-// PAYROLL (Phase 2B — Stage 2)
-// Employee management + Work Log entry. Pay Runs wired in Stage 3.
+// PAYROLL (Phase 2B)
+// Employee management + Work Log + Pay Runs + Remittance + T4 + audit polish.
 // ════════════════════════════════════════════════════════════
 
 let PAYROLL_EMPLOYEES = [];        // in-memory cache; source of truth is D1 via /api/payroll/employees
 let PAYROLL_RECENT_WL = [];        // last N work log entries submitted this session
 let _payrollInitialized = false;
+
+// ── Rate reasonableness + task library (Stage 6 audit defence) ──
+//
+// Ontario 2026 reference points:
+//   General minimum wage: $17.20/hr  ·  Student minimum wage (under 18, ≤28 hrs/wk during school): $16.20/hr
+//
+// These are guidelines, not limits. CRA's "reasonableness" standard for
+// child/family wages = what you'd pay an unrelated third party for the
+// same work. The ranges below reflect realistic Ontario pay for that work
+// at that age. Exceeding the max is *non-blocking* — the UI shows a soft
+// warning, which itself is audit-defensible (system flagged it, user had
+// documented reason to override).
+const PAYROLL_TASK_LIBRARY = [
+  // 8–12 — light shop work
+  { label: 'Shop cleanup — sweeping, tidying', tasks: ['shop cleanup','sweeping','tidying','cleaning'], ageMin: 8, ageMax: 17, min: 14, max: 17 },
+  { label: 'Sort tire / parts inventory',       tasks: ['sort inventory','tire inventory','parts inventory','sorting'], ageMin: 8, ageMax: 20, min: 14, max: 18 },
+  { label: 'Vehicle wash / exterior detail',    tasks: ['vehicle wash','car wash','truck wash','detail'], ageMin: 8, ageMax: 20, min: 14, max: 18 },
+  { label: 'Organize tools / bench',            tasks: ['organize tools','tool organization','bench organization'], ageMin: 8, ageMax: 17, min: 14, max: 17 },
+  // 13–15 — admin + low-skill labour
+  { label: 'Filing / paperwork organization',   tasks: ['filing','paperwork','organize documents'], ageMin: 13, ageMax: 20, min: 15, max: 19 },
+  { label: 'Social media posts — PCTires / HVAC',tasks: ['social media','facebook post','instagram','marketing post'], ageMin: 13, ageMax: 20, min: 16, max: 22 },
+  { label: 'Data entry — invoicing, bookkeeping',tasks: ['data entry','bookkeeping entry','invoicing input'], ageMin: 13, ageMax: 20, min: 15, max: 20 },
+  { label: 'Stock / receive deliveries',        tasks: ['receive delivery','stock shelves','receiving'], ageMin: 13, ageMax: 20, min: 15, max: 19 },
+  // 16–17 — skilled helper
+  { label: 'Tire changeover — seasonal support',tasks: ['tire change','tire changeover','seasonal swap','wheel swap'], ageMin: 16, ageMax: 20, min: 17, max: 24 },
+  { label: 'Customer service — phone / counter',tasks: ['customer service','phone','counter','scheduling calls'], ageMin: 16, ageMax: 20, min: 16, max: 22 },
+  { label: 'Scheduling / dispatch support',     tasks: ['scheduling','dispatch','booking'], ageMin: 16, ageMax: 20, min: 16, max: 22 },
+  // 18+ — full labour / technical
+  { label: 'HVAC install assist / helper',      tasks: ['hvac assist','hvac helper','install assist'], ageMin: 18, ageMax: 99, min: 20, max: 30 },
+  { label: 'Subcontractor labour — skilled',    tasks: ['subcontract','skilled labour','carpentry','framing'], ageMin: 18, ageMax: 99, min: 20, max: 35 },
+  { label: 'Website / software development',    tasks: ['web development','software','coding','programming'], ageMin: 16, ageMax: 99, min: 18, max: 40 },
+  { label: 'Bookkeeping — full books management',tasks: ['bookkeeping','monthly books','reconciliation'], ageMin: 16, ageMax: 99, min: 18, max: 28 },
+];
+
+// Band defaults (used when a task isn't found in the library above).
+const PAYROLL_AGE_BAND_RATES = [
+  { ageMin: 8,  ageMax: 12, label: 'Light chores',    min: 14, max: 17 },
+  { ageMin: 13, ageMax: 15, label: 'Basic admin',     min: 15, max: 19 },
+  { ageMin: 16, ageMax: 17, label: 'Skilled helper',  min: 16, max: 22 },
+  { ageMin: 18, ageMax: 99, label: 'Full labour',     min: 18, max: 32 },
+];
+
+function payrollTasksForAge(age) {
+  if (age == null || age < 0) return [];
+  return PAYROLL_TASK_LIBRARY.filter(t => age >= t.ageMin && age <= t.ageMax);
+}
+
+function payrollGuidelineForRate(age, taskText) {
+  if (age == null) return null;
+  const lc = String(taskText || '').toLowerCase();
+  // Look for a task-library match first
+  for (const t of PAYROLL_TASK_LIBRARY) {
+    if (age < t.ageMin || age > t.ageMax) continue;
+    if (t.tasks.some(k => lc.includes(k))) {
+      return { source: 'task', label: t.label, min: t.min, max: t.max };
+    }
+  }
+  // Fall back to age band
+  const band = PAYROLL_AGE_BAND_RATES.find(b => age >= b.ageMin && age <= b.ageMax);
+  return band ? { source: 'band', label: band.label, min: band.min, max: band.max } : null;
+}
 
 async function payrollInit(){
   // Default Work Log date to today
@@ -5536,7 +5602,7 @@ async function payrollInit(){
   if(_payrollInitialized) return;
   _payrollInitialized = true;
   // Bind Work Log preview listeners once (elements exist by this point since payroll panel is in DOM).
-  ['wl_hours','wl_rate'].forEach(id => {
+  ['wl_hours','wl_rate','wl_task'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.addEventListener('input', wlPreviewGross);
   });
@@ -5600,8 +5666,9 @@ function empRender(){
           DOB ${esc(e.dob)} · ${esc(e.relationship)}${e.familyEiExempt?' · family-EI exempt':''}<br>
           Default rate $${Number(e.defaultRate||0).toFixed(2)}/hr · TD1 Fed ${e.td1FedClaim||1} / ON ${e.td1OnClaim||1}
         </div>
-        <div style="display:flex;gap:.4rem;margin-top:.55rem">
+        <div style="display:flex;gap:.4rem;margin-top:.55rem;flex-wrap:wrap">
           <button onclick="empLoad('${esc(e.id)}')" style="background:var(--paper2);border:1px solid var(--rule);border-radius:4px;padding:.25rem .65rem;font-size:.75rem;cursor:pointer">Edit</button>
+          <button onclick="empAnnualSummary('${esc(e.id)}')" style="background:var(--paper2);border:1px solid var(--rule);border-radius:4px;padding:.25rem .65rem;font-size:.75rem;cursor:pointer">📋 Annual summary</button>
           <button onclick="empDelete('${esc(e.id)}')" style="background:var(--paper2);border:1px solid var(--rule);border-radius:4px;padding:.25rem .65rem;font-size:.75rem;cursor:pointer;color:var(--red)">Remove</button>
         </div>
       </div>`;
@@ -5617,6 +5684,157 @@ function calcAge(dobStr){
     if(m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
     return age;
   } catch { return '—'; }
+}
+
+/**
+ * Pull the per-employee annual summary from the backend and open a printable
+ * window. This is the CRA audit-hand-over artefact: total hours, what the kid
+ * did, at what rate, for whom, when — all derived from the contemporaneous
+ * Work Log and committed Payroll rows.
+ */
+async function empAnnualSummary(employeeId){
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ toast('Please sign in first'); return; }
+  const defaultYear = new Date().getUTCFullYear() - 1;
+  const yearStr = prompt('Annual summary — which year?', String(defaultYear));
+  if(!yearStr) return;
+  const year = parseInt(yearStr, 10);
+  if(!year || year < 2020 || year > 2100){ toast('Invalid year'); return; }
+
+  toast('Loading annual summary…');
+  try {
+    const r = await fetch(`/api/payroll/employee-summary?employeeId=${encodeURIComponent(employeeId)}&year=${year}`, {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const d = await r.json();
+    if(!d.ok){ toast('Failed: ' + (d.error || 'unknown')); return; }
+    empOpenAnnualWindow(d);
+  } catch(err){ toast('Failed: ' + err.message); }
+}
+
+function empOpenAnnualWindow(d){
+  const e = d.employee;
+  const emp = d.employer;
+  const t = d.totals;
+  const tasks = d.tasks.slice(0, 15);
+  const monthsActive = d.byMonth.filter(m => m.hours > 0 || m.payRunGross > 0);
+  const age = e.dob ? calcAge(e.dob) : '—';
+
+  const tasksRows = tasks.length
+    ? tasks.map(t => `<tr>
+        <td>${escAttr(t.task)}</td>
+        <td class="num">${t.count}</td>
+        <td class="num">${t.hours.toFixed(2)}</td>
+        <td class="num">$${t.gross.toFixed(2)}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="4" style="font-style:italic;color:#777">No Work Log entries for this period.</td></tr>`;
+
+  const ratesRows = d.rates.length
+    ? d.rates.map(r => `<tr>
+        <td class="num">$${r.rate.toFixed(2)}/hr</td>
+        <td>${escAttr(r.firstSeen)}</td>
+        <td>${escAttr(r.lastSeen)}</td>
+        <td class="num">${r.hours.toFixed(2)}</td>
+        <td class="num">$${r.gross.toFixed(2)}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="5" style="font-style:italic;color:#777">No rate data.</td></tr>`;
+
+  const bizRows = d.businesses.length
+    ? d.businesses.map(b => `<tr>
+        <td>${escAttr(b.business)}</td>
+        <td class="num">${b.hours.toFixed(2)}</td>
+        <td class="num">$${b.gross.toFixed(2)}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="3" style="font-style:italic;color:#777">—</td></tr>`;
+
+  const monthsRows = monthsActive.length
+    ? monthsActive.map(m => `<tr>
+        <td>${escAttr(m.month)}</td>
+        <td class="num">${m.hours.toFixed(2)}</td>
+        <td class="num">$${m.gross.toFixed(2)}</td>
+        <td class="num">${m.payRunCount}</td>
+        <td class="num">$${m.payRunGross.toFixed(2)}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="5" style="font-style:italic;color:#777">No activity this year.</td></tr>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${escAttr(e.name)} — Annual Summary ${d.year}</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;padding:30px 40px;color:#111;background:white;line-height:1.5}
+      h1{font-size:1.4rem;font-weight:600;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:16px}
+      h2{font-size:.95rem;font-weight:600;margin-top:20px;margin-bottom:8px;color:#333;text-transform:uppercase;letter-spacing:.04em}
+      .meta{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 20px;font-size:.85rem;margin-bottom:20px}
+      .meta .k{color:#555;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+      .meta .v{font-weight:500}
+      .totals{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+      .totals .box{border:1px solid #111;padding:10px 12px}
+      .totals .lbl{font-size:.65rem;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+      .totals .val{font-size:1.05rem;font-weight:600;font-family:'IBM Plex Mono',Consolas,monospace}
+      table{width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:16px}
+      th,td{padding:5px 8px;text-align:left;border-bottom:1px solid #ddd}
+      th{border-bottom:2px solid #111;font-weight:600;text-transform:uppercase;letter-spacing:.03em;font-size:.72rem;color:#333}
+      td.num,th.num{text-align:right;font-family:'IBM Plex Mono',Consolas,monospace}
+      .note{font-size:.72rem;color:#555;font-style:italic;margin-top:24px;border-top:1px solid #ddd;padding-top:10px}
+      @media print{body{padding:20px}}
+    </style>
+  </head><body>
+    <h1>${escAttr(e.name)} — Annual Summary · ${d.year}</h1>
+
+    <div class="meta">
+      <div><div class="k">Employer</div><div class="v">${escAttr(emp.businessName)}</div></div>
+      <div><div class="k">Province</div><div class="v">${escAttr(emp.province || 'ON')}</div></div>
+      <div><div class="k">Employee DOB</div><div class="v">${escAttr(e.dob || '—')} · age ${age}</div></div>
+      <div><div class="k">Relationship</div><div class="v">${escAttr(e.relationship || '—')}</div></div>
+      <div><div class="k">Start date</div><div class="v">${escAttr(e.startDate || '—')}</div></div>
+      <div><div class="k">SIN</div><div class="v">${e.sin ? escAttr(e.sin) : '<em style="color:#b00">MISSING</em>'}</div></div>
+    </div>
+
+    <h2>Totals for ${d.year}</h2>
+    <div class="totals">
+      <div class="box"><div class="lbl">Total hours</div><div class="val">${t.hours.toFixed(2)}</div></div>
+      <div class="box"><div class="lbl">Gross earned (Work Log)</div><div class="val">$${t.grossFromLog.toFixed(2)}</div></div>
+      <div class="box"><div class="lbl">Gross paid (Payroll)</div><div class="val">$${t.grossFromPayroll.toFixed(2)}</div></div>
+      <div class="box"><div class="lbl">Net pay received</div><div class="val">$${t.net.toFixed(2)}</div></div>
+      <div class="box"><div class="lbl">Deductions</div><div class="val">$${t.deductions.toFixed(2)}</div></div>
+      <div class="box"><div class="lbl">Work Log entries</div><div class="val">${t.entryCount}</div></div>
+      <div class="box"><div class="lbl">Pay runs</div><div class="val">${t.payRunCount}</div></div>
+      <div class="box"><div class="lbl">Months active</div><div class="val">${monthsActive.length}</div></div>
+    </div>
+
+    <h2>Top tasks by hours</h2>
+    <table>
+      <thead><tr><th>Task</th><th class="num">Entries</th><th class="num">Hours</th><th class="num">Gross</th></tr></thead>
+      <tbody>${tasksRows}</tbody>
+    </table>
+
+    <h2>Rate history</h2>
+    <table>
+      <thead><tr><th class="num">Rate</th><th>First seen</th><th>Last seen</th><th class="num">Hours</th><th class="num">Gross</th></tr></thead>
+      <tbody>${ratesRows}</tbody>
+    </table>
+
+    <h2>By business</h2>
+    <table>
+      <thead><tr><th>Business</th><th class="num">Hours</th><th class="num">Gross</th></tr></thead>
+      <tbody>${bizRows}</tbody>
+    </table>
+
+    <h2>Monthly activity</h2>
+    <table>
+      <thead><tr><th>Month</th><th class="num">Hours worked</th><th class="num">Gross earned</th><th class="num">Pay runs</th><th class="num">Gross paid</th></tr></thead>
+      <tbody>${monthsRows}</tbody>
+    </table>
+
+    <div class="note">
+      Generated from TradeBooks on ${new Date().toLocaleString('en-CA')}. Work Log entries are server-timestamped on entry
+      (see "Entry Audit" column in the 📝 Work Log tab of the underlying Google Sheet). Hand this document to a CRA auditor
+      to demonstrate contemporaneous records of actual work performed, reasonable hourly rates for age-appropriate tasks,
+      and a complete audit trail linking Work Log → Pay Runs → bank transactions.
+    </div>
+  </body></html>`);
+  win.document.close();
+  setTimeout(() => { try { win.print(); } catch(e) {} }, 400);
 }
 
 function empLoad(id){
@@ -5742,7 +5960,28 @@ function wlEmployeeChange(){
   const rate = opt ? opt.dataset.rate : '';
   const rateEl = document.getElementById('wl_rate');
   if(rateEl && !rateEl.value && rate) rateEl.value = rate;
+  wlUpdateTaskSuggestions();
   wlPreviewGross();
+}
+
+/** Populate the task datalist with age-appropriate suggestions for the selected employee. */
+function wlUpdateTaskSuggestions(){
+  const sel = document.getElementById('wl_employeeId');
+  const dl = document.getElementById('wlTaskSuggestions');
+  const hint = document.getElementById('wl_taskHint');
+  if(!sel || !dl) return;
+  const emp = PAYROLL_EMPLOYEES.find(e => e.id === sel.value);
+  if(!emp || !emp.dob){
+    dl.innerHTML = '';
+    if(hint) hint.textContent = '— age-appropriate suggestions appear after you pick an employee';
+    return;
+  }
+  const age = calcAge(emp.dob);
+  const tasks = payrollTasksForAge(age);
+  dl.innerHTML = tasks.map(t => `<option value="${esc(t.label)}">`).join('');
+  if(hint){
+    hint.textContent = `— ${tasks.length} suggestion${tasks.length===1?'':'s'} for age ${age}`;
+  }
 }
 
 function wlPreviewGross(){
@@ -5750,6 +5989,46 @@ function wlPreviewGross(){
   const r = parseFloat(document.getElementById('wl_rate').value) || 0;
   const gross = h * r;
   document.getElementById('wl_preview').textContent = h && r ? `Gross for this entry: $${gross.toFixed(2)} (${h} hrs × $${r.toFixed(2)})` : 'Enter hours and rate to see gross.';
+  wlCheckRate();
+}
+
+/** Soft rate reasonableness check — non-blocking, audit-defensible. */
+function wlCheckRate(){
+  const warn = document.getElementById('wl_rateWarning');
+  if(!warn) return;
+  const sel = document.getElementById('wl_employeeId');
+  const emp = PAYROLL_EMPLOYEES.find(e => e.id === sel?.value);
+  const rate = parseFloat(document.getElementById('wl_rate').value);
+  const task = document.getElementById('wl_task').value;
+  if(!emp || !emp.dob || !rate){
+    warn.style.display = 'none';
+    return;
+  }
+  const age = calcAge(emp.dob);
+  const guide = payrollGuidelineForRate(age, task);
+  if(!guide){
+    warn.style.display = 'none';
+    return;
+  }
+  if(rate > guide.max){
+    warn.style.display = '';
+    warn.style.background = '#fff1e6';
+    warn.style.border = '1px solid #e6b07a';
+    warn.style.color = '#8a4a00';
+    warn.innerHTML = `⚠️ Rate $${rate.toFixed(2)}/hr is above the Ontario comparable for <strong>${esc(guide.label)}</strong> at age ${age} (typical $${guide.min}–$${guide.max}). You can still save — but if you ever get audited, be ready to defend why the rate is higher (e.g. unusual skill, specialized work, extended responsibility).`;
+  } else if(rate < guide.min && rate > 0){
+    warn.style.display = '';
+    warn.style.background = '#eef4f8';
+    warn.style.border = '1px solid #b4c9da';
+    warn.style.color = '#2d5a78';
+    warn.innerHTML = `ℹ️ Rate $${rate.toFixed(2)}/hr is below the typical range for <strong>${esc(guide.label)}</strong> at age ${age} ($${guide.min}–$${guide.max}). Fine — just noting it.`;
+  } else {
+    warn.style.display = '';
+    warn.style.background = '#e8f5ee';
+    warn.style.border = '1px solid #b2d9c0';
+    warn.style.color = '#1a5c38';
+    warn.innerHTML = `✓ Rate $${rate.toFixed(2)}/hr is within the Ontario comparable for <strong>${esc(guide.label)}</strong> at age ${age} ($${guide.min}–$${guide.max}).`;
+  }
 }
 
 // Listeners bound once inside payrollInit() on first open — see below.

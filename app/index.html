@@ -1971,6 +1971,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     <button class="pay-subtab" data-sub="worklog" onclick="payrollSub('worklog')" style="background:none;border:none;border-bottom:2px solid transparent;padding:.7rem 1.1rem;cursor:pointer;font-size:.85rem;font-weight:400;color:var(--ink3)">Work Log</button>
     <button class="pay-subtab" data-sub="payruns" onclick="payrollSub('payruns')" style="background:none;border:none;border-bottom:2px solid transparent;padding:.7rem 1.1rem;cursor:pointer;font-size:.85rem;font-weight:400;color:var(--ink3)">Pay Runs</button>
     <button class="pay-subtab" data-sub="remittance" onclick="payrollSub('remittance')" style="background:none;border:none;border-bottom:2px solid transparent;padding:.7rem 1.1rem;cursor:pointer;font-size:.85rem;font-weight:400;color:var(--ink3)">Remittance</button>
+    <button class="pay-subtab" data-sub="t4" onclick="payrollSub('t4')" style="background:none;border:none;border-bottom:2px solid transparent;padding:.7rem 1.1rem;cursor:pointer;font-size:.85rem;font-weight:400;color:var(--ink3)">Year-End T4</button>
   </div>
 
   <!-- ─── Employees sub-panel ─── -->
@@ -2130,6 +2131,28 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <div style="color:var(--ink3);font-style:italic">None yet.</div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ─── Year-End T4 sub-panel ─── -->
+  <div id="pay-sub-t4" class="pay-sub-panel" style="display:none">
+    <div style="background:#eef4f8;border:1px solid #b4c9da;border-left:3px solid #2d5a78;border-radius:var(--radius);padding:.7rem 1rem;font-size:.82rem;line-height:1.55;margin-bottom:1.25rem">
+      📋 <strong>T4 slips and Summary.</strong> Due to CRA <strong>February 28</strong> each year for the previous calendar year. File via CRA My Business Account — web forms work fine for fewer than 6 slips. Give each kid their copy for their own T1 personal return (even $0 owing, they should file to build RRSP contribution room).
+    </div>
+
+    <div style="display:flex;gap:.6rem;align-items:end;margin-bottom:1.25rem;flex-wrap:wrap">
+      <div class="field" style="margin-bottom:0">
+        <label>Tax year</label>
+        <input type="number" id="t4_year" min="2020" max="2100" style="width:120px">
+      </div>
+      <button class="btn btn-green" onclick="t4Generate()">🔨 Generate T4s</button>
+      <button class="btn btn-outline" onclick="t4DownloadCsv()" id="t4CsvBtn" disabled>⬇ Download CSV</button>
+      <button class="btn btn-outline" onclick="t4PrintAll()" id="t4PrintBtn" disabled>🖨 Print all slips</button>
+      <div id="t4Status" style="font-size:.8rem;color:var(--ink3);margin-left:.3rem"></div>
+    </div>
+
+    <div id="t4Output">
+      <div style="color:var(--ink3);font-style:italic">Select a year and click Generate to pull YTD totals for each employee.</div>
     </div>
   </div>
 </div>
@@ -5528,11 +5551,12 @@ function payrollSub(which){
     b.style.fontWeight = active ? '600' : '400';
     b.style.color = active ? 'var(--ink)' : 'var(--ink3)';
   });
-  ['employees','worklog','payruns','remittance'].forEach(k => {
+  ['employees','worklog','payruns','remittance','t4'].forEach(k => {
     document.getElementById('pay-sub-'+k).style.display = (k === which) ? '' : 'none';
   });
   if(which === 'payruns') { try { prSetDefaults(); } catch(e) { console.warn(e); } }
   if(which === 'remittance') { try { rmLoad(); } catch(e) { console.warn(e); } }
+  if(which === 't4') { try { t4SetDefaults(); } catch(e) { console.warn(e); } }
 }
 
 // ── Employees ──
@@ -6170,6 +6194,188 @@ async function rmConfirm(idx){
     toast('Remittance failed: ' + err.message);
   }
 }
+
+// ── Year-End T4 ──
+
+let _t4Last = null;   // holds last generated payload for CSV / print
+
+function t4SetDefaults(){
+  const y = document.getElementById('t4_year');
+  if(y && !y.value) y.value = new Date().getUTCFullYear() - 1;
+}
+
+async function t4Generate(){
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ toast('Please sign in first'); return; }
+  const status = document.getElementById('t4Status');
+  const output = document.getElementById('t4Output');
+  const year = parseInt(document.getElementById('t4_year').value, 10);
+  if(!year){ toast('Enter a year'); return; }
+
+  status.textContent = '⏳ Computing…';
+  status.style.color = 'var(--ink3)';
+  output.innerHTML = '<div style="color:var(--ink3);font-style:italic">Generating…</div>';
+  document.getElementById('t4CsvBtn').disabled = true;
+  document.getElementById('t4PrintBtn').disabled = true;
+
+  try {
+    const r = await fetch(`/api/payroll/t4?year=${year}`, { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if(!d.ok){
+      status.textContent = '❌ ' + (d.error || 'failed');
+      status.style.color = 'var(--red)';
+      output.innerHTML = `<div style="color:var(--red)">${esc(d.error || 'failed')}</div>`;
+      return;
+    }
+    _t4Last = d;
+    status.textContent = `✓ ${d.summary.totalSlips} slip${d.summary.totalSlips===1?'':'s'} generated`;
+    status.style.color = 'var(--green)';
+    document.getElementById('t4CsvBtn').disabled = d.slips.length === 0;
+    document.getElementById('t4PrintBtn').disabled = d.slips.length === 0;
+    output.innerHTML = t4Render(d);
+  } catch(err){
+    status.textContent = '❌ ' + err.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+function t4Render(d){
+  const s = d.summary;
+  if(d.slips.length === 0){
+    return `<div style="padding:1.5rem;background:var(--paper2);border-radius:var(--radius);border:1px dashed var(--rule);text-align:center;color:var(--ink3)">No Payroll rows found for ${d.year}. Run a pay that year first.</div>`;
+  }
+
+  const slipCards = d.slips.map(slip => `
+    <div style="border:1px solid var(--rule);border-radius:var(--radius);padding:1rem 1.2rem;background:white;margin-bottom:.8rem">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:.5rem">
+        <div style="font-weight:600">${esc(slip.employee.name)}</div>
+        <div style="font-size:.72rem;color:var(--ink3);font-family:var(--mono)">
+          age ${slip.ageAtYearEnd ?? '?'} at year-end
+          ${slip.cppExemptAllYear ? ' · CPP exempt (under 18)' : ''}
+          ${slip.familyEiExempt ? ' · family-EI exempt' : ''}
+        </div>
+      </div>
+      <div style="font-size:.78rem;color:var(--ink3);margin-bottom:.6rem">
+        SIN: <strong style="color:var(--ink);font-family:var(--mono)">${slip.employee.sin ? esc(slip.employee.sin) : '<span style="color:var(--red)">MISSING — required for filing</span>'}</strong> · DOB ${esc(slip.employee.dob || '—')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:.15rem .8rem;font-size:.82rem;line-height:1.55">
+        <div>Box 14 Employment income</div><div style="text-align:right;font-family:var(--mono)">$${slip.box14.toFixed(2)}</div>
+        <div>Box 16 CPP contributions</div><div style="text-align:right;font-family:var(--mono)">$${slip.box16.toFixed(2)}</div>
+        <div>Box 18 EI premiums</div><div style="text-align:right;font-family:var(--mono);color:${slip.box18===0?'var(--ink3)':'var(--ink)'}">$${slip.box18.toFixed(2)}</div>
+        <div>Box 22 Income tax (Fed $${slip.fedTaxWithheld.toFixed(2)} + ON $${slip.onTaxWithheld.toFixed(2)})</div><div style="text-align:right;font-family:var(--mono)">$${slip.box22.toFixed(2)}</div>
+        <div>Box 24 EI insurable earnings</div><div style="text-align:right;font-family:var(--mono);color:${slip.box24===0?'var(--ink3)':'var(--ink)'}">$${slip.box24.toFixed(2)}</div>
+        <div>Box 26 CPP pensionable earnings</div><div style="text-align:right;font-family:var(--mono)">$${slip.box26.toFixed(2)}</div>
+        <div>Box 28 CPP exempt / EI exempt</div><div style="text-align:right;font-family:var(--mono)">${slip.box28Cpp || '—'} / ${slip.box28Ei || '—'}</div>
+      </div>
+      <div style="margin-top:.7rem">
+        <button onclick="t4PrintOne('${esc(slip.employee.name)}')" class="btn btn-outline btn-sm" style="font-size:.75rem;padding:.3rem .7rem">🖨 Print this slip</button>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <div style="background:var(--paper2);border:1px solid var(--rule);border-radius:var(--radius);padding:1rem 1.2rem;margin-bottom:1rem">
+      <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin-bottom:.4rem">T4 Summary (T4SUM) — ${d.year}</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.4rem .8rem;font-size:.82rem">
+        <div>Slips</div><div>Box 14</div><div>Box 16</div><div>Box 22</div><div>Box 26</div>
+        <div style="font-weight:600;font-family:var(--mono)">${s.totalSlips}</div>
+        <div style="font-weight:600;font-family:var(--mono)">$${s.totalBox14.toFixed(2)}</div>
+        <div style="font-weight:600;font-family:var(--mono)">$${s.totalBox16.toFixed(2)}</div>
+        <div style="font-weight:600;font-family:var(--mono)">$${s.totalBox22.toFixed(2)}</div>
+        <div style="font-weight:600;font-family:var(--mono)">$${s.totalBox26.toFixed(2)}</div>
+      </div>
+    </div>
+    <div>${slipCards}</div>`;
+}
+
+function t4DownloadCsv(){
+  if(!_t4Last) return;
+  const blob = new Blob([_t4Last.csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `T4-${_t4Last.year}-${(USER_CONFIG?.businessName||'business').replace(/[^a-z0-9]+/gi,'-')}.csv`;
+  a.click();
+  toast('CSV downloaded — use it as your reference when entering slips in CRA My Business Account.');
+}
+
+function t4PrintAll(){
+  if(!_t4Last) return;
+  t4OpenPrintWindow(_t4Last.slips);
+}
+
+function t4PrintOne(empName){
+  if(!_t4Last) return;
+  const slip = _t4Last.slips.find(s => s.employee.name === empName);
+  if(!slip) return;
+  t4OpenPrintWindow([slip]);
+}
+
+function t4OpenPrintWindow(slips){
+  const year = _t4Last.year;
+  const emp = _t4Last.employer;
+  const slipsHtml = slips.map(s => `
+    <div class="t4-page">
+      <div class="t4-hdr">
+        <div class="t4-title">T4 Statement of Remuneration Paid</div>
+        <div class="t4-year">${year}</div>
+      </div>
+      <div class="t4-section">
+        <div class="t4-label">Employer's name</div><div class="t4-value">${escAttr(emp.businessName)}</div>
+      </div>
+      <div class="t4-section">
+        <div class="t4-label">Employer's account number (BN + RP0001)</div><div class="t4-value">${escAttr(emp.bn)} RP0001</div>
+      </div>
+      <div class="t4-section">
+        <div class="t4-label">Employee's name</div><div class="t4-value">${escAttr(s.employee.name)}</div>
+      </div>
+      <div class="t4-section">
+        <div class="t4-label">Social insurance number</div><div class="t4-value">${s.employee.sin ? escAttr(s.employee.sin) : '<em style="color:#b00">MISSING — required for filing</em>'}</div>
+      </div>
+      <div class="t4-section">
+        <div class="t4-label">Date of birth</div><div class="t4-value">${escAttr(s.employee.dob || '—')}</div>
+      </div>
+
+      <table class="t4-boxes">
+        <tr><td class="t4-box-num">14</td><td class="t4-box-lbl">Employment income</td><td class="t4-box-val">${s.box14.toFixed(2)}</td></tr>
+        <tr><td class="t4-box-num">16</td><td class="t4-box-lbl">CPP contributions</td><td class="t4-box-val">${s.box16.toFixed(2)}</td></tr>
+        <tr><td class="t4-box-num">18</td><td class="t4-box-lbl">EI premiums</td><td class="t4-box-val">${s.box18.toFixed(2)}</td></tr>
+        <tr><td class="t4-box-num">22</td><td class="t4-box-lbl">Income tax deducted</td><td class="t4-box-val">${s.box22.toFixed(2)}</td></tr>
+        <tr><td class="t4-box-num">24</td><td class="t4-box-lbl">EI insurable earnings</td><td class="t4-box-val">${s.box24.toFixed(2)}</td></tr>
+        <tr><td class="t4-box-num">26</td><td class="t4-box-lbl">CPP pensionable earnings</td><td class="t4-box-val">${s.box26.toFixed(2)}</td></tr>
+        <tr><td class="t4-box-num">28</td><td class="t4-box-lbl">Exempt — CPP / EI / PPIP</td><td class="t4-box-val">${s.box28Cpp || '—'} / ${s.box28Ei || '—'} / —</td></tr>
+        <tr><td class="t4-box-num">10</td><td class="t4-box-lbl">Province of employment</td><td class="t4-box-val">${escAttr(s.province || 'ON')}</td></tr>
+      </table>
+
+      <div class="t4-note">Working document generated from TradeBooks on ${new Date().toLocaleString('en-CA')}. File via CRA My Business Account. Employee keeps this copy for their T1 personal return.</div>
+    </div>
+  `).join('');
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>T4 slips — ${year}</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;padding:40px;color:#111;background:white}
+      .t4-page{max-width:680px;margin:0 auto 30px;page-break-after:always;border:2px solid #111;padding:24px 30px}
+      .t4-hdr{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:16px}
+      .t4-title{font-size:1.1rem;font-weight:600}
+      .t4-year{font-size:1.4rem;font-weight:700}
+      .t4-section{display:grid;grid-template-columns:220px 1fr;gap:10px;font-size:.85rem;padding:6px 0;border-bottom:1px dotted #999}
+      .t4-label{color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}
+      .t4-value{font-weight:500}
+      .t4-boxes{width:100%;border-collapse:collapse;margin-top:16px}
+      .t4-boxes td{border:1px solid #111;padding:8px 10px;font-size:.88rem;vertical-align:middle}
+      .t4-box-num{width:50px;text-align:center;background:#f0f0f0;font-weight:600}
+      .t4-box-lbl{}
+      .t4-box-val{width:140px;text-align:right;font-family:'IBM Plex Mono',Consolas,monospace;font-weight:500}
+      .t4-note{font-size:.7rem;color:#555;margin-top:14px;font-style:italic}
+      @media print{.t4-page{border-width:1px;margin:0;page-break-after:always}}
+    </style>
+  </head><body>${slipsHtml}</body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 500);
+}
+
+function escAttr(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 
 // ════════════════════════════════════════════════════════════

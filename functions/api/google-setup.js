@@ -151,7 +151,7 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
             gridProperties: { rowCount: 60, columnCount: 12, frozenRowCount: 1 },
             tabColor: COLORS.green } },
         { properties: { sheetId: 200, title: '⚙️ Config', index: 1,
-            gridProperties: { rowCount: 100, columnCount: 8 },
+            gridProperties: { rowCount: 100, columnCount: 10 },
             tabColor: COLORS.green } },
         // 📒 Transactions — single signed ledger replacing Income + Expenses.
         // Columns B-M: Date | Party | Description | Amount (signed) | Category |
@@ -170,6 +170,19 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
             tabColor: COLORS.teal } },
         { properties: { sheetId: 700, title: '📅 Year-End', index: 5,
             gridProperties: { rowCount: 80, columnCount: 8 },
+            tabColor: COLORS.brown } },
+        // 💼 Payroll — pay run history, YTD tracking, remittance due dates.
+        // 16 cols B-Q: Pay Date, Employee, Age, Business, Work Description,
+        // Hours, Rate, Gross, CPP (ee), EI (ee), Fed Tax, ON Tax, Net Pay,
+        // YTD Gross, Remittance Due, Status
+        { properties: { sheetId: 800, title: '💼 Payroll', index: 6,
+            gridProperties: { rowCount: 500, columnCount: 17, frozenRowCount: 11 },
+            tabColor: COLORS.brown } },
+        // 📝 Work Log — contemporaneous entries for CRA audit defence.
+        // 8 cols B-I: Date, Employee, Business, Task Description, Hours,
+        // Rate, Notes, Entry Audit (server-timestamp + "corrected" flag)
+        { properties: { sheetId: 900, title: '📝 Work Log', index: 7,
+            gridProperties: { rowCount: 1000, columnCount: 9, frozenRowCount: 11 },
             tabColor: COLORS.brown } },
       ],
     }),
@@ -334,7 +347,7 @@ function colWidth(sheetId, startIdx, endIdx, px) {
 // ════════════════════════════════════════════════════════════════════
 async function applyStyling(accessToken, spreadsheetId) {
   const authHeader = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
-  const DASH = 100, CFG = 200, TXN = 300, INV = 500, HST = 600, YE = 700;
+  const DASH = 100, CFG = 200, TXN = 300, INV = 500, HST = 600, YE = 700, PAY = 800, WLOG = 900;
   const requests = [];
 
   // ─── DASHBOARD ───
@@ -376,9 +389,15 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(cellFormat(CFG, 62, 4, 63, 5, { textFormat: { bold: true, foregroundColor: COLORS.textMuted, fontSize: 9 } }));
   requests.push(cellFormat(CFG, 63, 1, 74, 2, FMT_EDITABLE));
   requests.push(cellFormat(CFG, 63, 4, 74, 5, FMT_EDITABLE));
-  requests.push(...sectionRequest(CFG, 74, 0, 6, COLORS.green));
-  requests.push(cellFormat(CFG, 75, 1, 76, 6, { textFormat: { bold: true, foregroundColor: COLORS.textMuted, fontSize: 9 } }));
-  requests.push(cellFormat(CFG, 76, 1, 86, 6, FMT_EDITABLE));
+  // Employees section — B-I (8 data columns). Bold header row; yellow editable body.
+  requests.push(...sectionRequest(CFG, 74, 0, 9, COLORS.green));
+  requests.push(cellFormat(CFG, 75, 1, 76, 9, { textFormat: { bold: true, foregroundColor: COLORS.textMuted, fontSize: 9 } }));
+  requests.push(cellFormat(CFG, 76, 1, 86, 9, FMT_EDITABLE));
+  // DOB (col C idx 2) and Start Date (col F idx 5) get date formatting.
+  requests.push(cellFormat(CFG, 76, 2, 86, 3, { numberFormat: { type: 'DATE', pattern: 'yyyy-mm-dd' } }));
+  requests.push(cellFormat(CFG, 76, 5, 86, 6, { numberFormat: { type: 'DATE', pattern: 'yyyy-mm-dd' } }));
+  // Default Rate (col G idx 6) as currency per hour.
+  requests.push(cellFormat(CFG, 76, 6, 86, 7, { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } }));
   requests.push(colWidth(CFG, 0, 1, 30));
   requests.push(colWidth(CFG, 1, 2, 180));
   requests.push(colWidth(CFG, 2, 3, 260));
@@ -538,6 +557,79 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(YE, 4, 5, 30));
   requests.push(colWidth(YE, 5, 6, 260));
 
+  // ─── PAYROLL ───
+  // 17 cols (A gutter + B-Q data): Pay Date, Employee, Age, Business,
+  // Work Description, Hours, Rate, Gross, CPP (ee), EI (ee), Fed Tax,
+  // ON Tax, Net Pay, YTD Gross, Remittance Due, Status
+  requests.push(...bannerRequest(PAY, 0, 0, 17, COLORS.brown));
+  requests.push(...sectionRequest(PAY, 1, 1, 7, COLORS.brown));
+  requests.push(cellFormat(PAY, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
+  requests.push(cellFormat(PAY, 2, 2, 10, 7, { backgroundColor: COLORS.brownTint, numberFormat: FMT_CURRENCY.numberFormat }));
+  requests.push(headerRowRequest(PAY, 10, 1, 17, COLORS.brown));
+  requests.push({ updateDimensionProperties: { range: { sheetId: PAY, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 40 }, fields: 'pixelSize' } });
+  requests.push(bandingRequest(PAY, 11, 500, 1, 17, COLORS.brownTint));
+  // Dates: col B (Pay Date), col P (Remittance Due)
+  requests.push(cellFormat(PAY, 11, 1, 500, 2, FMT_DATE));
+  requests.push(cellFormat(PAY, 11, 15, 500, 16, FMT_DATE));
+  // Currency: col H (Gross) through col N (YTD Gross) — 7 currency columns
+  requests.push(cellFormat(PAY, 11, 7, 500, 14, FMT_CURRENCY));
+  // Status dropdown (col Q, index 16)
+  requests.push({
+    setDataValidation: {
+      range: { sheetId: PAY, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 16, endColumnIndex: 17 },
+      rule: { condition: { type: 'ONE_OF_LIST', values: [
+        { userEnteredValue: 'Pending' }, { userEnteredValue: 'Paid' },
+        { userEnteredValue: 'Remitted' }, { userEnteredValue: 'Cancelled' },
+      ]}, showCustomUi: true },
+    }
+  });
+  requests.push(colWidth(PAY, 0, 1, 30));    // A gutter
+  requests.push(colWidth(PAY, 1, 2, 95));    // B Pay Date
+  requests.push(colWidth(PAY, 2, 3, 130));   // C Employee
+  requests.push(colWidth(PAY, 3, 4, 50));    // D Age
+  requests.push(colWidth(PAY, 4, 5, 100));   // E Business
+  requests.push(colWidth(PAY, 5, 6, 200));   // F Work Description
+  requests.push(colWidth(PAY, 6, 7, 60));    // G Hours
+  requests.push(colWidth(PAY, 7, 8, 70));    // H Rate
+  requests.push(colWidth(PAY, 8, 9, 90));    // I Gross
+  requests.push(colWidth(PAY, 9, 10, 80));   // J CPP
+  requests.push(colWidth(PAY, 10, 11, 70));  // K EI
+  requests.push(colWidth(PAY, 11, 12, 80));  // L Fed Tax
+  requests.push(colWidth(PAY, 12, 13, 80));  // M ON Tax
+  requests.push(colWidth(PAY, 13, 14, 90));  // N Net Pay
+  requests.push(colWidth(PAY, 14, 15, 95));  // O YTD Gross
+  requests.push(colWidth(PAY, 15, 16, 110)); // P Remittance Due
+  requests.push(colWidth(PAY, 16, 17, 90));  // Q Status
+
+  // ─── WORK LOG ───
+  // 9 cols (A gutter + B-I data): Date, Employee, Business, Task Description,
+  // Hours, Rate, Notes, Entry Audit. Entry Audit is a stringified server
+  // timestamp + edit flag — locked from silent edits for CRA audit defence.
+  requests.push(...bannerRequest(WLOG, 0, 0, 9, COLORS.brown));
+  requests.push(...sectionRequest(WLOG, 1, 1, 8, COLORS.brown));
+  requests.push(cellFormat(WLOG, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
+  requests.push(cellFormat(WLOG, 2, 2, 10, 8, { backgroundColor: COLORS.brownTint }));
+  requests.push(headerRowRequest(WLOG, 10, 1, 9, COLORS.brown));
+  requests.push({ updateDimensionProperties: { range: { sheetId: WLOG, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
+  requests.push(bandingRequest(WLOG, 11, 1000, 1, 9, COLORS.brownTint));
+  requests.push(cellFormat(WLOG, 11, 1, 1000, 2, FMT_DATE));   // B Date
+  requests.push(cellFormat(WLOG, 11, 5, 1000, 6, { numberFormat: { type: 'NUMBER', pattern: '0.00' } })); // F Hours
+  requests.push(cellFormat(WLOG, 11, 6, 1000, 7, FMT_CURRENCY)); // G Rate
+  // Entry Audit column (col I, idx 8) — read-only mono font, muted
+  requests.push(cellFormat(WLOG, 11, 8, 1000, 9, {
+    textFormat: { fontSize: 8, foregroundColor: COLORS.textMuted },
+    backgroundColor: COLORS.grey,
+  }));
+  requests.push(colWidth(WLOG, 0, 1, 30));    // A gutter
+  requests.push(colWidth(WLOG, 1, 2, 95));    // B Date
+  requests.push(colWidth(WLOG, 2, 3, 130));   // C Employee
+  requests.push(colWidth(WLOG, 3, 4, 100));   // D Business
+  requests.push(colWidth(WLOG, 4, 5, 260));   // E Task Description
+  requests.push(colWidth(WLOG, 5, 6, 60));    // F Hours
+  requests.push(colWidth(WLOG, 6, 7, 70));    // G Rate
+  requests.push(colWidth(WLOG, 7, 8, 200));   // H Notes
+  requests.push(colWidth(WLOG, 8, 9, 180));   // I Entry Audit
+
   const stylingResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
     method: 'POST', headers: authHeader,
     body: JSON.stringify({ requests }),
@@ -671,8 +763,19 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   ]});
   data.push({ range: "'⚙️ Config'!A62", values: [['  CLIENTS — for invoice autocomplete (one per row)']] });
   data.push({ range: "'⚙️ Config'!B63:E63", values: [['Client Name', '', '', 'Default Income Category']] });
+  // EMPLOYEES — richer schema for age-aware payroll. One row per employee.
+  // DOB drives CPP age branching (under-18 exempt). Relationship drives the
+  // family-EI-exempt flag. SIN optional at setup (fill before year-end T4 gen).
+  // TD1 claim codes default to '1' (federal/ON basic personal amount only);
+  // override if the employee claims dependents or other credits.
   data.push({ range: "'⚙️ Config'!A75", values: [['  EMPLOYEES — for payroll and T4 generation (one per row)']] });
-  data.push({ range: "'⚙️ Config'!B76:F76", values: [['Employee Name', 'SIN (last 3)', '', 'Annual Salary/Wages', 'Status']] });
+  data.push({ range: "'⚙️ Config'!B76:I76", values: [[
+    'Name', 'DOB (YYYY-MM-DD)', 'SIN (optional)', 'Relationship',
+    'Start Date', 'Default Rate $/hr', 'TD1 Fed Code', 'TD1 ON Code',
+  ]]});
+  // Blank placeholder rows — user enters via the app on first pay run.
+  // (10 rows; add more by inserting below before row 86.)
+  data.push({ range: "'⚙️ Config'!B77:I86", values: Array.from({length: 10}, () => ['', '', '', '', '', '', '', '']) });
 
   // TRANSACTIONS — single signed ledger (cash basis)
   // Replaces Income + Expenses. Positive E = money in, negative E = money out.
@@ -842,6 +945,41 @@ async function populateValues(accessToken, spreadsheetId, profile) {
     ['LCGE planning if selling business?',              '☐ Yes', '☐ No', '☐ N/A', 'Lifetime Capital Gains Exemption'],
     ['', '', '', '', ''],
   ]});
+
+  // ─── PAYROLL TAB ───
+  data.push({ range: "'💼 Payroll'!A1", values: [[
+    'PAYROLL LEDGER  —  Pay runs · Source deduction tracking · T4 source of truth'
+  ]]});
+  data.push({ range: "'💼 Payroll'!B2", values: [['PAYROLL SUMMARY  (YTD)']] });
+  // Summary block — computed from Payroll rows below
+  data.push({ range: "'💼 Payroll'!B3:H3", values: [[
+    'Total Gross Wages (YTD)', '=IFERROR(SUM(I12:I500),0)', '', '', '', '', ''
+  ]]});
+  data.push({ range: "'💼 Payroll'!B4:H4", values: [[
+    'CPP Withheld (YTD)',      '=IFERROR(SUM(J12:J500),0)', '', '', '', '', ''
+  ]]});
+  data.push({ range: "'💼 Payroll'!B5:H5", values: [[
+    'Fed + ON Tax Withheld (YTD)', '=IFERROR(SUM(L12:L500)+SUM(M12:M500),0)', '', '', '', '', ''
+  ]]});
+  data.push({ range: "'💼 Payroll'!B6:H6", values: [[
+    'Outstanding Remittance Owed', '=IFERROR(SUMIFS(J12:J500,Q12:Q500,"Paid")+SUMIFS(L12:L500,Q12:Q500,"Paid")+SUMIFS(M12:M500,Q12:Q500,"Paid"),0)', '', '', '', '', ''
+  ]]});
+  data.push({ range: "'💼 Payroll'!B11:Q11", values: [[
+    'Pay Date', 'Employee', 'Age', 'Business', 'Work Description',
+    'Hours', 'Rate', 'Gross', 'CPP (ee)', 'EI (ee)', 'Fed Tax', 'ON Tax',
+    'Net Pay', 'YTD Gross', 'Remittance Due', 'Status',
+  ]]});
+
+  // ─── WORK LOG TAB ───
+  data.push({ range: "'📝 Work Log'!A1", values: [[
+    'WORK LOG  —  Contemporaneous entry · Timestamped · Audit-defence paper trail'
+  ]]});
+  data.push({ range: "'📝 Work Log'!B2", values: [[
+    'Enter work as it happens. Server-stamps the entry time. A "corrected" flag appears on edits — do NOT silently modify past rows.'
+  ]]});
+  data.push({ range: "'📝 Work Log'!B11:I11", values: [[
+    'Date', 'Employee', 'Business', 'Task Description', 'Hours', 'Rate', 'Notes', 'Entry Audit',
+  ]]});
 
   const valuesResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
     method: 'POST', headers: authHeader,

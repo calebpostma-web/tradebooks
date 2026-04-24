@@ -46,20 +46,29 @@ export async function onRequestPost({ request, env }) {
     return json({ ok: true, action: 'dismissed' });
   }
 
-  // Find the invoice row (scan B12:K500 for InvNum in col B).
-  const invResult = await readRange(env, userId, `'${INVOICES_TAB}'!B12:K500`);
+  // Find the invoice row (scan B12:N500 for InvNum in col B; col N = Revenue Category).
+  const invResult = await readRange(env, userId, `'${INVOICES_TAB}'!B12:N500`);
   if (!invResult.ok) return json({ ok: false, error: 'Failed to read Invoices: ' + invResult.error });
 
   let invoiceRow = null;
+  let invoiceCategory = '';
   for (let i = 0; i < invResult.values.length; i++) {
     if (String(invResult.values[i][0] || '') === invNum) {
       invoiceRow = 12 + i;
+      // Col N is index 12 within B-N (B=0, C=1, ..., N=12). Fall back to
+      // 'Consulting Revenue' for invoices created before the category column existed.
+      invoiceCategory = String(invResult.values[i][12] || '') || 'Consulting Revenue';
       break;
     }
   }
   if (!invoiceRow) return json({ ok: false, error: `Invoice #${invNum} not found` }, 404);
 
-  // Write the match onto Transactions row (L = Related Invoice, M = Match Status).
+  // Rewrite Transaction category (F) to the invoice's Revenue Category so the
+  // deposit buckets correctly in Year-End (instead of generic 'Income Received'),
+  // and populate Related Invoice (L) + Match Status (M).
+  const txnCatUpdate = await writeRange(env, userId, `'${TXN_TAB}'!F${txnRow}`, [[invoiceCategory]]);
+  if (!txnCatUpdate.ok) return json({ ok: false, error: 'Failed to update Transaction category: ' + txnCatUpdate.error });
+
   const txnUpdate = await writeRange(env, userId, `'${TXN_TAB}'!L${txnRow}:M${txnRow}`, [[invNum, 'Matched']]);
   if (!txnUpdate.ok) return json({ ok: false, error: 'Failed to update Transactions: ' + txnUpdate.error });
 
@@ -67,5 +76,5 @@ export async function onRequestPost({ request, env }) {
   const invUpdate = await writeRange(env, userId, `'${INVOICES_TAB}'!K${invoiceRow}`, [['Paid']]);
   if (!invUpdate.ok) return json({ ok: false, error: 'Failed to update Invoice status: ' + invUpdate.error });
 
-  return json({ ok: true, action: 'matched', invNum, txnRow, invoiceRow });
+  return json({ ok: true, action: 'matched', invNum, txnRow, invoiceRow, category: invoiceCategory });
 }

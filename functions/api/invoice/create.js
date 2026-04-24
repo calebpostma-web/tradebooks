@@ -4,10 +4,11 @@
 //
 // CASH BASIS (Phase 2A): invoice creation does NOT write to the ledger.
 // Revenue is recognized only when the deposit is matched to this invoice
-// via /api/import/confirm-match (which writes the Transactions row).
+// via /api/import/confirm-match (which writes the Transactions row using
+// the Revenue Category stored on the invoice).
 // ════════════════════════════════════════════════════════════════════
 
-import { appendRows } from '../../_sheets.js';
+import { appendRows, writeRange } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
 
 const INVOICES_TAB = '🧾 Invoices';
@@ -27,8 +28,9 @@ export async function onRequestPost({ request, env }) {
   }
 
   const inv = body.invoice || {};
+  const category = inv.category || 'Consulting Revenue';
 
-  // Invoices tab row: B-K = InvNum, Date, Client, Description, Subtotal, HST, Total, HSTFlag, Due, Status
+  // Columns B-K: InvNum, Date, Client, Description, Subtotal, HST, Total, HSTFlag, Due, Status
   const invRow = [[
     inv.invNum || '',
     inv.dateVal || '',
@@ -44,6 +46,17 @@ export async function onRequestPost({ request, env }) {
 
   const invResult = await appendRows(env, userId, `'${INVOICES_TAB}'!B12:K`, invRow);
   if (!invResult.ok) return json({ ok: false, error: 'Invoice write failed: ' + invResult.error });
+
+  // Write Revenue Category to col N on the row we just appended.
+  const match = /!B(\d+):K(\d+)/.exec(invResult.updates.updatedRange);
+  if (match) {
+    const row = parseInt(match[1]);
+    const catResult = await writeRange(env, userId, `'${INVOICES_TAB}'!N${row}`, [[category]]);
+    if (!catResult.ok) {
+      // Don't block the invoice creation — category write is additive.
+      console.warn('Invoice category write failed:', catResult.error);
+    }
+  }
 
   return json({ ok: true, invNum: inv.invNum });
 }

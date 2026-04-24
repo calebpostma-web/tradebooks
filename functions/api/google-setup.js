@@ -163,7 +163,7 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
             gridProperties: { rowCount: 1000, columnCount: 13, frozenRowCount: 11 },
             tabColor: COLORS.teal } },
         { properties: { sheetId: 500, title: '🧾 Invoices', index: 3,
-            gridProperties: { rowCount: 500, columnCount: 13, frozenRowCount: 11 },
+            gridProperties: { rowCount: 500, columnCount: 14, frozenRowCount: 11 },
             tabColor: COLORS.blue } },
         { properties: { sheetId: 600, title: '📋 HST Returns', index: 4,
             gridProperties: { rowCount: 40, columnCount: 10 },
@@ -437,13 +437,15 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(TXN, 12, 13, 100));// M Match Status
 
   // ─── INVOICES ───
-  requests.push(...bannerRequest(INV, 0, 0, 12, COLORS.blue));
+  // 14 cols: A gutter, B Invoice #, C Date, D Client, E Description, F Amount excl HST,
+  // G HST, H Total, I HST flag, J Due, K Status, L Date Paid, M Notes, N Revenue Category
+  requests.push(...bannerRequest(INV, 0, 0, 14, COLORS.blue));
   requests.push(...sectionRequest(INV, 1, 1, 6, COLORS.blue));
   requests.push(cellFormat(INV, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
   requests.push(cellFormat(INV, 2, 2, 10, 6, { backgroundColor: COLORS.blueTint }));
-  requests.push(headerRowRequest(INV, 10, 1, 12, COLORS.blue));
+  requests.push(headerRowRequest(INV, 10, 1, 14, COLORS.blue));
   requests.push({ updateDimensionProperties: { range: { sheetId: INV, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(INV, 11, 500, 1, 12, COLORS.blueTint));
+  requests.push(bandingRequest(INV, 11, 500, 1, 14, COLORS.blueTint));
   requests.push(cellFormat(INV, 11, 2, 500, 3, FMT_DATE));
   requests.push(cellFormat(INV, 11, 5, 500, 6, FMT_CURRENCY));
   requests.push(cellFormat(INV, 11, 6, 500, 7, FMT_CURRENCY));
@@ -475,10 +477,21 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(INV, 10, 11, 90));
   requests.push(colWidth(INV, 11, 12, 110));
   requests.push(colWidth(INV, 12, 13, 200));
+  requests.push(colWidth(INV, 13, 14, 150));  // N Revenue Category
 
   // ─── HST RETURNS ───
   requests.push(...bannerRequest(HST, 0, 0, 7, COLORS.teal));
   requests.push(cellFormat(HST, 1, 0, 2, 7, { horizontalAlignment: 'CENTER', textFormat: { italic: true, foregroundColor: COLORS.textMuted, fontSize: 9 } }));
+  // Row 3 (index 2): Fiscal Year Start param row. B3 label right-aligned bold; C3 editable-yellow with date format.
+  requests.push(cellFormat(HST, 2, 1, 3, 2, {
+    horizontalAlignment: 'RIGHT',
+    textFormat: { bold: true, fontSize: 10, foregroundColor: COLORS.textDark },
+  }));
+  requests.push(cellFormat(HST, 2, 2, 3, 3, {
+    ...FMT_EDITABLE,
+    numberFormat: FMT_DATE.numberFormat,
+    horizontalAlignment: 'LEFT',
+  }));
   requests.push(headerRowRequest(HST, 3, 1, 7, COLORS.teal));
   requests.push({ updateDimensionProperties: { range: { sheetId: HST, dimension: 'ROWS', startIndex: 3, endIndex: 4 }, properties: { pixelSize: 44 }, fields: 'pixelSize' } });
   requests.push(cellFormat(HST, 4, 1, 8, 2, { textFormat: { bold: true, fontSize: 10 } }));
@@ -688,42 +701,78 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'🧾 Invoices'!B7:C7", values: [['Total invoiced incl HST', '=SUM(H12:H500)']] });
   data.push({ range: "'🧾 Invoices'!B8:C8", values: [['Outstanding — unpaid',    '=SUMIF(K12:K500,"Unpaid",H12:H500)']] });
   data.push({ range: "'🧾 Invoices'!B9:C9", values: [['Collected — paid',        '=SUMIF(K12:K500,"Paid",H12:H500)']] });
-  data.push({ range: "'🧾 Invoices'!B11:M11", values: [[
+  data.push({ range: "'🧾 Invoices'!B11:N11", values: [[
     'Invoice #', 'Date Issued', 'Client', 'Service Description', 'Amount (excl HST)',
     `HST (${taxPct}%)`, 'Total Invoiced', 'HST?', 'Due Date', 'Status', 'Date Paid', 'Notes',
+    'Revenue Category',
   ]]});
 
   // HST RETURNS
   data.push({ range: "'📋 HST Returns'!A1", values: [[`HST RETURN WORKBOOK  ·  ${prov} ${taxPct}%  ·  Quarterly Filing  ·  ${fye}`]] });
   data.push({ range: "'📋 HST Returns'!A2", values: [['Figures auto-pull from the 📒 Transactions tab. Enter on CRA My Business Account each quarter.']] });
+
+  // Fiscal Year Start cell at C3 — parameterizes the quarterly period windows.
+  // Defaults to April 1 of the current fiscal year (assumes Apr–Mar fiscal year,
+  // which is standard for Ontario trades businesses). User can edit this one cell
+  // to roll to a new fiscal year or shift to a calendar-year filing window.
+  data.push({ range: "'📋 HST Returns'!B3", values: [['Fiscal Year Start (edit to roll forward):']] });
+  data.push({ range: "'📋 HST Returns'!C3", values: [[
+    '=DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1)'
+  ]]});
+
   data.push({ range: "'📋 HST Returns'!B4:G4", values: [[
     'LINE ITEM', 'Q1 Apr–Jun\nDue Jul 31', 'Q2 Jul–Sep\nDue Oct 31', 'Q3 Oct–Dec\nDue Jan 31', 'Q4 Jan–Mar\nDue Apr 30', 'FULL YEAR',
   ]]});
+
   // HST lines pull from 📒 Transactions.
   // Line 101 = Total Sales incl HST = sum of (Amount + HST) on positive rows excl Internal Transfer
   // Line 103 = HST Collected = sum of HST on positive rows excl Internal Transfer
   // Line 106 = ITCs = sum of HST on negative rows excl Internal Transfer
-  // TODO quarterly split — left blank in C:E for manual period filtering; full year in G.
+  // Date windows derive from $C$3 (Fiscal Year Start): Q1 = +0..2 months,
+  // Q2 = +3..5, Q3 = +6..8, Q4 = +9..11 (all end-of-month via EOMONTH).
+  const TXN_E = "'📒 Transactions'!E12:E1000";
+  const TXN_F = "'📒 Transactions'!F12:F1000";
+  const TXN_H = "'📒 Transactions'!H12:H1000";
+  const TXN_B = "'📒 Transactions'!B12:B1000";
+  const excl = `${TXN_F},"<>Internal Transfer"`;
+  // q-indexed start/end offsets in months from FY start: Q1 = [0, 2], Q2 = [3, 5], ...
+  const qStart = q => (q - 1) * 3;              // months to add to $C$3 for window start
+  const qEndOffset = q => (q - 1) * 3 + 2;      // months to feed into EOMONTH for window end
+  const dateGt = q => `${TXN_B},">="&EDATE($C$3,${qStart(q)})`;
+  const dateLt = q => `${TXN_B},"<="&EOMONTH($C$3,${qEndOffset(q)})`;
+
+  // Line 101 — Q1..Q4: (sum of Amount + sum of HST) within window
+  const line101 = q =>
+    `=SUMIFS(${TXN_E},${TXN_E},">0",${excl},${dateGt(q)},${dateLt(q)})`
+    + `+SUMIFS(${TXN_H},${TXN_E},">0",${excl},${dateGt(q)},${dateLt(q)})`;
+  // Line 103 — HST collected, positive rows, within window
+  const line103 = q =>
+    `=SUMIFS(${TXN_H},${TXN_E},">0",${excl},${dateGt(q)},${dateLt(q)})`;
+  // Line 106 — ITCs, negative rows, within window
+  const line106 = q =>
+    `=SUMIFS(${TXN_H},${TXN_E},"<0",${excl},${dateGt(q)},${dateLt(q)})`;
+
   data.push({ range: "'📋 HST Returns'!B5:G8", values: [
-    ['Total Sales (incl HST) — Line 101',  '', '', '',
-      "=SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!E12:E1000,\">0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")+SUMIFS('📒 Transactions'!H12:H1000,'📒 Transactions'!E12:E1000,\">0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")",
+    ['Total Sales (incl HST) — Line 101',
+      line101(1), line101(2), line101(3), line101(4),
       "=SUM(C5:F5)"],
-    ['HST Collected on Sales — Line 103',  '', '', '',
-      "=SUMIFS('📒 Transactions'!H12:H1000,'📒 Transactions'!E12:E1000,\">0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")",
+    ['HST Collected on Sales — Line 103',
+      line103(1), line103(2), line103(3), line103(4),
       "=SUM(C6:F6)"],
-    ['Input Tax Credits (ITCs) — Line 106','', '', '',
-      "=SUMIFS('📒 Transactions'!H12:H1000,'📒 Transactions'!E12:E1000,\"<0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")",
+    ['Input Tax Credits (ITCs) — Line 106',
+      line106(1), line106(2), line106(3), line106(4),
       "=SUM(C7:F7)"],
     ['NET HST OWING (103 − 106) — Line 109','=C6-C7', '=D6-D7', '=E6-E7', '=F6-F7', '=G6-G7'],
   ]});
   data.push({ range: "'📋 HST Returns'!B11", values: [['FILING NOTES & REMINDERS']] });
-  data.push({ range: "'📋 HST Returns'!B12:B17", values: [
+  data.push({ range: "'📋 HST Returns'!B12:B18", values: [
     ['• Quarterly due: Q1 Jul 31  ·  Q2 Oct 31  ·  Q3 Jan 31  ·  Q4 Apr 30 (all year-end).'],
     ['• Pay via CRA My Business Account or online banking (Business Number + RT0001).'],
     ['• Meals & Entertainment: only 50% of HST paid is claimable — manually reduce Line 106 by the other 50%.'],
     ['• Keep ALL receipts 6 years — CRA audit window for HST is 4 years, income tax is 6 years.'],
     ['• Negative Line 109 = CRA owes you a refund — claim on My Business Account within 4 years.'],
     ['• AMEX CSV: download monthly statement, import via app — rows land in Transactions tab signed as expenses.'],
+    ['• Quarterly windows derive from the Fiscal Year Start date in cell C3. Edit C3 to roll to a new fiscal year, or set Jan 1 for calendar-year filing.'],
   ]});
 
   // YEAR-END

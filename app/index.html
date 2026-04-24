@@ -917,6 +917,10 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <div class="toggle-lbl">Charge tax<small id="invTaxLabel">HST 13%</small></div>
           <label class="toggle-sw"><input type="checkbox" id="invHST" checked onchange="invUpdate()"><div class="t-track"></div><div class="t-knob"></div></label>
         </div>
+        <div class="field" style="margin-top:.9rem">
+          <label>Revenue Category<small style="color:var(--ink3);font-weight:400;margin-left:.4rem">— for Year-End bucketing when this invoice is paid</small></label>
+          <select id="invCategory" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;font-family:var(--sans);background:white"></select>
+        </div>
         <div class="totals-box" id="invTotalsBox"></div>
         <div class="field" style="margin-top:1.1rem"><label>Notes (optional)</label><textarea id="invNotes" placeholder="Payment due within 30 days." oninput="invUpdate()"></textarea></div>
         <div class="btn-row">
@@ -2293,6 +2297,16 @@ let INCOME_CATS = DEFAULT_INCOME_CATS;
 function refreshCategoryLists() {
   EXP_CATS = getExpCats();
   INCOME_CATS = getIncomeCats();
+  // Repopulate the invoice wizard's Revenue Category dropdown whenever categories change.
+  const sel = document.getElementById('invCategory');
+  if (sel) {
+    const current = sel.value;
+    // Filter out passthrough / non-revenue categories
+    const revOnly = INCOME_CATS.filter(c => c !== 'Income Received' && c !== 'Interest Income');
+    sel.innerHTML = revOnly.map(c => `<option value="${c}">${c}</option>`).join('');
+    if (current && revOnly.includes(current)) sel.value = current;
+    else sel.value = revOnly.includes('Consulting Revenue') ? 'Consulting Revenue' : revOnly[0] || '';
+  }
 }
 
 const NO_HST = new Set([
@@ -3522,6 +3536,7 @@ async function invSendToSheets(){
   status.textContent = 'Sending to Google Sheets…';
 
   const co = INV_COMPANIES[activeCompany] || INV_COMPANIES.primary || {};
+  const category = document.getElementById('invCategory')?.value || 'Consulting Revenue';
   const payload = {
     type: 'invoice',
     invoice: {
@@ -3529,6 +3544,7 @@ async function invSendToSheets(){
       invNum, dateVal, dueVal, client,
       desc, sub, hstAmt, total,
       hst: hst ? 'Yes' : 'No',
+      category,
       lines: invLines.map(l=>({
         desc: l.desc,
         qty: parseFloat(l.qty)||0,

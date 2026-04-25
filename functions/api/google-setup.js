@@ -160,7 +160,7 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
         // Positive Amount = money in; negative = money out. Category "Internal
         // Transfer" is excluded from P&L and HST math client-side.
         { properties: { sheetId: 300, title: '📒 Transactions', index: 2,
-            gridProperties: { rowCount: 1000, columnCount: 13, frozenRowCount: 11 },
+            gridProperties: { rowCount: 1000, columnCount: 14, frozenRowCount: 11 },
             tabColor: COLORS.teal } },
         { properties: { sheetId: 500, title: '🧾 Invoices', index: 3,
             gridProperties: { rowCount: 500, columnCount: 17, frozenRowCount: 11 },
@@ -416,20 +416,22 @@ async function applyStyling(accessToken, spreadsheetId) {
   // Single signed ledger: + for money in, − for money out. Replaces Income + Expenses.
   // Columns (0-indexed): A=gutter, B=Date, C=Party, D=Description, E=Amount,
   // F=Category, G=HST Flag, H=HST Amount, I=Account, J=Source, K=Ref,
-  // L=Related Invoice, M=Match Status
-  requests.push(...bannerRequest(TXN, 0, 0, 13, COLORS.teal));
+  // L=Related Invoice, M=Match Status, N=Total (incl HST) — formula
+  requests.push(...bannerRequest(TXN, 0, 0, 14, COLORS.teal));
   requests.push(...sectionRequest(TXN, 1, 1, 6, COLORS.teal));
   requests.push(cellFormat(TXN, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
   requests.push(cellFormat(TXN, 2, 2, 10, 6, { backgroundColor: COLORS.tealTint, numberFormat: FMT_CURRENCY.numberFormat }));
-  requests.push(headerRowRequest(TXN, 10, 1, 13, COLORS.teal));
+  requests.push(headerRowRequest(TXN, 10, 1, 14, COLORS.teal));
   requests.push({ updateDimensionProperties: { range: { sheetId: TXN, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(TXN, 11, 1000, 1, 13, COLORS.tealTint));
+  requests.push(bandingRequest(TXN, 11, 1000, 1, 14, COLORS.tealTint));
   // Date col B
   requests.push(cellFormat(TXN, 11, 1, 1000, 2, FMT_DATE));
   // Amount col E — signed currency (negatives shown in parens via FMT_CURRENCY)
   requests.push(cellFormat(TXN, 11, 4, 1000, 5, FMT_CURRENCY));
   // HST Amount col H
   requests.push(cellFormat(TXN, 11, 7, 1000, 8, FMT_CURRENCY));
+  // Total col N (signed gross — Amount + HST in same direction)
+  requests.push(cellFormat(TXN, 11, 13, 1000, 14, FMT_CURRENCY));
   // HST Flag validation — col G (index 6)
   requests.push({
     setDataValidation: {
@@ -461,6 +463,7 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(TXN, 10, 11, 220));// K Ref
   requests.push(colWidth(TXN, 11, 12, 100));// L Related Invoice
   requests.push(colWidth(TXN, 12, 13, 100));// M Match Status
+  requests.push(colWidth(TXN, 13, 14, 110));// N Total (incl HST) — formula
 
   // ─── INVOICES ───
   // 14 cols: A gutter, B Invoice #, C Date, D Client, E Description, F Amount excl HST,
@@ -847,9 +850,18 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📒 Transactions'!B5:F5", values: [['Total Expenses (excl HST)', "='📊 Dashboard'!D7", '', '', '']]});
   data.push({ range: "'📒 Transactions'!B6:F6", values: [['Total HST Paid (ITCs)',     "='📊 Dashboard'!D8", '', '', '']]});
   data.push({ range: "'📒 Transactions'!B7:F7", values: [['NET INCOME before tax',     "='📊 Dashboard'!D9", '', '', '']]});
-  data.push({ range: "'📒 Transactions'!B11:M11", values: [[
+  data.push({ range: "'📒 Transactions'!B11:N11", values: [[
     'Date', 'Party (Client/Vendor)', 'Description', 'Amount (signed, excl HST)', 'Category',
     'HST?', `HST (${taxPct}%)`, 'Account', 'Source', 'Source Ref', 'Related Invoice #', 'Match Status',
+    'Total (incl HST)',
+  ]]});
+
+  // Pre-fill the Total formula in N12:N1000 so every existing + future row shows
+  // the gross signed amount (matches what hit the bank). Empty rows render empty.
+  // Using ARRAYFORMULA keeps it as a single cell so users can't accidentally
+  // overwrite individual rows. Formula: Amount + HST in same direction as Amount.
+  data.push({ range: "'📒 Transactions'!N12", values: [[
+    '=ARRAYFORMULA(IF(E12:E1000="","",E12:E1000+H12:H1000*SIGN(E12:E1000)))'
   ]]});
 
   // INVOICES

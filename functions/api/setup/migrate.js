@@ -80,6 +80,9 @@ async function runMigrations(request, env, dryRunDefault) {
   // ── Migration 2: ensure Invoices tab has deposit columns O/P/Q ──
   await applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, errors, dryRun);
 
+  // ── Migration 3: ensure Transactions tab has Total (incl HST) column N ──
+  await applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes, errors, dryRun);
+
   return json({
     ok: true,
     dryRun,
@@ -383,6 +386,93 @@ async function applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, e
   if (!statsRes2.ok) errors.push(`Failed to update collected formula: ${statsRes2.error}`);
 
   changes.push(`Added deposit columns O/P/Q to '${TITLE}' tab and updated outstanding/collected formulas to be deposit-aware.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 3: Transactions tab — Total (incl HST) column N
+// ════════════════════════════════════════════════════════════════════
+// Adds a calculated column to the right of Match Status that shows the gross
+// signed amount (Amount + HST in same direction). Lets users reconcile against
+// bank statements directly: the bank shows the total charged, this column
+// matches it. Safe to run on any user's Transactions tab (legacy emoji
+// prefixes get resolved via title suffix matching).
+async function applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  // Resolve Transactions tab regardless of emoji prefix (📒 vs legacy variants)
+  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
+  if (!txnTab) {
+    // No Transactions tab to migrate — not an error, just skip. The user
+    // probably needs to rebuild from scratch with manualCreateSheet.
+    return;
+  }
+
+  const sheetId = txnTab.sheetId;
+  const currentColCount = txnTab.gridProperties?.columnCount || 0;
+
+  // Need at least 14 columns (A gutter + B-N data). If the column already
+  // exists AND has the header populated, skip — idempotent.
+  if (currentColCount >= 14) {
+    // Could check the header cell content to be extra-safe but reading every
+    // sheet's header on every dryRun is wasteful. Trust column count.
+    return;
+  }
+
+  if (dryRun) {
+    changes.push(`Add 'Total (incl HST)' column to '${txnTab.title}' — auto-calculates gross signed amount so you can reconcile against bank statements directly.`);
+    return;
+  }
+
+  // ── Step 1: expand the grid to 14 columns ──
+  const expandReq = {
+    updateSheetProperties: {
+      properties: { sheetId, gridProperties: { columnCount: 14, rowCount: txnTab.gridProperties?.rowCount || 1000, frozenRowCount: 11 }},
+      fields: 'gridProperties.columnCount,gridProperties.rowCount,gridProperties.frozenRowCount',
+    },
+  };
+  const expandRes = await spreadsheetsBatchUpdate(env, userId, [expandReq]);
+  if (!expandRes.ok) {
+    errors.push(`Could not expand '${txnTab.title}' grid: ${expandRes.error}`);
+    return;
+  }
+
+  // ── Step 2: format the new column (currency) + header styling + col width ──
+  const styling = [
+    // Currency format on N (Total)
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 11, endRowIndex: 1000, startColumnIndex: 13, endColumnIndex: 14 },
+        cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }},
+        fields: 'userEnteredFormat.numberFormat',
+    }},
+    // Header styling on N11 (teal background, white bold)
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 13, endColumnIndex: 14 },
+        cell: { userEnteredFormat: {
+          backgroundColor: COLORS.teal,
+          textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 },
+          horizontalAlignment: 'LEFT',
+          verticalAlignment: 'MIDDLE',
+          wrapStrategy: 'WRAP',
+        }},
+        fields: 'userEnteredFormat',
+    }},
+    colWidthReq(sheetId, 13, 14, 110),  // N Total
+  ];
+  const styleRes = await spreadsheetsBatchUpdate(env, userId, styling);
+  if (!styleRes.ok) {
+    errors.push(`Expanded '${txnTab.title}' but styling failed: ${styleRes.error}`);
+  }
+
+  // ── Step 3: write the header label in N11 ──
+  const headerRes = await writeRange(env, userId, `'${txnTab.title}'!N11`, [['Total (incl HST)']]);
+  if (!headerRes.ok) errors.push(`Failed to write Total header: ${headerRes.error}`);
+
+  // ── Step 4: write the ARRAYFORMULA in N12 — populates all rows automatically ──
+  const formulaRes = await writeRange(
+    env, userId, `'${txnTab.title}'!N12`,
+    [['=ARRAYFORMULA(IF(E12:E1000="","",E12:E1000+H12:H1000*SIGN(E12:E1000)))']]
+  );
+  if (!formulaRes.ok) errors.push(`Failed to write Total formula: ${formulaRes.error}`);
+
+  changes.push(`Added 'Total (incl HST)' column N to '${txnTab.title}' — every row now shows the gross signed amount that matches what hit the bank.`);
 }
 
 // ── Helpers ──

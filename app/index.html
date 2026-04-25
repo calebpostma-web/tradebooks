@@ -8006,7 +8006,14 @@ function renderSettings(){
         <div style="font-size:.82rem;color:var(--ink2);line-height:1.5;margin-bottom:.75rem">Click below to sign in with Google and we'll create your bookkeeping sheet automatically — all 7 styled tabs, formulas, and Categories ready to go.</div>
         <button class="btn btn-green btn-sm" onclick="manualCreateSheet()" id="manualCreateSheetBtn">🚀 Create my Google Sheet</button>
       </div>
-    ` : ''}
+    ` : `
+      <div style="padding:.85rem 1.1rem;background:var(--paper2);border:1px solid var(--rule);border-radius:var(--radius);margin-bottom:1rem">
+        <div style="font-size:.82rem;color:var(--ink2);line-height:1.5;margin-bottom:.6rem">
+          A sheet is already connected. If it's missing tabs (Transactions, Invoices, etc.) or you want to start fresh, you can build a brand-new sheet — your existing sheet won't be touched, the new one just replaces the connection.
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="manualCreateSheet()" id="manualCreateSheetBtn">🔄 Build a new sheet (replaces connection)</button>
+      </div>
+    `}
     <div id="manualCreateError" style="display:none;padding:.9rem 1rem;background:#fff7f7;border:1px solid #f0c2c2;border-radius:var(--radius);margin-bottom:1rem;font-size:.85rem;line-height:1.55"></div>
     ${f('Google Sheet ID','set_sheetId',C.sheetId)}
 
@@ -8537,7 +8544,12 @@ showOnboarding=function(){_origShowOB();obStep=0;obProfile.ownerName=USER_CONFIG
 const GOOGLE_CLIENT_ID = '156430400132-g1svqh7tu8c31lf10afu2hm1koqec1vo.apps.googleusercontent.com';
 // Scopes: openid+email+profile for sign-in identity; spreadsheets+drive for
 // creating & editing the user's bookkeeping workbook. One consent for both.
-const GOOGLE_SCOPES = 'openid email profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/script.deployments https://www.googleapis.com/auth/userinfo.email';
+// auth/drive.file added 2026-04-25 — required for receipt scanner, CRA receipt
+// PDFs, monthly statement uploads, and year-end package builder. Without it,
+// any PDF upload to Drive fails with "insufficient permission". drive.file is
+// the narrow scope: app can only access files it created (perfect for our use
+// case — we make the folders, we put files in them).
+const GOOGLE_SCOPES = 'openid email profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/script.deployments https://www.googleapis.com/auth/userinfo.email';
 
 /**
  * OAuth callback handler for Sign-in-with-Google. Called from

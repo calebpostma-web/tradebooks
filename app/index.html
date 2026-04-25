@@ -835,9 +835,11 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
   <div id="imp-step1">
     <div class="card">
       <div class="card-title">Select bank & upload statement</div>
-      <div class="bank-tabs">
-        <button class="bank-tab active" onclick="setBank('CC',this)" id="bankTabCC">Credit Card</button>
+      <div class="bank-tabs" style="align-items:center;gap:.75rem">
+        <span style="font-size:.78rem;color:var(--ink3);font-weight:500">What kind of statement?</span>
+        <button class="bank-tab" onclick="setBank('CC',this)" id="bankTabCC">Credit Card</button>
         <button class="bank-tab" onclick="setBank('BANK',this)" id="bankTabBank">Bank Account</button>
+        <span id="bankTabsLabel" style="font-size:.78rem;color:var(--green);font-weight:600;margin-left:.5rem;display:none"></span>
       </div>
       <div class="upload-zone" id="impUploadZone" ondragover="impDragOver(event)" ondragleave="impDragLeave()" ondrop="impDrop(event)" style="margin-bottom:.75rem">
         <input type="file" accept=".pdf,.csv,.txt,application/pdf" onchange="impFileChosen(event)">
@@ -3430,31 +3432,39 @@ function getStatementPrompt(isPDF) {
     ? `${C.creditCard} credit card`
     : `${C.primaryBank} bank account`;
 
-  return `You are reading a ${bankName} statement PDF for ${C.businessName}, a small ${PROVINCE_CONFIG[C.province]?.name || 'Ontario'} ${C.businessType === 'incorporated' ? 'corporation' : 'sole proprietorship'}.
+  return `You are reading a financial statement PDF for ${C.businessName}, a small ${PROVINCE_CONFIG[C.province]?.name || 'Ontario'} ${C.businessType === 'incorporated' ? 'corporation' : 'sole proprietorship'}.
 
-Extract EVERY transaction from this statement. Include purchases, payments, fees, credits, and debits.
+STEP 1 — IDENTIFY THE STATEMENT
+Look at the header / first page. Identify:
+- "institution": short name of the issuer. Examples: "BMO", "TD", "RBC", "AMEX", "Visa", "Mastercard", "PCFinancial". Use the most recognizable short form. If the statement just says "American Express", use "AMEX". If it says "Bank of Montreal", use "BMO".
+- "accountType": "BANK" if it's a chequing/savings/bank account, "CC" if it's a credit card.
 
-CRITICAL — SIGN CONVENTION (think from the account holder's perspective):
+STEP 2 — EXTRACT EVERY TRANSACTION
+Include purchases, payments, fees, credits, and debits.
+
+SIGN CONVENTION (think from the account holder's perspective):
 - NEGATIVE amount = money LEAVING the account (the user spent / paid this)
    Examples: "Debit Card Purchase", "Pre-authorized Payment", "Withdrawal", "Cheque", "Bill Payment", "Service Fee", "Transfer To"
 - POSITIVE amount = money ENTERING the account (the user received this)
    Examples: "Direct Deposit", "Interac e-Transfer Received", "ABM Deposit", "Refund", "Interest Earned", "Customer Payment", "Transfer From"
 
-BMO statements often have two amount columns: "Debit" (money out, sign as NEGATIVE) and "Credit" (money in, sign as POSITIVE). Same row will only have a value in ONE of those columns.
+BMO statements often have two amount columns: "Debit" (money out → NEGATIVE) and "Credit" (money in → POSITIVE). Same row will only have a value in ONE.
 
-AMEX credit card statements: charges are NEGATIVE (the user spent that), "Payment Received" is POSITIVE (their bank paid the bill — money came into the credit card balance).
+Credit card statements: charges are NEGATIVE (user spent), "Payment Received" / "Thank You" is POSITIVE (bank paid the bill).
 
 OTHER RULES:
 - Dates in YYYY-MM-DD format
 - Include ALL rows — user will filter later
-- If you can't tell direction from context, default to NEGATIVE and let the user correct
+- If you can't tell direction, default to NEGATIVE
 
-Return ONLY a valid JSON array, no markdown, no explanation. Mix of signs is expected and important:
-[
-  {"date":"2026-01-19","description":"Debit Card Purchase, CENTRAL ONTARIO","amount":-95.05},
-  {"date":"2026-02-06","description":"Direct Deposit, POSTMA MSP/D","amount":9416.66},
-  {"date":"2026-03-19","description":"Withdrawal At, BR.0039","amount":-4424.78}
-]`;
+Return ONLY a valid JSON object (no markdown, no explanation):
+{
+  "source": {"institution": "BMO", "accountType": "BANK"},
+  "transactions": [
+    {"date":"2026-01-19","description":"Debit Card Purchase, CENTRAL ONTARIO","amount":-95.05},
+    {"date":"2026-02-06","description":"Direct Deposit, POSTMA MSP/D","amount":9416.66}
+  ]
+}`;
 }
 
 function getCategorizePrompt(batch, isBankStatement) {
@@ -3631,16 +3641,14 @@ function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace
 // ════════════════════════════════════════════════════════════
 // TAB 1 — STATEMENT IMPORTER (PDF + CSV)
 // ════════════════════════════════════════════════════════════
-// impBankType — 'CC' (credit card) or 'BANK' (chequing). Drives parsing /
-// rule-engine logic that depends on statement format.
+// impBankType — null until user picks. 'CC' or 'BANK' once chosen.
+// Forcing an explicit choice prevents the "all rows tagged AMEX even though
+// it was a BMO statement" bug — defaults are dangerous when the result lands
+// in the sheet and gets shipped to MNP.
 // impBank   — the actual bank name string ('AMEX', 'BMO', etc) that gets
-// written to the Account column on each transaction. Pulled from
-// USER_CONFIG so users on Visa, RBC, etc. get correctly tagged too.
-// Default 'CC' to match the visually-active "Credit Card" button on page load —
-// otherwise an upload before any button click silently tags rows with the
-// WRONG bank, which is the bug Caleb's wife hit.
-let impBankType = 'CC';
-let impBank = (typeof USER_CONFIG !== 'undefined' && USER_CONFIG?.creditCard) || 'AMEX';
+// written to the Account column on each transaction.
+let impBankType = null;
+let impBank = '';
 let impRawRows=[], impTxns=[];
 let impPdfB64=null; // set when a PDF is loaded
 
@@ -3653,11 +3661,47 @@ function setBank(b,el){
   }
   document.querySelectorAll('.bank-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
+  // Show the resolved bank name so the user can verify they picked the right one
+  const label = document.getElementById('bankTabsLabel');
+  if (label) {
+    label.textContent = `→ Importing as ${impBank}`;
+    label.style.display = '';
+  }
 }
 function impDragOver(e){e.preventDefault();document.getElementById('impUploadZone').classList.add('drag-over')}
 function impDragLeave(){document.getElementById('impUploadZone').classList.remove('drag-over')}
-function impDrop(e){e.preventDefault();impDragLeave();const f=e.dataTransfer.files[0];if(f)impLoadFile(f)}
-function impFileChosen(e){const f=e.target.files[0];if(f)impLoadFile(f)}
+function impDrop(e){
+  e.preventDefault();impDragLeave();
+  const f=e.dataTransfer.files[0];if(!f) return;
+  if(!impRequireBankPickedFor(f)) return;
+  impLoadFile(f);
+}
+
+// PDFs go through the AI which auto-detects the institution + account type,
+// so we don't need to pre-pick. CSVs are parsed in JS and have no AI step,
+// so the bank type must be picked manually before upload.
+function impRequireBankPickedFor(file){
+  const isPDF = file && (file.type==='application/pdf' || (file.name||'').toLowerCase().endsWith('.pdf'));
+  if(isPDF) return true;  // AI will detect
+  if(impBankType) return true;
+  toast('CSV files: pick "Credit Card" or "Bank Account" first so rows tag to the right account. (PDFs are auto-detected.)');
+  const tabs = document.querySelector('.bank-tabs');
+  if(tabs){
+    tabs.style.transition = 'background .2s';
+    tabs.style.background = 'var(--amberlt)';
+    setTimeout(() => { tabs.style.background = ''; }, 600);
+  }
+  return false;
+}
+function impFileChosen(e){
+  const f = e.target.files[0];
+  if(!f) return;
+  if(!impRequireBankPickedFor(f)){
+    e.target.value = '';  // clear so they can re-trigger after picking
+    return;
+  }
+  impLoadFile(f);
+}
 function togglePaste(){document.getElementById('pasteWrap').classList.toggle('hidden')}
 function loadPasted(){const t=document.getElementById('pasteBox').value.trim();if(t)impParseCSV(t,'pasted text');else toast('Paste some CSV text first')}
 
@@ -3799,27 +3843,63 @@ async function impAnalyzePDF(){
     txt.textContent='Parsing transactions…';
     fill.style.width='35%'; pct.textContent='35%';
 
-    // Strip any markdown fences and find the JSON array
+    // Strip any markdown fences. Accept either:
+    //   - New shape: { source: {institution, accountType}, transactions: [...] }
+    //   - Legacy:    [...] array of transactions only
     let clean = raw.replace(/```json|```/g,'').trim();
-    // Find the JSON array even if there's surrounding text
+    // Try object first, then array
+    const objMatch = clean.match(/\{[\s\S]*\}/);
     const arrMatch = clean.match(/\[[\s\S]*\]/);
-    if(!arrMatch){
-      impPdfError('Could not find transaction data in the response. Raw response: ' + raw.slice(0,300));
-      return;
+    let extracted = null;
+    let detectedSource = null;
+    if(objMatch){
+      try {
+        const parsed = JSON.parse(objMatch[0]);
+        if(parsed && Array.isArray(parsed.transactions)){
+          extracted = parsed.transactions;
+          if(parsed.source && parsed.source.institution){
+            detectedSource = {
+              institution: String(parsed.source.institution).trim(),
+              accountType: (parsed.source.accountType || '').toUpperCase() === 'CC' ? 'CC' : 'BANK',
+            };
+          }
+        } else if(Array.isArray(parsed)){
+          extracted = parsed;
+        }
+      } catch(e){ /* fall through to array attempt */ }
     }
-    clean = arrMatch[0];
-
-    let extracted;
-    try {
-      extracted = JSON.parse(clean);
-    } catch(parseErr){
-      impPdfError('JSON parse error: ' + parseErr.message + '<br>Response was: ' + clean.slice(0,200));
+    if(!extracted && arrMatch){
+      try { extracted = JSON.parse(arrMatch[0]); }
+      catch(parseErr){
+        impPdfError('JSON parse error: ' + parseErr.message + '<br>Response was: ' + clean.slice(0,200));
+        return;
+      }
+    }
+    if(!extracted){
+      impPdfError('Could not find transaction data in the response. Raw response: ' + raw.slice(0,300));
       return;
     }
 
     if(!Array.isArray(extracted) || extracted.length === 0){
       impPdfError('No transactions found in this PDF. Make sure this is a bank or credit card statement with transaction rows visible.');
       return;
+    }
+
+    // AUTO-DETECTED SOURCE — overwrite impBank/impBankType so rows tag correctly.
+    // User can still override via the buttons before sending to sheet. This is
+    // what kills the "everything tagged AMEX even though it was BMO" bug.
+    if(detectedSource){
+      impBank = detectedSource.institution;
+      impBankType = detectedSource.accountType;
+      // Update the visible button highlight + label
+      document.querySelectorAll('.bank-tab').forEach(t=>t.classList.remove('active'));
+      const btn = document.getElementById(impBankType === 'CC' ? 'bankTabCC' : 'bankTabBank');
+      if(btn) btn.classList.add('active');
+      const label = document.getElementById('bankTabsLabel');
+      if(label){
+        label.innerHTML = `→ <strong>AI detected: ${esc(impBank)}</strong> ${impBankType === 'CC' ? '(credit card)' : '(bank account)'} — click a button above to override`;
+        label.style.display = '';
+      }
     }
 
     // Normalize

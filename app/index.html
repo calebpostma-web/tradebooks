@@ -8978,9 +8978,19 @@ async function handleManualCreateCallback(code) {
 (function() {
   const origInitAuth = initAuth;
   initAuth = function() {
-    // Check for Google OAuth callback first
+    // Check for Google OAuth callback first. Two state prefixes are valid:
+    //   tradebooks_setup_  — onboarding's "create my sheet" flow
+    //   tradebooks_login_  — plain "Sign in with Google" from the landing page
+    // Until 2026-04-25 only setup_ was checked here, so plain sign-in
+    // silently fell through to the login screen with the ?code in the URL
+    // doing nothing — broke every fresh Google sign-in attempt.
     const params = new URLSearchParams(window.location.search);
-    if (params.get('code') && params.get('state')?.startsWith('tradebooks_setup_')) {
+    const stateParam = params.get('state') || '';
+    const isOauthCallback = params.get('code') && (
+      stateParam.startsWith('tradebooks_setup_') ||
+      stateParam.startsWith('tradebooks_login_')
+    );
+    if (isOauthCallback) {
       handleGoogleCallback();
       return;
     }

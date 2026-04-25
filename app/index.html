@@ -2426,6 +2426,81 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     </div>
   </div>
 
+  <!-- Year-End Accruals (the linchpin for review-only MNP engagement) -->
+  <div class="card" style="margin-top:1rem">
+    <div class="card-title">Year-end accruals</div>
+    <p style="font-size:.82rem;color:var(--ink3);margin-bottom:1rem;line-height:1.55">
+      At fiscal year end, your books are still cash-basis. To make them ready for the T2 (which is accrual), MNP would normally have to make adjusting journal entries. Log them here instead — invoices outstanding, bills owed, prepaids, accruals — and they post to the <code>📓 Adjusting Entries</code> tab. <strong>This is the difference between MNP doing full prep ($3-5k) and MNP just reviewing your books ($500-1.5k).</strong>
+    </p>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Adjustment type</label>
+        <select id="accr_type" onchange="accrTypeChanged()" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;background:white">
+          <option value="Accounts Receivable (AR)">Accounts Receivable (AR) — invoice outstanding at FYE</option>
+          <option value="Accounts Payable (AP)">Accounts Payable (AP) — bill owed but not yet paid</option>
+          <option value="Prepaid Expense">Prepaid Expense — paid for something that crosses into next FY</option>
+          <option value="Accrued Expense">Accrued Expense — service used, bill not yet received</option>
+          <option value="Accrued Revenue">Accrued Revenue — work done, not yet invoiced</option>
+          <option value="Depreciation (CCA)">Depreciation (CCA) — manual entry; CCA tracker coming soon</option>
+          <option value="Other Adjustment">Other Adjustment</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Date<small style="color:var(--ink3);font-weight:400;margin-left:.4rem">— typically your FYE date (e.g. Mar 31)</small></label>
+        <input type="date" id="accr_date">
+      </div>
+    </div>
+
+    <div class="field"><label>Description<small style="color:var(--ink3);font-weight:400;margin-left:.4rem">— what is this adjustment? Be specific.</small></label>
+      <input type="text" id="accr_description" placeholder="e.g. Invoice #1234 to Client X, $5000+HST billed Mar 25 not yet paid at FYE">
+    </div>
+
+    <div class="field-row">
+      <div class="field"><label>Counterparty<small style="color:var(--ink3);font-weight:400;margin-left:.4rem">— client / vendor</small></label>
+        <input type="text" id="accr_counterparty" placeholder="e.g. Client X, Hydro One, Intact Insurance">
+      </div>
+      <div class="field"><label>Linked invoice / bill #<small style="color:var(--ink3);font-weight:400;margin-left:.4rem">— optional</small></label>
+        <input type="text" id="accr_linkedRef" placeholder="e.g. Inv #1234">
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field"><label>Net amount (CAD)<small id="accr_netHint" style="color:var(--ink3);font-weight:400;margin-left:.4rem">— positive = adds revenue/expense; reverse = negative</small></label>
+        <input type="number" id="accr_netAmount" step="0.01" placeholder="e.g. 5000.00" style="font-family:var(--mono)">
+      </div>
+      <div class="field"><label>HST<small style="color:var(--ink3);font-weight:400;margin-left:.4rem">— 0 if not HST-applicable</small></label>
+        <input type="number" id="accr_hst" step="0.01" placeholder="0.00" style="font-family:var(--mono)">
+      </div>
+    </div>
+
+    <div class="field"><label>Effect on books<small style="color:var(--ink3);font-weight:400;margin-left:.4rem">— what does this change?</small></label>
+      <input type="text" id="accr_effect" placeholder="e.g. Adds $5000 revenue + $650 HST collected; AR balance +$5650">
+    </div>
+
+    <div class="field"><label>Notes (optional)</label>
+      <textarea id="accr_notes" placeholder="Any context MNP should know"></textarea>
+    </div>
+
+    <div class="btn-row" style="margin-top:1rem">
+      <button class="btn btn-green" id="accr_logBtn" onclick="accrLogEntry()">📓 Log adjusting entry</button>
+      <button class="btn btn-outline" onclick="accrClear()">Clear form</button>
+    </div>
+    <div id="accr_status" style="font-size:.85rem;color:var(--ink3);margin-top:.75rem;line-height:1.55"></div>
+
+    <details style="margin-top:1rem">
+      <summary style="cursor:pointer;font-size:.82rem;color:var(--ink2);font-weight:500">📚 Common year-end adjustments — quick guide</summary>
+      <div style="padding:.75rem 0 0 .5rem;font-size:.78rem;line-height:1.7;color:var(--ink2)">
+        <p><strong>Accounts Receivable (AR)</strong> — Customer owes you at year-end. You invoiced them but they haven't paid yet. Add the unpaid invoice amount as revenue (since you earned it this year). Log: net + HST positive.</p>
+        <p><strong>Accounts Payable (AP)</strong> — You owe a vendor. Bill arrived but you haven't paid (or service used, bill not yet received). Add the expense to this year. Log: net + HST positive (system treats AP as expense).</p>
+        <p><strong>Prepaid Expense</strong> — You paid for something that covers part of NEXT FY (e.g. annual insurance paid Jan 1 covers 9 months of next year). Reverse the over-paid portion. Log: negative net (defers the expense).</p>
+        <p><strong>Accrued Expense</strong> — You used a service this year but won't be billed until next year (e.g. last month's hydro). Add expense now. Log: net + HST positive.</p>
+        <p><strong>Accrued Revenue</strong> — You did work this year but won't bill until next year. Add revenue now. Log: net + HST positive.</p>
+        <p><strong>Depreciation (CCA)</strong> — This is the annual CCA on fixed assets. Use the CCA tracker (when built); for now log manually if needed.</p>
+      </div>
+    </details>
+  </div>
+
   <!-- Build package -->
   <div class="card" style="margin-top:1rem;background:var(--greenlt);border-left:3px solid var(--green)">
     <div class="card-title">Build the package</div>
@@ -6840,6 +6915,126 @@ async function yearendUploadStatement(){
     btn.disabled = false; btn.textContent = '⬆ Upload statement';
   }
 }
+
+// ── Year-End Accruals — log adjusting entries ───────────────────────
+// THE linchpin for review-only MNP engagement. Each entry posts to
+// 📓 Adjusting Entries via /api/accrual/log.
+
+function accrTypeChanged(){
+  const type = document.getElementById('accr_type').value;
+  const hint = document.getElementById('accr_netHint');
+  const desc = document.getElementById('accr_description');
+  if(!hint || !desc) return;
+  // Adjust the placeholder + hint text per type
+  if(type.startsWith('Accounts Receivable')){
+    desc.placeholder = 'e.g. Invoice #1234 to Client X, $5000+HST billed Mar 25 not yet paid at FYE';
+    hint.textContent = '— positive (revenue earned, customer owes us)';
+  } else if(type.startsWith('Accounts Payable')){
+    desc.placeholder = 'e.g. Hydro bill for March, $200+HST received but not yet paid';
+    hint.textContent = '— positive (expense incurred, we owe vendor)';
+  } else if(type === 'Prepaid Expense'){
+    desc.placeholder = 'e.g. Insurance paid Jan 1 $1200 covers 9 months of next FY = $900 prepaid';
+    hint.textContent = '— negative (reverses overpaid expense, defers to next FY)';
+  } else if(type === 'Accrued Expense'){
+    desc.placeholder = 'e.g. Last month\'s utilities, used in FY but bill comes next month';
+    hint.textContent = '— positive (expense to add)';
+  } else if(type === 'Accrued Revenue'){
+    desc.placeholder = 'e.g. Work done in March but invoiced in April';
+    hint.textContent = '— positive (revenue to add)';
+  } else if(type.startsWith('Depreciation')){
+    desc.placeholder = 'e.g. CCA on truck, Class 10, 30% × half-year = $X';
+    hint.textContent = '— positive (depreciation to deduct)';
+  } else {
+    desc.placeholder = 'Describe the adjustment';
+    hint.textContent = '— positive or negative depending on direction';
+  }
+}
+
+function accrClear(){
+  ['accr_description','accr_counterparty','accr_linkedRef','accr_netAmount','accr_hst','accr_effect','accr_notes']
+    .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  const status = document.getElementById('accr_status'); if(status) status.innerHTML = '';
+}
+
+async function accrLogEntry(){
+  const btn = document.getElementById('accr_logBtn');
+  const status = document.getElementById('accr_status');
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ toast('Please sign in first'); return; }
+  if(!USER_CONFIG.sheetId){ toast('Connect your Google Sheet first'); return; }
+
+  const type = document.getElementById('accr_type').value;
+  const date = document.getElementById('accr_date').value;
+  const description = document.getElementById('accr_description').value.trim();
+  const counterparty = document.getElementById('accr_counterparty').value.trim();
+  const netAmount = parseFloat(document.getElementById('accr_netAmount').value) || 0;
+  const hst = parseFloat(document.getElementById('accr_hst').value) || 0;
+  const effect = document.getElementById('accr_effect').value.trim();
+  const linkedRef = document.getElementById('accr_linkedRef').value.trim();
+  const notes = document.getElementById('accr_notes').value.trim();
+  // FY label derived from date — same logic the server uses for context
+  const fy = (() => {
+    const fye = USER_CONFIG?.fiscalYearEnd || 'December 31';
+    const map = {january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+    const m = String(fye).match(/^([a-zA-Z]+)\s+(\d{1,2})$/);
+    const month = m ? (map[m[1].toLowerCase()] || 12) : 12;
+    if(!date) return '';
+    const d = new Date(date+'T00:00:00');
+    let endYear = d.getUTCFullYear();
+    if(d.getUTCMonth()+1 > month) endYear += 1;
+    return `FY${endYear}`;
+  })();
+
+  // Client-side validation matches server
+  if(!date){ toast('Pick the date'); return; }
+  if(!description){ toast('Add a description'); return; }
+  if(netAmount === 0){ toast('Net amount cannot be zero'); return; }
+
+  btn.disabled = true; btn.textContent = '⏳ Logging…';
+  status.innerHTML = 'Posting to your sheet…';
+
+  try {
+    const r = await fetch('/api/accrual/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ date, type, description, counterparty, netAmount, hst, effect, linkedRef, notes, fy }),
+    });
+    const d = await r.json();
+    if(d.ok){
+      btn.style.background = 'var(--green)';
+      btn.textContent = '✓ Logged!';
+      const sheetLink = USER_CONFIG?.sheetUrl
+        ? `<a href="${USER_CONFIG.sheetUrl}" target="_blank" style="color:var(--green)">Open Sheet ↗</a>`
+        : '';
+      status.innerHTML = `✅ Adjusting entry logged: <strong>${esc(type)}</strong>, $${fmtMoney(netAmount)} net + $${fmtMoney(hst)} HST. ${sheetLink}`;
+      // Reset form for next entry but keep date + type (likely entering several at once)
+      const keepDate = date, keepType = type;
+      accrClear();
+      document.getElementById('accr_date').value = keepDate;
+      document.getElementById('accr_type').value = keepType;
+      setTimeout(() => { btn.disabled = false; btn.textContent = '📓 Log adjusting entry'; btn.style.background = ''; }, 2000);
+    } else if(d.needsMigration){
+      status.innerHTML = `<div style="background:var(--amberlt);border-left:3px solid var(--amber);padding:.7rem .9rem;border-radius:4px"><strong>Tab missing.</strong> Open Settings → 🔄 Update sheet to latest schema, then try again.</div>`;
+      btn.disabled = false; btn.textContent = '📓 Log adjusting entry';
+    } else {
+      status.innerHTML = `❌ ${esc(d.error || 'Unknown error')}`;
+      btn.disabled = false; btn.textContent = '📓 Log adjusting entry';
+    }
+  } catch(err){
+    status.innerHTML = `❌ Connection error: ${esc(err.message)}`;
+    btn.disabled = false; btn.textContent = '📓 Log adjusting entry';
+  }
+}
+
+// Default the date field to FYE when the year-end tab opens.
+document.addEventListener('DOMContentLoaded', () => {
+  const d = document.getElementById('accr_date');
+  if(d && !d.value){
+    // Default to today; user can change to FYE
+    d.value = new Date().toISOString().split('T')[0];
+  }
+  accrTypeChanged();
+});
 
 async function yearendBuildPackage(){
   const btn = document.getElementById('ye_buildBtn');

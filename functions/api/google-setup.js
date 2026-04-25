@@ -169,7 +169,7 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
             gridProperties: { rowCount: 40, columnCount: 10 },
             tabColor: COLORS.teal } },
         { properties: { sheetId: 700, title: '📅 Year-End', index: 5,
-            gridProperties: { rowCount: 80, columnCount: 8 },
+            gridProperties: { rowCount: 200, columnCount: 8 },
             tabColor: COLORS.brown } },
         // 💼 Payroll — pay run history, YTD tracking, remittance due dates.
         // 16 cols B-Q: Pay Date, Employee, Age, Business, Work Description,
@@ -191,6 +191,46 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
         { properties: { sheetId: 1000, title: '📑 CRA Remittances', index: 8,
             gridProperties: { rowCount: 500, columnCount: 11, frozenRowCount: 11 },
             tabColor: COLORS.teal } },
+        // 🏦 Account Balances — bank reconciliation. One row per account per
+        // statement period. User enters opening + closing from the bank
+        // statement, the sheet computes expected closing from Transactions
+        // activity and flags any difference. THIS is how we catch missed /
+        // duplicated / wrong-sign rows automatically.
+        // 11 cols B-L: Period | Account | Period Start | Period End | Opening |
+        //              Sum Activity (formula) | Expected Closing (formula) |
+        //              Actual Closing | Difference (formula) | Match (formula) | Notes
+        { properties: { sheetId: 1100, title: '🏦 Account Balances', index: 9,
+            gridProperties: { rowCount: 500, columnCount: 13, frozenRowCount: 11 },
+            tabColor: COLORS.green } },
+        // 📓 Adjusting Entries — year-end accrual adjustments (AR, AP, prepaids,
+        // accruals). Bridges cash-basis books to accrual-ready for the T2.
+        // THE LINCHPIN for MNP review-only engagement: without this tab MNP
+        // still has to make these entries themselves, which means full prep,
+        // which means full $3-5k accountant fees.
+        // 11 cols B-L: Date | Type | Description | Counterparty | Net Amount |
+        //              HST | Total (formula) | Effect | Linked Invoice/Bill | Notes | FY
+        { properties: { sheetId: 1200, title: '📓 Adjusting Entries', index: 10,
+            gridProperties: { rowCount: 200, columnCount: 13, frozenRowCount: 11 },
+            tabColor: COLORS.brown } },
+        // 🛠 Fixed Assets — CCA tracker. One row per capital asset (truck, tool,
+        // equipment, computer). Tracks UCC year-over-year, computes annual CCA
+        // for the T2 Schedule 8. Pre-loaded with the most common classes for
+        // small trades businesses.
+        // 11 cols B-L: Class | Description | Date Acquired | Original Cost |
+        //              Opening UCC | Additions This FY | CCA Rate (formula) |
+        //              CCA This FY (formula) | Ending UCC (formula) | Disposed | Notes
+        { properties: { sheetId: 1300, title: '🛠 Fixed Assets', index: 11,
+            gridProperties: { rowCount: 200, columnCount: 13, frozenRowCount: 11 },
+            tabColor: COLORS.blue } },
+        // 📊 T2 Worksheet — consolidated T2-prep view. Pulls from every other
+        // tab to produce the data MNP needs to file the T2 (or to verify with
+        // their T2 software). Sections: Income Statement (Sched 125 GIFI),
+        // Book-to-Tax Adjustments (Sched 1), CCA (Sched 8), Balance Sheet
+        // (Sched 100), Final tax owing estimate. THIS is the deliverable
+        // MNP reviews instead of preparing themselves.
+        { properties: { sheetId: 1400, title: '📊 T2 Worksheet', index: 12,
+            gridProperties: { rowCount: 100, columnCount: 8 },
+            tabColor: COLORS.green } },
       ],
     }),
   });
@@ -354,7 +394,7 @@ function colWidth(sheetId, startIdx, endIdx, px) {
 // ════════════════════════════════════════════════════════════════════
 async function applyStyling(accessToken, spreadsheetId) {
   const authHeader = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
-  const DASH = 100, CFG = 200, TXN = 300, INV = 500, HST = 600, YE = 700, PAY = 800, WLOG = 900, REM = 1000;
+  const DASH = 100, CFG = 200, TXN = 300, INV = 500, HST = 600, YE = 700, PAY = 800, WLOG = 900, REM = 1000, BAL = 1100, ADJ = 1200, FA = 1300, T2 = 1400;
   const requests = [];
 
   // ─── DASHBOARD ───
@@ -691,6 +731,157 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(REM, 8, 9, 220));   // I Notes
   requests.push(colWidth(REM, 9, 10, 130));  // J Linked Txn Ref
 
+  // ─── ACCOUNT BALANCES (bank reconciliation) ───
+  // 13 cols (A gutter + B-L data, plus M reserve): Period | Account |
+  // Period Start | Period End | Opening | Sum Activity (formula) |
+  // Expected Closing (formula) | Actual Closing | Difference (formula) |
+  // Match (formula) | Notes
+  requests.push(...bannerRequest(BAL, 0, 0, 13, COLORS.green));
+  requests.push(...sectionRequest(BAL, 1, 1, 6, COLORS.green));
+  requests.push(cellFormat(BAL, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
+  requests.push(cellFormat(BAL, 2, 2, 10, 6, { backgroundColor: COLORS.greenTint, numberFormat: FMT_CURRENCY.numberFormat }));
+  requests.push(headerRowRequest(BAL, 10, 1, 13, COLORS.green));
+  requests.push({ updateDimensionProperties: { range: { sheetId: BAL, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
+  requests.push(bandingRequest(BAL, 11, 500, 1, 13, COLORS.greenTint));
+  requests.push(cellFormat(BAL, 11, 3, 500, 4, FMT_DATE));      // D Period Start
+  requests.push(cellFormat(BAL, 11, 4, 500, 5, FMT_DATE));      // E Period End
+  requests.push(cellFormat(BAL, 11, 5, 500, 6, FMT_CURRENCY));  // F Opening
+  requests.push(cellFormat(BAL, 11, 6, 500, 7, FMT_CURRENCY));  // G Sum Activity
+  requests.push(cellFormat(BAL, 11, 7, 500, 8, FMT_CURRENCY));  // H Expected Closing
+  requests.push(cellFormat(BAL, 11, 8, 500, 9, FMT_CURRENCY));  // I Actual Closing
+  requests.push(cellFormat(BAL, 11, 9, 500, 10, FMT_CURRENCY)); // J Difference
+  requests.push(colWidth(BAL, 0, 1, 30));    // A gutter
+  requests.push(colWidth(BAL, 1, 2, 110));   // B Period (label like "Jan 2026")
+  requests.push(colWidth(BAL, 2, 3, 100));   // C Account
+  requests.push(colWidth(BAL, 3, 4, 100));   // D Period Start
+  requests.push(colWidth(BAL, 4, 5, 100));   // E Period End
+  requests.push(colWidth(BAL, 5, 6, 110));   // F Opening Balance
+  requests.push(colWidth(BAL, 6, 7, 110));   // G Sum Activity (formula)
+  requests.push(colWidth(BAL, 7, 8, 130));   // H Expected Closing (formula)
+  requests.push(colWidth(BAL, 8, 9, 130));   // I Actual Closing
+  requests.push(colWidth(BAL, 9, 10, 110));  // J Difference (formula)
+  requests.push(colWidth(BAL, 10, 11, 110)); // K Match (formula)
+  requests.push(colWidth(BAL, 11, 12, 200)); // L Notes
+
+  // ─── ADJUSTING ENTRIES (year-end accruals) ───
+  // 13 cols (A gutter + B-L data): Date | Type (dropdown) | Description |
+  // Counterparty | Net Amount | HST | Total (formula) | Effect | Linked
+  // Invoice/Bill | Notes | FY
+  requests.push(...bannerRequest(ADJ, 0, 0, 13, COLORS.brown));
+  requests.push(...sectionRequest(ADJ, 1, 1, 6, COLORS.brown));
+  requests.push(cellFormat(ADJ, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
+  requests.push(cellFormat(ADJ, 2, 2, 10, 6, { backgroundColor: COLORS.brownTint, numberFormat: FMT_CURRENCY.numberFormat }));
+  requests.push(headerRowRequest(ADJ, 10, 1, 13, COLORS.brown));
+  requests.push({ updateDimensionProperties: { range: { sheetId: ADJ, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
+  requests.push(bandingRequest(ADJ, 11, 200, 1, 13, COLORS.brownTint));
+  requests.push(cellFormat(ADJ, 11, 1, 200, 2, FMT_DATE));      // B Date
+  requests.push(cellFormat(ADJ, 11, 5, 200, 6, FMT_CURRENCY));  // F Net Amount
+  requests.push(cellFormat(ADJ, 11, 6, 200, 7, FMT_CURRENCY));  // G HST
+  requests.push(cellFormat(ADJ, 11, 7, 200, 8, FMT_CURRENCY));  // H Total
+  // Type dropdown — col C (idx 2)
+  requests.push({
+    setDataValidation: {
+      range: { sheetId: ADJ, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 2, endColumnIndex: 3 },
+      rule: { condition: { type: 'ONE_OF_LIST', values: [
+        { userEnteredValue: 'Accounts Receivable (AR)' },
+        { userEnteredValue: 'Accounts Payable (AP)' },
+        { userEnteredValue: 'Prepaid Expense' },
+        { userEnteredValue: 'Accrued Expense' },
+        { userEnteredValue: 'Accrued Revenue' },
+        { userEnteredValue: 'Depreciation (CCA)' },
+        { userEnteredValue: 'Other Adjustment' },
+      ]}, showCustomUi: true },
+    }
+  });
+  requests.push(colWidth(ADJ, 0, 1, 30));    // A gutter
+  requests.push(colWidth(ADJ, 1, 2, 100));   // B Date
+  requests.push(colWidth(ADJ, 2, 3, 180));   // C Type
+  requests.push(colWidth(ADJ, 3, 4, 280));   // D Description
+  requests.push(colWidth(ADJ, 4, 5, 150));   // E Counterparty
+  requests.push(colWidth(ADJ, 5, 6, 110));   // F Net Amount
+  requests.push(colWidth(ADJ, 6, 7, 100));   // G HST
+  requests.push(colWidth(ADJ, 7, 8, 110));   // H Total (formula)
+  requests.push(colWidth(ADJ, 8, 9, 200));   // I Effect
+  requests.push(colWidth(ADJ, 9, 10, 130));  // J Linked Invoice/Bill
+  requests.push(colWidth(ADJ, 10, 11, 200)); // K Notes
+  requests.push(colWidth(ADJ, 11, 12, 80));  // L FY label
+
+  // ─── FIXED ASSETS (CCA tracker) ───
+  // 13 cols (A gutter + B-L data): Class | Description | Date Acquired |
+  // Original Cost | Opening UCC | Additions This FY | CCA Rate (formula from
+  // class) | CCA This FY (formula) | Ending UCC (formula) | Disposed | Notes
+  requests.push(...bannerRequest(FA, 0, 0, 13, COLORS.blue));
+  requests.push(...sectionRequest(FA, 1, 1, 6, COLORS.blue));
+  requests.push(cellFormat(FA, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
+  requests.push(cellFormat(FA, 2, 2, 10, 6, { backgroundColor: COLORS.blueTint, numberFormat: FMT_CURRENCY.numberFormat }));
+  requests.push(headerRowRequest(FA, 10, 1, 13, COLORS.blue));
+  requests.push({ updateDimensionProperties: { range: { sheetId: FA, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
+  requests.push(bandingRequest(FA, 11, 200, 1, 13, COLORS.blueTint));
+  requests.push(cellFormat(FA, 11, 3, 200, 4, FMT_DATE));      // D Date Acquired
+  requests.push(cellFormat(FA, 11, 4, 200, 5, FMT_CURRENCY));  // E Original Cost
+  requests.push(cellFormat(FA, 11, 5, 200, 6, FMT_CURRENCY));  // F Opening UCC
+  requests.push(cellFormat(FA, 11, 6, 200, 7, FMT_CURRENCY));  // G Additions This FY
+  requests.push(cellFormat(FA, 11, 7, 200, 8, { numberFormat: { type: 'PERCENT', pattern: '0%' }})); // H CCA Rate
+  requests.push(cellFormat(FA, 11, 8, 200, 9, FMT_CURRENCY));  // I CCA This FY
+  requests.push(cellFormat(FA, 11, 9, 200, 10, FMT_CURRENCY)); // J Ending UCC
+  // Class dropdown — col B (idx 1)
+  requests.push({
+    setDataValidation: {
+      range: { sheetId: FA, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 1, endColumnIndex: 2 },
+      rule: { condition: { type: 'ONE_OF_LIST', values: [
+        { userEnteredValue: 'Class 8 (20%) — Tools, equipment, furniture' },
+        { userEnteredValue: 'Class 10 (30%) — Vehicles, work trucks <$36k' },
+        { userEnteredValue: 'Class 10.1 (30%) — Luxury vehicles ≥$36k' },
+        { userEnteredValue: 'Class 12 (100%) — Small tools <$500, software' },
+        { userEnteredValue: 'Class 14.1 (5%) — Goodwill, intangibles' },
+        { userEnteredValue: 'Class 16 (40%) — Heavy trucks >11,788kg' },
+        { userEnteredValue: 'Class 50 (55%) — Computers, computer software' },
+        { userEnteredValue: 'Class 53 (50%) — Manufacturing equipment' },
+        { userEnteredValue: 'Class 6 (10%) — Wood-frame buildings' },
+        { userEnteredValue: 'Class 1 (4%) — Other buildings' },
+        { userEnteredValue: 'Other (enter rate manually)' },
+      ]}, showCustomUi: true },
+    }
+  });
+  // Disposed dropdown — col K (idx 10)
+  requests.push({
+    setDataValidation: {
+      range: { sheetId: FA, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 10, endColumnIndex: 11 },
+      rule: { condition: { type: 'ONE_OF_LIST', values: [
+        { userEnteredValue: 'No' },
+        { userEnteredValue: 'Yes' },
+      ]}, showCustomUi: true },
+    }
+  });
+  requests.push(colWidth(FA, 0, 1, 30));    // A gutter
+  requests.push(colWidth(FA, 1, 2, 280));   // B Class (long labels)
+  requests.push(colWidth(FA, 2, 3, 220));   // C Description
+  requests.push(colWidth(FA, 3, 4, 110));   // D Date Acquired
+  requests.push(colWidth(FA, 4, 5, 110));   // E Original Cost
+  requests.push(colWidth(FA, 5, 6, 110));   // F Opening UCC
+  requests.push(colWidth(FA, 6, 7, 110));   // G Additions This FY
+  requests.push(colWidth(FA, 7, 8, 80));    // H CCA Rate
+  requests.push(colWidth(FA, 8, 9, 110));   // I CCA This FY
+  requests.push(colWidth(FA, 9, 10, 110));  // J Ending UCC
+  requests.push(colWidth(FA, 10, 11, 80));  // K Disposed
+  requests.push(colWidth(FA, 11, 12, 200)); // L Notes
+
+  // ─── T2 WORKSHEET ───
+  // Single-page consolidated T2 prep doc. Section headers at A1, A12, A30, etc.
+  // Numeric values in C, references in E. Light styling — this is meant to be
+  // printed / emailed to the accountant.
+  requests.push(...bannerRequest(T2, 0, 0, 8, COLORS.green));
+  // Section headers throughout — applied row-by-row in populateValues.
+  requests.push(cellFormat(T2, 1, 0, 99, 1, { textFormat: { fontSize: 10 }}));  // A: section labels
+  requests.push(cellFormat(T2, 1, 1, 99, 2, { textFormat: { fontSize: 10 }}));  // B: line labels
+  requests.push(cellFormat(T2, 1, 2, 99, 3, { numberFormat: FMT_CURRENCY.numberFormat, textFormat: { fontSize: 10 }, horizontalAlignment: 'RIGHT' }));  // C: amounts
+  requests.push(cellFormat(T2, 1, 3, 99, 5, { textFormat: { fontSize: 9, italic: true, foregroundColor: COLORS.textMuted }}));  // D-E: GIFI codes / refs
+  requests.push(colWidth(T2, 0, 1, 30));    // A gutter
+  requests.push(colWidth(T2, 1, 2, 360));   // B Line label (long descriptions)
+  requests.push(colWidth(T2, 2, 3, 130));   // C Amount
+  requests.push(colWidth(T2, 3, 4, 90));    // D GIFI code
+  requests.push(colWidth(T2, 4, 5, 240));   // E Source / formula explainer
+
   const stylingResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
     method: 'POST', headers: authHeader,
     body: JSON.stringify({ requests }),
@@ -1021,6 +1212,16 @@ async function populateValues(accessToken, spreadsheetId, profile) {
     ['', '', '', '', ''],
   ]});
 
+  // PER-CATEGORY BREAKDOWN — dynamic. QUERY pivots Transactions by category
+  // and sums the Total (incl HST) column. Captures EVERY category that's been
+  // used (default + user-custom) without needing hardcoded names. Mirrors
+  // the column-totals layout her old spreadsheet had — equivalent breakdown
+  // for our row-based ledger.
+  data.push({ range: "'📅 Year-End'!A62", values: [['  PER-CATEGORY BREAKDOWN  (all-time, every category in use, biggest first)']] });
+  data.push({ range: "'📅 Year-End'!B63", values: [[
+    "=IFERROR(QUERY('📒 Transactions'!B12:N1000, \"SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'\", 0), \"No transactions yet — import a statement to populate this breakdown.\")"
+  ]]});
+
   // ─── PAYROLL TAB ───
   data.push({ range: "'💼 Payroll'!A1", values: [[
     'PAYROLL LEDGER  —  Pay runs · Source deduction tracking · T4 source of truth'
@@ -1090,6 +1291,260 @@ async function populateValues(accessToken, spreadsheetId, profile) {
     'Date Paid', 'Type', 'Period Covered', 'Amount', 'Confirmation #', 'Account',
     'PDF Receipt (Drive)', 'Notes', 'Linked Txn Ref',
   ]]});
+
+  // ─── ACCOUNT BALANCES TAB (bank reconciliation) ───
+  // Each row is one statement period for one account. User enters: Period
+  // label (B), Account (C), Period Start (D), Period End (E), Opening
+  // Balance (F), Actual Closing (I), Notes (L). Formulas compute everything
+  // else: Sum Activity (G), Expected Closing (H), Difference (J), Match (K).
+  data.push({ range: "'🏦 Account Balances'!A1", values: [[
+    'BANK RECONCILIATION  —  Opening + activity = expected closing  ·  Compare to actual to catch errors'
+  ]]});
+  data.push({ range: "'🏦 Account Balances'!B2", values: [['RECONCILIATION SUMMARY']] });
+  data.push({ range: "'🏦 Account Balances'!B3:F3", values: [[
+    'Periods reconciled',                 '=COUNTA(B12:B500)', '', '', ''
+  ]]});
+  data.push({ range: "'🏦 Account Balances'!B4:F4", values: [[
+    'Periods balanced (✓)',               '=COUNTIF(K12:K500,"✓ Balanced")', '', '', ''
+  ]]});
+  data.push({ range: "'🏦 Account Balances'!B5:F5", values: [[
+    'Periods OFF (action needed)',        '=COUNTIF(K12:K500,"⚠*")', '', '', ''
+  ]]});
+  data.push({ range: "'🏦 Account Balances'!B6:F6", values: [[
+    'Total off-by-amount across periods', '=SUMIF(K12:K500,"⚠*",J12:J500)', '', '', ''
+  ]]});
+  data.push({ range: "'🏦 Account Balances'!B7:F7", values: [[
+    'How to use this tab',                'Enter period dates + opening + closing balance from each statement. The sheet computes expected closing from your Transactions and flags any difference. A non-zero difference = a missed row, duplicate, wrong sign, or bad amount somewhere.', '', '', ''
+  ]]});
+  data.push({ range: "'🏦 Account Balances'!B11:L11", values: [[
+    'Period', 'Account', 'Period Start', 'Period End', 'Opening Balance',
+    'Sum Activity (auto)', 'Expected Closing (auto)', 'Actual Closing',
+    'Difference (auto)', 'Match (auto)', 'Notes',
+  ]]});
+
+  // Pre-populate the formula columns with ARRAYFORMULA so each row auto-fills
+  // when the user enters Account / Period dates / Opening / Actual Closing.
+  // Sum Activity = sum of Total (incl HST) col N from Transactions where
+  // Account matches and Date is in [Period Start, Period End].
+  data.push({ range: "'🏦 Account Balances'!G12", values: [[
+    "=ARRAYFORMULA(IF(C12:C500=\"\",\"\",IFERROR(SUMIFS('📒 Transactions'!N12:N1000,'📒 Transactions'!I12:I1000,C12:C500,'📒 Transactions'!B12:B1000,\">=\"&D12:D500,'📒 Transactions'!B12:B1000,\"<=\"&E12:E500),0)))"
+  ]]});
+  // Expected Closing = Opening + Sum Activity
+  data.push({ range: "'🏦 Account Balances'!H12", values: [[
+    '=ARRAYFORMULA(IF(C12:C500="","",F12:F500+G12:G500))'
+  ]]});
+  // Difference = Expected - Actual (positive means we expected more cash than the bank shows)
+  data.push({ range: "'🏦 Account Balances'!J12", values: [[
+    '=ARRAYFORMULA(IF(I12:I500="","",H12:H500-I12:I500))'
+  ]]});
+  // Match status — uses ABS to allow tiny rounding differences
+  data.push({ range: "'🏦 Account Balances'!K12", values: [[
+    '=ARRAYFORMULA(IF(I12:I500="","",IF(ABS(J12:J500)<0.01,"✓ Balanced","⚠ Off by $"&TEXT(ROUND(J12:J500,2),"0.00"))))'
+  ]]});
+
+  // ─── ADJUSTING ENTRIES TAB ───
+  // Year-end accruals. User enters one row per adjustment. Sheet computes
+  // Total = Net + HST (signed). Year-End summary picks these up so cash-basis
+  // books become accrual-ready for the T2.
+  data.push({ range: "'📓 Adjusting Entries'!A1", values: [[
+    'YEAR-END ADJUSTING ENTRIES  —  Convert cash-basis books to accrual-basis for the T2  ·  AR / AP / Prepaids / Accruals'
+  ]]});
+  data.push({ range: "'📓 Adjusting Entries'!B2", values: [['ADJUSTMENT TOTALS  (by type)']] });
+  data.push({ range: "'📓 Adjusting Entries'!B3:F3", values: [[
+    'Accounts Receivable (revenue to add)', '=SUMIF(C12:C200,"Accounts Receivable (AR)",F12:F200)', '', '', ''
+  ]]});
+  data.push({ range: "'📓 Adjusting Entries'!B4:F4", values: [[
+    'Accounts Payable (expenses to add)',   '=SUMIF(C12:C200,"Accounts Payable (AP)",F12:F200)', '', '', ''
+  ]]});
+  data.push({ range: "'📓 Adjusting Entries'!B5:F5", values: [[
+    'Prepaid Expenses (deferred to next FY)', '=SUMIF(C12:C200,"Prepaid Expense",F12:F200)', '', '', ''
+  ]]});
+  data.push({ range: "'📓 Adjusting Entries'!B6:F6", values: [[
+    'Accrued Expenses (booked, not yet paid)', '=SUMIF(C12:C200,"Accrued Expense",F12:F200)', '', '', ''
+  ]]});
+  data.push({ range: "'📓 Adjusting Entries'!B7:F7", values: [[
+    'Accrued Revenue (earned, not yet billed)', '=SUMIF(C12:C200,"Accrued Revenue",F12:F200)', '', '', ''
+  ]]});
+  data.push({ range: "'📓 Adjusting Entries'!B8:F8", values: [[
+    'Depreciation (CCA from Fixed Assets)',   '=SUMIF(C12:C200,"Depreciation (CCA)",F12:F200)', '', '', ''
+  ]]});
+  data.push({ range: "'📓 Adjusting Entries'!B9:F9", values: [[
+    'Total adjustments',                    '=SUM(F12:F200)', '', '', ''
+  ]]});
+  data.push({ range: "'📓 Adjusting Entries'!B11:L11", values: [[
+    'Date', 'Type', 'Description', 'Counterparty', 'Net Amount',
+    'HST', 'Total (auto)', 'Effect on Books', 'Linked Invoice / Bill', 'Notes', 'FY',
+  ]]});
+  // Total formula in column H — Net + HST in same direction
+  data.push({ range: "'📓 Adjusting Entries'!H12", values: [[
+    '=ARRAYFORMULA(IF(F12:F200="","",F12:F200+G12:G200*SIGN(F12:F200)))'
+  ]]});
+
+  // ─── FIXED ASSETS TAB (CCA tracker) ───
+  // One row per capital asset. User enters: Class, Description, Date Acquired,
+  // Original Cost, Opening UCC (start of current FY), Additions This FY (the
+  // cost of any newly-acquired asset this year). System computes: CCA Rate
+  // (from class), CCA This FY (using half-year rule when applicable), Ending UCC.
+  data.push({ range: "'🛠 Fixed Assets'!A1", values: [[
+    'FIXED ASSETS  —  CCA Tracker  ·  Capital Cost Allowance for T2 Schedule 8'
+  ]]});
+  data.push({ range: "'🛠 Fixed Assets'!B2", values: [['CCA SUMMARY  (this fiscal year)']] });
+  data.push({ range: "'🛠 Fixed Assets'!B3:F3", values: [[
+    'Total assets tracked',         '=COUNTA(B12:B200)', '', '', ''
+  ]]});
+  data.push({ range: "'🛠 Fixed Assets'!B4:F4", values: [[
+    'Total Original Cost (ever)',   '=SUM(E12:E200)', '', '', ''
+  ]]});
+  data.push({ range: "'🛠 Fixed Assets'!B5:F5", values: [[
+    'Total Opening UCC (this FY)',  '=SUM(F12:F200)', '', '', ''
+  ]]});
+  data.push({ range: "'🛠 Fixed Assets'!B6:F6", values: [[
+    'Total Additions This FY',      '=SUM(G12:G200)', '', '', ''
+  ]]});
+  data.push({ range: "'🛠 Fixed Assets'!B7:F7", values: [[
+    'Total CCA This FY (T2 deduction)', '=SUM(I12:I200)', '', '', ''
+  ]]});
+  data.push({ range: "'🛠 Fixed Assets'!B8:F8", values: [[
+    'Total Ending UCC (carries to next FY)', '=SUM(J12:J200)', '', '', ''
+  ]]});
+  data.push({ range: "'🛠 Fixed Assets'!B9:F9", values: [[
+    'How to use', 'Add one row per asset. At each year end: enter Opening UCC + any new Additions. CCA + Ending UCC compute automatically. Carry Ending UCC into next year\'s Opening UCC.', '', '', ''
+  ]]});
+
+  data.push({ range: "'🛠 Fixed Assets'!B11:L11", values: [[
+    'CCA Class', 'Description', 'Date Acquired', 'Original Cost', 'Opening UCC',
+    'Additions This FY', 'CCA Rate', 'CCA This FY', 'Ending UCC',
+    'Disposed?', 'Notes',
+  ]]});
+
+  // CCA Rate formula (col H) — extract rate from the Class label
+  // Class labels look like "Class 8 (20%) — Tools..." — pull the % from inside parens.
+  data.push({ range: "'🛠 Fixed Assets'!H12", values: [[
+    '=ARRAYFORMULA(IF(B12:B200="","",IFERROR(VALUE(REGEXEXTRACT(B12:B200,"\\\\((\\\\d+)%\\\\)"))/100,0)))'
+  ]]});
+
+  // CCA This FY formula (col I)
+  // Logic:
+  //   - First-year asset (G > 0, F = 0): apply half-year rule = (G * rate) / 2
+  //   - Continuing asset:                 (F + G) * rate, with half-year on additions if any
+  //   - Class 12 (100% rate): no half-year, full deduction first year
+  // Simplified to: half-year on additions, full rate on opening UCC. Class 12
+  // gets full first-year because rate is 100%.
+  data.push({ range: "'🛠 Fixed Assets'!I12", values: [[
+    '=ARRAYFORMULA(IF(B12:B200="","",IF(K12:K200="Yes",0, ROUND((F12:F200 + G12:G200/2) * H12:H200, 2))))'
+  ]]});
+
+  // Ending UCC formula (col J) = Opening + Additions - CCA - Disposals (if any)
+  data.push({ range: "'🛠 Fixed Assets'!J12", values: [[
+    '=ARRAYFORMULA(IF(B12:B200="","",F12:F200 + G12:G200 - I12:I200))'
+  ]]});
+
+  // ─── T2 WORKSHEET ───
+  // Consolidated T2-prep view. Section by section, pulls from other tabs.
+  data.push({ range: "'📊 T2 Worksheet'!A1", values: [[
+    `T2 WORKSHEET  —  ${bizName}  ·  Year-end ${fye}  ·  Hand this to MNP for review`
+  ]]});
+
+  // SECTION 1: SCHEDULE 125 — INCOME STATEMENT (GIFI codes)
+  data.push({ range: "'📊 T2 Worksheet'!A3", values: [['  SCHEDULE 125 — INCOME STATEMENT (GIFI)']] });
+  data.push({ range: "'📊 T2 Worksheet'!B5:E5", values: [['REVENUE', '', '', '']]});
+  data.push({ range: "'📊 T2 Worksheet'!B6:E10", values: [
+    ['Sales/services revenue (cash basis)',
+      "=SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!E12:E1000,\">0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")",
+      '8089', '← Total positive Transactions excluding Internal Transfer'],
+    ['Add: Accrued Revenue (FYE adjustments)',
+      "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accrued Revenue\",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Receivable (AR)\",'📓 Adjusting Entries'!F12:F200),0)",
+      '8089', '← AR + Accrued Revenue from Adjusting Entries'],
+    ['TOTAL REVENUE (accrual basis)', '=C6+C7', '8299', '← For Schedule 125 line 8299'],
+    ['', '', '', ''],
+    ['', '', '', ''],
+  ]});
+
+  data.push({ range: "'📊 T2 Worksheet'!B12:E12", values: [['EXPENSES', '', '', '']]});
+  data.push({ range: "'📊 T2 Worksheet'!B13:E25", values: [
+    ['Total operating expenses (cash basis)',
+      "=-SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!E12:E1000,\"<0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")",
+      'multiple', '← Total negative Transactions excluding Internal Transfer'],
+    ['Add: Accrued Expenses + AP (FYE adjustments)',
+      "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accrued Expense\",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Payable (AP)\",'📓 Adjusting Entries'!F12:F200),0)",
+      'multiple', '← AP + Accrued Expenses from Adjusting Entries'],
+    ['Less: Prepaid Expenses (defer to next FY)',
+      "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Prepaid Expense\",'📓 Adjusting Entries'!F12:F200),0)",
+      'adj', '← Negative entries on Adjusting tab reduce expense'],
+    ['CCA (depreciation per Schedule 8)',
+      "=IFERROR(SUM('🛠 Fixed Assets'!I12:I200),0)",
+      '8670', '← Total CCA from Fixed Assets tab'],
+    ['TOTAL EXPENSES (accrual + CCA)', '=C13+C14+C15+C16', '9367', '← For Schedule 125'],
+    ['', '', '', ''],
+    ['NET INCOME PER BOOKS', '=C8-C17', '9999', '← Revenue minus Expenses'],
+    ['', '', '', ''],
+    ['', '', '', ''],
+    ['', '', '', ''],
+    ['', '', '', ''],
+    ['', '', '', ''],
+    ['', '', '', ''],
+  ]});
+
+  // SECTION 2: SCHEDULE 1 — BOOK-TO-TAX ADJUSTMENTS
+  data.push({ range: "'📊 T2 Worksheet'!A28", values: [['  SCHEDULE 1 — BOOK-TO-TAX ADJUSTMENTS']] });
+  data.push({ range: "'📊 T2 Worksheet'!B30:E37", values: [
+    ['Net Income per Books (from above)', '=C19', '', '← Starting point'],
+    ['Add back: 50% of Meals & Entertainment (non-deductible)',
+      "=ROUND(-SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!F12:F1000,\"Meals & Entertainment\",'📒 Transactions'!E12:E1000,\"<0\")*0.5,2)",
+      '101', '← CRA only allows 50% of meals'],
+    ['Add back: Amortization per books',  0, '104', '← Tradebooks doesn\'t book amortization separately; usually $0'],
+    ['Less: CCA per Schedule 8',          '=-C16', '', '← CCA is deducted on tax side instead of book amortization'],
+    ['Less: Other tax adjustments',       0, '', '← Manual entry if any'],
+    ['', '', '', ''],
+    ['TAXABLE INCOME (for T2 line 600)', '=C30+C31+C32+C33+C34', '', '← Net income for tax purposes'],
+    ['', '', '', ''],
+  ]});
+
+  // SECTION 3: SCHEDULE 8 — CCA SUMMARY (just a reference to Fixed Assets totals)
+  data.push({ range: "'📊 T2 Worksheet'!A39", values: [['  SCHEDULE 8 — CCA SUMMARY (per Fixed Assets tab)']] });
+  data.push({ range: "'📊 T2 Worksheet'!B41:E45", values: [
+    ['Total Opening UCC (start of FY)',   "=IFERROR(SUM('🛠 Fixed Assets'!F12:F200),0)", '', ''],
+    ['Total Additions This FY',           "=IFERROR(SUM('🛠 Fixed Assets'!G12:G200),0)", '', ''],
+    ['Total CCA Claimed This FY',         "=IFERROR(SUM('🛠 Fixed Assets'!I12:I200),0)", '', '← Goes to Schedule 1 above'],
+    ['Total Ending UCC (carries forward)', "=IFERROR(SUM('🛠 Fixed Assets'!J12:J200),0)", '', ''],
+    ['', '', '', ''],
+  ]});
+
+  // SECTION 4: SCHEDULE 100 — BALANCE SHEET (rough)
+  data.push({ range: "'📊 T2 Worksheet'!A47", values: [['  SCHEDULE 100 — BALANCE SHEET (rough — verify each line)']] });
+  data.push({ range: "'📊 T2 Worksheet'!B49:E55", values: [
+    ['ASSETS', '', '', ''],
+    ['Cash on hand (per latest reconciled bank balances)',
+      "=IFERROR(SUMIFS('🏦 Account Balances'!I12:I500,'🏦 Account Balances'!K12:K500,\"✓ Balanced\"),0)",
+      '1001', '← From Account Balances tab'],
+    ['Accounts Receivable (AR adjustments at FYE)',
+      "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Receivable (AR)\",'📓 Adjusting Entries'!H12:H200),0)",
+      '1062', '← From Adjusting Entries tab'],
+    ['Net Fixed Assets (Ending UCC)', '=C44', '1781', '← From Schedule 8 above'],
+    ['TOTAL ASSETS', '=C50+C51+C52', '2599', ''],
+    ['', '', '', ''],
+    ['', '', '', ''],
+  ]});
+  data.push({ range: "'📊 T2 Worksheet'!B57:E62", values: [
+    ['LIABILITIES', '', '', ''],
+    ['Accounts Payable (AP adjustments at FYE)',
+      "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Payable (AP)\",'📓 Adjusting Entries'!H12:H200),0)",
+      '2620', '← From Adjusting Entries tab'],
+    ['Other liabilities (manual)', 0, '2960', '← Loans, owner advances, etc.'],
+    ['TOTAL LIABILITIES', '=C58+C59', '3499', ''],
+    ['', '', '', ''],
+    ['EQUITY (plug — Assets minus Liabilities)', '=C53-C60', '3640', '← Should reconcile with retained earnings + share capital'],
+  ]});
+
+  // SECTION 5: TAX CALCULATION (rough estimate)
+  data.push({ range: "'📊 T2 Worksheet'!A64", values: [['  TAX CALCULATION (rough — MNP to verify with actual T2 software)']] });
+  data.push({ range: "'📊 T2 Worksheet'!B66:E70", values: [
+    ['Taxable Income (from Schedule 1 above)', '=C36', '', ''],
+    ['Combined ON+Fed small business rate',    0.125, '', '← 12.5% est. — verify with advisor'],
+    ['Estimated Corporate Tax Owing',          '=C66*C67', '', '← Rough — actual rate depends on TOSI, SBD eligibility, etc.'],
+    ['', '', '', ''],
+    ['HANDOFF NOTE', 'Hand this worksheet to MNP. They review, verify against their own T2 software, and file. Cash-basis books are clean; accrual adjustments are in 📓 Adjusting Entries; CCA is in 🛠 Fixed Assets. All source data is in the books snapshot included with the year-end package.', '', ''],
+  ]});
 
   const valuesResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
     method: 'POST', headers: authHeader,

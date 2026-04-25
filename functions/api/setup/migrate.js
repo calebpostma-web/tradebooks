@@ -86,6 +86,21 @@ async function runMigrations(request, env, dryRunDefault) {
   // ── Migration 4: HST Returns C3 — smart FY start (data-driven default) ──
   await applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, errors, dryRun);
 
+  // ── Migration 5: 🏦 Account Balances tab (bank reconciliation) ──
+  await applyAccountBalancesTab(env, userId, sheetsByTitle, changes, errors, dryRun);
+
+  // ── Migration 6: Year-End per-category breakdown (QUERY pivot) ──
+  await applyYearEndPerCategoryBreakdown(env, userId, sheetsByTitle, changes, errors, dryRun);
+
+  // ── Migration 7: 📓 Adjusting Entries tab (year-end accruals) ──
+  await applyAdjustingEntriesTab(env, userId, sheetsByTitle, changes, errors, dryRun);
+
+  // ── Migration 8: 🛠 Fixed Assets tab (CCA tracker) ──
+  await applyFixedAssetsTab(env, userId, sheetsByTitle, changes, errors, dryRun);
+
+  // ── Migration 9: 📊 T2 Worksheet (consolidated T2-prep view) ──
+  await applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dryRun);
+
   return json({
     ok: true,
     dryRun,
@@ -511,6 +526,666 @@ async function applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, 
   if (!formulaRes.ok) errors.push(`Failed to update HST FY formula: ${formulaRes.error}`);
 
   changes.push(`Updated '${hstTab.title}' C3 to auto-detect Fiscal Year from your latest transaction.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 5: 🏦 Account Balances tab (bank reconciliation)
+// ════════════════════════════════════════════════════════════════════
+// Adds the per-account-per-period reconciliation tab. User enters opening
+// balance + actual closing from each bank statement. Sheet computes expected
+// closing from Transactions and flags any difference. Catches missed /
+// duplicated / wrong-sign rows automatically. Foundational for "MNP can
+// trust these books" — a reconciled book is a believable book.
+async function applyAccountBalancesTab(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  const TITLE = '🏦 Account Balances';
+  if (sheetsByTitle[TITLE]) return;  // already exists
+
+  if (dryRun) {
+    changes.push(`Add '${TITLE}' tab — bank reconciliation: enter opening + closing from each statement, sheet flags any discrepancy with your imported transactions.`);
+    return;
+  }
+
+  // Pick a sheetId that doesn't collide
+  const usedIds = new Set(Object.values(sheetsByTitle).map(s => s.sheetId));
+  let sheetId = 1100;
+  while (usedIds.has(sheetId)) sheetId += 100;
+
+  // Step 1: create the tab
+  const addSheetReq = {
+    addSheet: {
+      properties: {
+        sheetId, title: TITLE,
+        index: Object.keys(sheetsByTitle).length,
+        gridProperties: { rowCount: 500, columnCount: 13, frozenRowCount: 11 },
+        tabColor: COLORS.teal,  // close enough to green; using existing palette
+      },
+    },
+  };
+  const addRes = await spreadsheetsBatchUpdate(env, userId, [addSheetReq]);
+  if (!addRes.ok) {
+    errors.push(`Could not create '${TITLE}' tab: ${addRes.error}`);
+    return;
+  }
+
+  // Step 2: styling — banner, section, header, banding, currency/date formats
+  const styling = [
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 13 },
+        cell: { userEnteredFormat: {
+          backgroundColor: COLORS.teal,
+          textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 12 },
+          horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE',
+          padding: { top: 8, left: 12, right: 12, bottom: 8 },
+        }},
+        fields: 'userEnteredFormat',
+    }},
+    { mergeCells: {
+        range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 13 },
+        mergeType: 'MERGE_ALL',
+    }},
+    { updateDimensionProperties: {
+        range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 },
+        properties: { pixelSize: 36 }, fields: 'pixelSize',
+    }},
+    // Section row label
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 1, endColumnIndex: 7 },
+        cell: { userEnteredFormat: {
+          backgroundColor: COLORS.teal,
+          textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 },
+        }},
+        fields: 'userEnteredFormat',
+    }},
+    // Stats labels (rows 2-7, col B) bold
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 2, endRowIndex: 8, startColumnIndex: 1, endColumnIndex: 2 },
+        cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 10 } }},
+        fields: 'userEnteredFormat.textFormat',
+    }},
+    // Header row (10)
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 1, endColumnIndex: 13 },
+        cell: { userEnteredFormat: {
+          backgroundColor: COLORS.teal,
+          textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 },
+          horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE',
+          wrapStrategy: 'WRAP',
+        }},
+        fields: 'userEnteredFormat',
+    }},
+    { updateDimensionProperties: {
+        range: { sheetId, dimension: 'ROWS', startIndex: 10, endIndex: 11 },
+        properties: { pixelSize: 36 }, fields: 'pixelSize',
+    }},
+    { addBanding: {
+        bandedRange: {
+          range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 1, endColumnIndex: 13 },
+          rowProperties: { firstBandColor: COLORS.white, secondBandColor: COLORS.tealTint },
+        },
+    }},
+    // Date columns D + E
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 3, endColumnIndex: 5 },
+        cell: { userEnteredFormat: { numberFormat: FMT_DATE.numberFormat }},
+        fields: 'userEnteredFormat.numberFormat',
+    }},
+    // Currency columns F-J
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 5, endColumnIndex: 10 },
+        cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }},
+        fields: 'userEnteredFormat.numberFormat',
+    }},
+    colWidthReq(sheetId, 0, 1, 30),    // A gutter
+    colWidthReq(sheetId, 1, 2, 110),   // B Period
+    colWidthReq(sheetId, 2, 3, 100),   // C Account
+    colWidthReq(sheetId, 3, 4, 100),   // D Period Start
+    colWidthReq(sheetId, 4, 5, 100),   // E Period End
+    colWidthReq(sheetId, 5, 6, 110),   // F Opening
+    colWidthReq(sheetId, 6, 7, 110),   // G Sum Activity (formula)
+    colWidthReq(sheetId, 7, 8, 130),   // H Expected Closing (formula)
+    colWidthReq(sheetId, 8, 9, 130),   // I Actual Closing
+    colWidthReq(sheetId, 9, 10, 110),  // J Difference (formula)
+    colWidthReq(sheetId, 10, 11, 110), // K Match (formula)
+    colWidthReq(sheetId, 11, 12, 200), // L Notes
+  ];
+  const styleRes = await spreadsheetsBatchUpdate(env, userId, styling);
+  if (!styleRes.ok) errors.push(`Created '${TITLE}' but styling failed: ${styleRes.error}`);
+
+  // Step 3: populate values + formulas (resolve Transactions tab name for legacy compat)
+  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
+  const txnTitle = txnTab ? txnTab.title : '📒 Transactions';
+
+  const writes = [
+    [`'${TITLE}'!A1`, [['BANK RECONCILIATION  —  Opening + activity = expected closing  ·  Compare to actual to catch errors']]],
+    [`'${TITLE}'!B2`, [['RECONCILIATION SUMMARY']]],
+    [`'${TITLE}'!B3:F3`, [['Periods reconciled', '=COUNTA(B12:B500)', '', '', '']]],
+    [`'${TITLE}'!B4:F4`, [['Periods balanced (✓)', '=COUNTIF(K12:K500,"✓ Balanced")', '', '', '']]],
+    [`'${TITLE}'!B5:F5`, [['Periods OFF (action needed)', '=COUNTIF(K12:K500,"⚠*")', '', '', '']]],
+    [`'${TITLE}'!B6:F6`, [['Total off-by-amount across periods', '=SUMIF(K12:K500,"⚠*",J12:J500)', '', '', '']]],
+    [`'${TITLE}'!B7:F7`, [['How to use this tab', 'Enter period dates + opening + closing balance from each statement. The sheet computes expected closing from your Transactions and flags any difference. A non-zero difference = a missed row, duplicate, wrong sign, or bad amount somewhere.', '', '', '']]],
+    [`'${TITLE}'!B11:L11`, [[
+      'Period', 'Account', 'Period Start', 'Period End', 'Opening Balance',
+      'Sum Activity (auto)', 'Expected Closing (auto)', 'Actual Closing',
+      'Difference (auto)', 'Match (auto)', 'Notes',
+    ]]],
+    [`'${TITLE}'!G12`, [[
+      `=ARRAYFORMULA(IF(C12:C500="","",IFERROR(SUMIFS('${txnTitle}'!N12:N1000,'${txnTitle}'!I12:I1000,C12:C500,'${txnTitle}'!B12:B1000,">="&D12:D500,'${txnTitle}'!B12:B1000,"<="&E12:E500),0)))`
+    ]]],
+    [`'${TITLE}'!H12`, [['=ARRAYFORMULA(IF(C12:C500="","",F12:F500+G12:G500))']]],
+    [`'${TITLE}'!J12`, [['=ARRAYFORMULA(IF(I12:I500="","",H12:H500-I12:I500))']]],
+    [`'${TITLE}'!K12`, [['=ARRAYFORMULA(IF(I12:I500="","",IF(ABS(J12:J500)<0.01,"✓ Balanced","⚠ Off by $"&TEXT(ROUND(J12:J500,2),"0.00"))))']]],
+  ];
+  for (const [range, values] of writes) {
+    const res = await writeRange(env, userId, range, values);
+    if (!res.ok) errors.push(`Failed to populate ${range}: ${res.error}`);
+  }
+
+  changes.push(`Added '${TITLE}' tab — enter opening + closing from each statement, sheet flags any discrepancy with your imported transactions.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 6: Year-End per-category breakdown (QUERY pivot)
+// ════════════════════════════════════════════════════════════════════
+// Adds a dynamic per-category breakdown to the Year-End tab. Uses QUERY to
+// pivot Transactions by category and sum the Total (incl HST) column. Captures
+// every category in use including user-custom ones, sorted biggest first.
+// Replicates the column-totals visual her old spreadsheet had.
+async function applyYearEndPerCategoryBreakdown(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  const yeTab = Object.values(sheetsByTitle).find(s => /year.?end/i.test(s.title));
+  if (!yeTab) return;  // No Year-End tab — partial sheet
+
+  // Need to make sure the grid is large enough for the QUERY rows.
+  // We don't have a clean "is the breakdown already there" check without
+  // reading A62, so re-running is harmless (overwrites with same content).
+  if (dryRun) {
+    changes.push(`Add per-category breakdown to '${yeTab.title}' — auto-populated table showing every category in use with row count + total. Mirrors the column-totals layout you used before.`);
+    return;
+  }
+
+  // Step 1: ensure grid is big enough (need at least 200 rows for the QUERY
+  // output). Older Year-End tabs were 80 rows.
+  const currentRowCount = yeTab.gridProperties?.rowCount || 80;
+  if (currentRowCount < 200) {
+    const expandReq = {
+      updateSheetProperties: {
+        properties: { sheetId: yeTab.sheetId, gridProperties: { rowCount: 200, columnCount: yeTab.gridProperties?.columnCount || 8 }},
+        fields: 'gridProperties.rowCount,gridProperties.columnCount',
+      },
+    };
+    const expandRes = await spreadsheetsBatchUpdate(env, userId, [expandReq]);
+    if (!expandRes.ok) errors.push(`Could not expand '${yeTab.title}' to 200 rows: ${expandRes.error}`);
+  }
+
+  // Step 2: write the section header + QUERY formula. Resolve Transactions
+  // tab name for legacy compat.
+  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
+  const txnTitle = txnTab ? txnTab.title : '📒 Transactions';
+
+  const headerRes = await writeRange(env, userId, `'${yeTab.title}'!A62`,
+    [['  PER-CATEGORY BREAKDOWN  (all-time, every category in use, biggest first)']]);
+  if (!headerRes.ok) errors.push(`Failed to write breakdown header: ${headerRes.error}`);
+
+  const formula = `=IFERROR(QUERY('${txnTitle}'!B12:N1000, "SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'", 0), "No transactions yet — import a statement to populate this breakdown.")`;
+  const formulaRes = await writeRange(env, userId, `'${yeTab.title}'!B63`, [[formula]]);
+  if (!formulaRes.ok) errors.push(`Failed to write breakdown formula: ${formulaRes.error}`);
+
+  changes.push(`Added per-category breakdown to '${yeTab.title}' — see PER-CATEGORY BREAKDOWN section near the bottom for auto-populated category totals.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 7: 📓 Adjusting Entries tab (year-end accruals)
+// ════════════════════════════════════════════════════════════════════
+// Adds the linchpin tab for accrual adjustments at year-end. User enters one
+// row per adjustment (AR, AP, prepaid, accrued). Year-End summary picks them
+// up so cash-basis books become T2-ready. Without this tab, MNP has to make
+// the entries themselves — which means full prep, not review-only.
+async function applyAdjustingEntriesTab(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  const TITLE = '📓 Adjusting Entries';
+  if (sheetsByTitle[TITLE]) return;
+
+  if (dryRun) {
+    changes.push(`Add '${TITLE}' tab — log year-end accrual adjustments (AR, AP, prepaids) so the books become accrual-ready for the T2.`);
+    return;
+  }
+
+  const usedIds = new Set(Object.values(sheetsByTitle).map(s => s.sheetId));
+  let sheetId = 1200;
+  while (usedIds.has(sheetId)) sheetId += 100;
+
+  // Create tab
+  const addRes = await spreadsheetsBatchUpdate(env, userId, [{
+    addSheet: {
+      properties: {
+        sheetId, title: TITLE,
+        index: Object.keys(sheetsByTitle).length,
+        gridProperties: { rowCount: 200, columnCount: 13, frozenRowCount: 11 },
+        tabColor: COLORS.teal,
+      },
+    },
+  }]);
+  if (!addRes.ok) {
+    errors.push(`Could not create '${TITLE}': ${addRes.error}`);
+    return;
+  }
+
+  // Styling
+  const styling = [
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 13 },
+        cell: { userEnteredFormat: {
+          backgroundColor: COLORS.teal,
+          textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 12 },
+          horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE',
+          padding: { top: 8, left: 12, right: 12, bottom: 8 },
+        }},
+        fields: 'userEnteredFormat',
+    }},
+    { mergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' }},
+    { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 36 }, fields: 'pixelSize' }},
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 1, endColumnIndex: 7 },
+        cell: { userEnteredFormat: { backgroundColor: COLORS.teal, textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 }}},
+        fields: 'userEnteredFormat',
+    }},
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 2, endRowIndex: 10, startColumnIndex: 1, endColumnIndex: 2 },
+        cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 10 }}},
+        fields: 'userEnteredFormat.textFormat',
+    }},
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 1, endColumnIndex: 13 },
+        cell: { userEnteredFormat: {
+          backgroundColor: COLORS.teal,
+          textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 },
+          horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP',
+        }},
+        fields: 'userEnteredFormat',
+    }},
+    { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' }},
+    { addBanding: {
+        bandedRange: {
+          range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 1, endColumnIndex: 13 },
+          rowProperties: { firstBandColor: COLORS.white, secondBandColor: COLORS.tealTint },
+        },
+    }},
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 1, endColumnIndex: 2 },
+        cell: { userEnteredFormat: { numberFormat: FMT_DATE.numberFormat }},
+        fields: 'userEnteredFormat.numberFormat',
+    }},
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 5, endColumnIndex: 8 },
+        cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }},
+        fields: 'userEnteredFormat.numberFormat',
+    }},
+    { setDataValidation: {
+        range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 2, endColumnIndex: 3 },
+        rule: { condition: { type: 'ONE_OF_LIST', values: [
+          { userEnteredValue: 'Accounts Receivable (AR)' },
+          { userEnteredValue: 'Accounts Payable (AP)' },
+          { userEnteredValue: 'Prepaid Expense' },
+          { userEnteredValue: 'Accrued Expense' },
+          { userEnteredValue: 'Accrued Revenue' },
+          { userEnteredValue: 'Depreciation (CCA)' },
+          { userEnteredValue: 'Other Adjustment' },
+        ]}, showCustomUi: true },
+    }},
+    colWidthReq(sheetId, 0, 1, 30),
+    colWidthReq(sheetId, 1, 2, 100),
+    colWidthReq(sheetId, 2, 3, 180),
+    colWidthReq(sheetId, 3, 4, 280),
+    colWidthReq(sheetId, 4, 5, 150),
+    colWidthReq(sheetId, 5, 6, 110),
+    colWidthReq(sheetId, 6, 7, 100),
+    colWidthReq(sheetId, 7, 8, 110),
+    colWidthReq(sheetId, 8, 9, 200),
+    colWidthReq(sheetId, 9, 10, 130),
+    colWidthReq(sheetId, 10, 11, 200),
+    colWidthReq(sheetId, 11, 12, 80),
+  ];
+  const styleRes = await spreadsheetsBatchUpdate(env, userId, styling);
+  if (!styleRes.ok) errors.push(`Created '${TITLE}' but styling failed: ${styleRes.error}`);
+
+  // Populate values
+  const writes = [
+    [`'${TITLE}'!A1`, [['YEAR-END ADJUSTING ENTRIES  —  Convert cash-basis books to accrual-basis for the T2  ·  AR / AP / Prepaids / Accruals']]],
+    [`'${TITLE}'!B2`, [['ADJUSTMENT TOTALS  (by type)']]],
+    [`'${TITLE}'!B3:F3`, [['Accounts Receivable (revenue to add)', '=SUMIF(C12:C200,"Accounts Receivable (AR)",F12:F200)', '', '', '']]],
+    [`'${TITLE}'!B4:F4`, [['Accounts Payable (expenses to add)', '=SUMIF(C12:C200,"Accounts Payable (AP)",F12:F200)', '', '', '']]],
+    [`'${TITLE}'!B5:F5`, [['Prepaid Expenses (deferred to next FY)', '=SUMIF(C12:C200,"Prepaid Expense",F12:F200)', '', '', '']]],
+    [`'${TITLE}'!B6:F6`, [['Accrued Expenses (booked, not yet paid)', '=SUMIF(C12:C200,"Accrued Expense",F12:F200)', '', '', '']]],
+    [`'${TITLE}'!B7:F7`, [['Accrued Revenue (earned, not yet billed)', '=SUMIF(C12:C200,"Accrued Revenue",F12:F200)', '', '', '']]],
+    [`'${TITLE}'!B8:F8`, [['Depreciation (CCA from Fixed Assets)', '=SUMIF(C12:C200,"Depreciation (CCA)",F12:F200)', '', '', '']]],
+    [`'${TITLE}'!B9:F9`, [['Total adjustments', '=SUM(F12:F200)', '', '', '']]],
+    [`'${TITLE}'!B11:L11`, [[
+      'Date', 'Type', 'Description', 'Counterparty', 'Net Amount',
+      'HST', 'Total (auto)', 'Effect on Books', 'Linked Invoice / Bill', 'Notes', 'FY',
+    ]]],
+    [`'${TITLE}'!H12`, [['=ARRAYFORMULA(IF(F12:F200="","",F12:F200+G12:G200*SIGN(F12:F200)))']]],
+  ];
+  for (const [range, values] of writes) {
+    const res = await writeRange(env, userId, range, values);
+    if (!res.ok) errors.push(`Failed to populate ${range}: ${res.error}`);
+  }
+
+  changes.push(`Added '${TITLE}' tab — log year-end accrual adjustments to make the books T2-ready (the linchpin for MNP review-only engagement).`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 8: 🛠 Fixed Assets tab (CCA tracker)
+// ════════════════════════════════════════════════════════════════════
+// Adds the CCA tracker for fixed assets (vehicles, tools, equipment, etc).
+// Tracks UCC year-over-year, computes annual CCA for the T2 Schedule 8.
+// Pre-loaded with common CCA classes for trades businesses.
+async function applyFixedAssetsTab(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  const TITLE = '🛠 Fixed Assets';
+  if (sheetsByTitle[TITLE]) return;
+
+  if (dryRun) {
+    changes.push(`Add '${TITLE}' tab — track capital assets (trucks, tools, equipment) and compute annual CCA for the T2 Schedule 8.`);
+    return;
+  }
+
+  const usedIds = new Set(Object.values(sheetsByTitle).map(s => s.sheetId));
+  let sheetId = 1300;
+  while (usedIds.has(sheetId)) sheetId += 100;
+
+  const addRes = await spreadsheetsBatchUpdate(env, userId, [{
+    addSheet: {
+      properties: {
+        sheetId, title: TITLE,
+        index: Object.keys(sheetsByTitle).length,
+        gridProperties: { rowCount: 200, columnCount: 13, frozenRowCount: 11 },
+        tabColor: COLORS.blue,
+      },
+    },
+  }]);
+  if (!addRes.ok) {
+    errors.push(`Could not create '${TITLE}': ${addRes.error}`);
+    return;
+  }
+
+  // Styling
+  const styling = [
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 13 },
+        cell: { userEnteredFormat: {
+          backgroundColor: COLORS.blue,
+          textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 12 },
+          horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE',
+          padding: { top: 8, left: 12, right: 12, bottom: 8 },
+        }},
+        fields: 'userEnteredFormat',
+    }},
+    { mergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' }},
+    { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 36 }, fields: 'pixelSize' }},
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 1, endColumnIndex: 7 },
+        cell: { userEnteredFormat: { backgroundColor: COLORS.blue, textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 }}},
+        fields: 'userEnteredFormat',
+    }},
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 2, endRowIndex: 10, startColumnIndex: 1, endColumnIndex: 2 },
+        cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 10 }}},
+        fields: 'userEnteredFormat.textFormat',
+    }},
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 1, endColumnIndex: 13 },
+        cell: { userEnteredFormat: {
+          backgroundColor: COLORS.blue,
+          textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 },
+          horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP',
+        }},
+        fields: 'userEnteredFormat',
+    }},
+    { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' }},
+    { addBanding: {
+        bandedRange: {
+          range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 1, endColumnIndex: 13 },
+          rowProperties: { firstBandColor: COLORS.white, secondBandColor: COLORS.blueTint },
+        },
+    }},
+    { repeatCell: { range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 3, endColumnIndex: 4 }, cell: { userEnteredFormat: { numberFormat: FMT_DATE.numberFormat }}, fields: 'userEnteredFormat.numberFormat' }},
+    { repeatCell: { range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 4, endColumnIndex: 7 }, cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }}, fields: 'userEnteredFormat.numberFormat' }},
+    { repeatCell: { range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 7, endColumnIndex: 8 }, cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0%' }}}, fields: 'userEnteredFormat.numberFormat' }},
+    { repeatCell: { range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 8, endColumnIndex: 10 }, cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }}, fields: 'userEnteredFormat.numberFormat' }},
+    { setDataValidation: {
+        range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 1, endColumnIndex: 2 },
+        rule: { condition: { type: 'ONE_OF_LIST', values: [
+          { userEnteredValue: 'Class 8 (20%) — Tools, equipment, furniture' },
+          { userEnteredValue: 'Class 10 (30%) — Vehicles, work trucks <$36k' },
+          { userEnteredValue: 'Class 10.1 (30%) — Luxury vehicles ≥$36k' },
+          { userEnteredValue: 'Class 12 (100%) — Small tools <$500, software' },
+          { userEnteredValue: 'Class 14.1 (5%) — Goodwill, intangibles' },
+          { userEnteredValue: 'Class 16 (40%) — Heavy trucks >11,788kg' },
+          { userEnteredValue: 'Class 50 (55%) — Computers, computer software' },
+          { userEnteredValue: 'Class 53 (50%) — Manufacturing equipment' },
+          { userEnteredValue: 'Class 6 (10%) — Wood-frame buildings' },
+          { userEnteredValue: 'Class 1 (4%) — Other buildings' },
+          { userEnteredValue: 'Other (enter rate manually)' },
+        ]}, showCustomUi: true },
+    }},
+    { setDataValidation: {
+        range: { sheetId, startRowIndex: 11, endRowIndex: 200, startColumnIndex: 10, endColumnIndex: 11 },
+        rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: 'No' }, { userEnteredValue: 'Yes' }]}, showCustomUi: true },
+    }},
+    colWidthReq(sheetId, 0, 1, 30),
+    colWidthReq(sheetId, 1, 2, 280),
+    colWidthReq(sheetId, 2, 3, 220),
+    colWidthReq(sheetId, 3, 4, 110),
+    colWidthReq(sheetId, 4, 5, 110),
+    colWidthReq(sheetId, 5, 6, 110),
+    colWidthReq(sheetId, 6, 7, 110),
+    colWidthReq(sheetId, 7, 8, 80),
+    colWidthReq(sheetId, 8, 9, 110),
+    colWidthReq(sheetId, 9, 10, 110),
+    colWidthReq(sheetId, 10, 11, 80),
+    colWidthReq(sheetId, 11, 12, 200),
+  ];
+  const styleRes = await spreadsheetsBatchUpdate(env, userId, styling);
+  if (!styleRes.ok) errors.push(`Created '${TITLE}' but styling failed: ${styleRes.error}`);
+
+  // Populate values + formulas
+  const writes = [
+    [`'${TITLE}'!A1`, [['FIXED ASSETS  —  CCA Tracker  ·  Capital Cost Allowance for T2 Schedule 8']]],
+    [`'${TITLE}'!B2`, [['CCA SUMMARY  (this fiscal year)']]],
+    [`'${TITLE}'!B3:F3`, [['Total assets tracked', '=COUNTA(B12:B200)', '', '', '']]],
+    [`'${TITLE}'!B4:F4`, [['Total Original Cost (ever)', '=SUM(E12:E200)', '', '', '']]],
+    [`'${TITLE}'!B5:F5`, [['Total Opening UCC (this FY)', '=SUM(F12:F200)', '', '', '']]],
+    [`'${TITLE}'!B6:F6`, [['Total Additions This FY', '=SUM(G12:G200)', '', '', '']]],
+    [`'${TITLE}'!B7:F7`, [['Total CCA This FY (T2 deduction)', '=SUM(I12:I200)', '', '', '']]],
+    [`'${TITLE}'!B8:F8`, [['Total Ending UCC (carries to next FY)', '=SUM(J12:J200)', '', '', '']]],
+    [`'${TITLE}'!B9:F9`, [['How to use', "Add one row per asset. At each year end: enter Opening UCC + any new Additions. CCA + Ending UCC compute automatically. Carry Ending UCC into next year's Opening UCC.", '', '', '']]],
+    [`'${TITLE}'!B11:L11`, [[
+      'CCA Class', 'Description', 'Date Acquired', 'Original Cost', 'Opening UCC',
+      'Additions This FY', 'CCA Rate', 'CCA This FY', 'Ending UCC', 'Disposed?', 'Notes',
+    ]]],
+    [`'${TITLE}'!H12`, [['=ARRAYFORMULA(IF(B12:B200="","",IFERROR(VALUE(REGEXEXTRACT(B12:B200,"\\((\\d+)%\\)"))/100,0)))']]],
+    [`'${TITLE}'!I12`, [['=ARRAYFORMULA(IF(B12:B200="","",IF(K12:K200="Yes",0, ROUND((F12:F200 + G12:G200/2) * H12:H200, 2))))']]],
+    [`'${TITLE}'!J12`, [['=ARRAYFORMULA(IF(B12:B200="","",F12:F200 + G12:G200 - I12:I200))']]],
+  ];
+  for (const [range, values] of writes) {
+    const res = await writeRange(env, userId, range, values);
+    if (!res.ok) errors.push(`Failed to populate ${range}: ${res.error}`);
+  }
+
+  changes.push(`Added '${TITLE}' tab — track capital assets and compute CCA automatically for the T2 Schedule 8.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 9: 📊 T2 Worksheet (consolidated T2-prep view)
+// ════════════════════════════════════════════════════════════════════
+// The deliverable MNP reviews. Pulls from every other tab to produce the
+// numbers MNP needs to file the T2 — no transcription required, just review.
+async function applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  const TITLE = '📊 T2 Worksheet';
+  if (sheetsByTitle[TITLE]) return;
+
+  if (dryRun) {
+    changes.push(`Add '${TITLE}' tab — consolidated T2-prep view that MNP reviews instead of preparing themselves. Pulls Income Statement, Schedule 1 adjustments, CCA summary, and rough Balance Sheet from your other tabs.`);
+    return;
+  }
+
+  const usedIds = new Set(Object.values(sheetsByTitle).map(s => s.sheetId));
+  let sheetId = 1400;
+  while (usedIds.has(sheetId)) sheetId += 100;
+
+  // Resolve other tab names for legacy compat
+  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
+  const txnTitle = txnTab ? txnTab.title : '📒 Transactions';
+
+  const addRes = await spreadsheetsBatchUpdate(env, userId, [{
+    addSheet: {
+      properties: {
+        sheetId, title: TITLE,
+        index: Object.keys(sheetsByTitle).length,
+        gridProperties: { rowCount: 100, columnCount: 8 },
+        tabColor: COLORS.teal,
+      },
+    },
+  }]);
+  if (!addRes.ok) {
+    errors.push(`Could not create '${TITLE}': ${addRes.error}`);
+    return;
+  }
+
+  // Light styling
+  const styling = [
+    { repeatCell: {
+        range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
+        cell: { userEnteredFormat: {
+          backgroundColor: COLORS.teal,
+          textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 12 },
+          horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE',
+          padding: { top: 8, left: 12, right: 12, bottom: 8 },
+        }},
+        fields: 'userEnteredFormat',
+    }},
+    { mergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 }, mergeType: 'MERGE_ALL' }},
+    { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 36 }, fields: 'pixelSize' }},
+    { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: 99, startColumnIndex: 2, endColumnIndex: 3 }, cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat, horizontalAlignment: 'RIGHT' }}, fields: 'userEnteredFormat.numberFormat,userEnteredFormat.horizontalAlignment' }},
+    colWidthReq(sheetId, 0, 1, 30),
+    colWidthReq(sheetId, 1, 2, 360),
+    colWidthReq(sheetId, 2, 3, 130),
+    colWidthReq(sheetId, 3, 4, 90),
+    colWidthReq(sheetId, 4, 5, 240),
+  ];
+  await spreadsheetsBatchUpdate(env, userId, styling);
+
+  // Load business name + FYE for the banner
+  let bizName = 'Your Business', fye = 'March 31';
+  try {
+    const profileRow = await env.DB.prepare('SELECT business_name, fiscal_year_end FROM profiles WHERE user_id = ?')
+      .bind(userId).first();
+    if (profileRow) {
+      bizName = profileRow.business_name || bizName;
+      fye = profileRow.fiscal_year_end || fye;
+    }
+  } catch (e) { /* fall back to defaults */ }
+
+  // Populate values + formulas
+  const writes = [
+    [`'${TITLE}'!A1`, [[`T2 WORKSHEET  —  ${bizName}  ·  Year-end ${fye}  ·  Hand this to MNP for review`]]],
+
+    // Schedule 125 — Income Statement
+    [`'${TITLE}'!A3`, [['  SCHEDULE 125 — INCOME STATEMENT (GIFI)']]],
+    [`'${TITLE}'!B5:E5`, [['REVENUE', '', '', '']]],
+    [`'${TITLE}'!B6:E10`, [
+      ['Sales/services revenue (cash basis)',
+        `=SUMIFS('${txnTitle}'!E12:E1000,'${txnTitle}'!E12:E1000,">0",'${txnTitle}'!F12:F1000,"<>Internal Transfer")`,
+        '8089', '← Total positive Transactions excluding Internal Transfer'],
+      ['Add: Accrued Revenue (FYE adjustments)',
+        `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Accrued Revenue",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,"Accounts Receivable (AR)",'📓 Adjusting Entries'!F12:F200),0)`,
+        '8089', '← AR + Accrued Revenue from Adjusting Entries'],
+      ['TOTAL REVENUE (accrual basis)', '=C6+C7', '8299', '← For Schedule 125 line 8299'],
+      ['', '', '', ''], ['', '', '', ''],
+    ]],
+    [`'${TITLE}'!B12:E12`, [['EXPENSES', '', '', '']]],
+    [`'${TITLE}'!B13:E25`, [
+      ['Total operating expenses (cash basis)',
+        `=-SUMIFS('${txnTitle}'!E12:E1000,'${txnTitle}'!E12:E1000,"<0",'${txnTitle}'!F12:F1000,"<>Internal Transfer")`,
+        'multiple', '← Total negative Transactions excluding Internal Transfer'],
+      ['Add: Accrued Expenses + AP (FYE adjustments)',
+        `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Accrued Expense",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,"Accounts Payable (AP)",'📓 Adjusting Entries'!F12:F200),0)`,
+        'multiple', '← AP + Accrued Expenses from Adjusting Entries'],
+      ['Less: Prepaid Expenses (defer to next FY)',
+        `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Prepaid Expense",'📓 Adjusting Entries'!F12:F200),0)`,
+        'adj', '← Negative entries on Adjusting tab reduce expense'],
+      ['CCA (depreciation per Schedule 8)',
+        `=IFERROR(SUM('🛠 Fixed Assets'!I12:I200),0)`,
+        '8670', '← Total CCA from Fixed Assets tab'],
+      ['TOTAL EXPENSES (accrual + CCA)', '=C13+C14+C15+C16', '9367', '← For Schedule 125'],
+      ['', '', '', ''],
+      ['NET INCOME PER BOOKS', '=C8-C17', '9999', '← Revenue minus Expenses'],
+      ['', '', '', ''], ['', '', '', ''], ['', '', '', ''], ['', '', '', ''], ['', '', '', ''], ['', '', '', ''],
+    ]],
+
+    // Schedule 1 — Book-to-Tax
+    [`'${TITLE}'!A28`, [['  SCHEDULE 1 — BOOK-TO-TAX ADJUSTMENTS']]],
+    [`'${TITLE}'!B30:E37`, [
+      ['Net Income per Books (from above)', '=C19', '', '← Starting point'],
+      ['Add back: 50% of Meals & Entertainment (non-deductible)',
+        `=ROUND(-SUMIFS('${txnTitle}'!E12:E1000,'${txnTitle}'!F12:F1000,"Meals & Entertainment",'${txnTitle}'!E12:E1000,"<0")*0.5,2)`,
+        '101', '← CRA only allows 50% of meals'],
+      ['Add back: Amortization per books', 0, '104', '← Tradebooks doesn\'t book amortization separately; usually $0'],
+      ['Less: CCA per Schedule 8', '=-C16', '', '← CCA is deducted on tax side instead of book amortization'],
+      ['Less: Other tax adjustments', 0, '', '← Manual entry if any'],
+      ['', '', '', ''],
+      ['TAXABLE INCOME (for T2 line 600)', '=C30+C31+C32+C33+C34', '', '← Net income for tax purposes'],
+      ['', '', '', ''],
+    ]],
+
+    // Schedule 8 — CCA summary
+    [`'${TITLE}'!A39`, [['  SCHEDULE 8 — CCA SUMMARY (per Fixed Assets tab)']]],
+    [`'${TITLE}'!B41:E45`, [
+      ['Total Opening UCC (start of FY)', `=IFERROR(SUM('🛠 Fixed Assets'!F12:F200),0)`, '', ''],
+      ['Total Additions This FY', `=IFERROR(SUM('🛠 Fixed Assets'!G12:G200),0)`, '', ''],
+      ['Total CCA Claimed This FY', `=IFERROR(SUM('🛠 Fixed Assets'!I12:I200),0)`, '', '← Goes to Schedule 1 above'],
+      ['Total Ending UCC (carries forward)', `=IFERROR(SUM('🛠 Fixed Assets'!J12:J200),0)`, '', ''],
+      ['', '', '', ''],
+    ]],
+
+    // Schedule 100 — Balance Sheet (rough)
+    [`'${TITLE}'!A47`, [['  SCHEDULE 100 — BALANCE SHEET (rough — verify each line)']]],
+    [`'${TITLE}'!B49:E55`, [
+      ['ASSETS', '', '', ''],
+      ['Cash on hand (per latest reconciled bank balances)',
+        `=IFERROR(SUMIFS('🏦 Account Balances'!I12:I500,'🏦 Account Balances'!K12:K500,"✓ Balanced"),0)`,
+        '1001', '← From Account Balances tab'],
+      ['Accounts Receivable (AR adjustments at FYE)',
+        `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Accounts Receivable (AR)",'📓 Adjusting Entries'!H12:H200),0)`,
+        '1062', '← From Adjusting Entries tab'],
+      ['Net Fixed Assets (Ending UCC)', '=C44', '1781', '← From Schedule 8 above'],
+      ['TOTAL ASSETS', '=C50+C51+C52', '2599', ''],
+      ['', '', '', ''], ['', '', '', ''],
+    ]],
+    [`'${TITLE}'!B57:E62`, [
+      ['LIABILITIES', '', '', ''],
+      ['Accounts Payable (AP adjustments at FYE)',
+        `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Accounts Payable (AP)",'📓 Adjusting Entries'!H12:H200),0)`,
+        '2620', '← From Adjusting Entries tab'],
+      ['Other liabilities (manual)', 0, '2960', '← Loans, owner advances, etc.'],
+      ['TOTAL LIABILITIES', '=C58+C59', '3499', ''],
+      ['', '', '', ''],
+      ['EQUITY (plug — Assets minus Liabilities)', '=C53-C60', '3640', '← Should reconcile with retained earnings + share capital'],
+    ]],
+
+    // Tax Calculation
+    [`'${TITLE}'!A64`, [['  TAX CALCULATION (rough — MNP to verify with actual T2 software)']]],
+    [`'${TITLE}'!B66:E70`, [
+      ['Taxable Income (from Schedule 1 above)', '=C36', '', ''],
+      ['Combined ON+Fed small business rate', 0.125, '', '← 12.5% est. — verify with advisor'],
+      ['Estimated Corporate Tax Owing', '=C66*C67', '', '← Rough — actual rate depends on TOSI, SBD eligibility, etc.'],
+      ['', '', '', ''],
+      ['HANDOFF NOTE', 'Hand this worksheet to MNP. They review, verify against their own T2 software, and file. Cash-basis books are clean; accrual adjustments are in 📓 Adjusting Entries; CCA is in 🛠 Fixed Assets. All source data is in the books snapshot included with the year-end package.', '', ''],
+    ]],
+  ];
+  for (const [range, values] of writes) {
+    const res = await writeRange(env, userId, range, values);
+    if (!res.ok) errors.push(`Failed to populate ${range}: ${res.error}`);
+  }
+
+  changes.push(`Added '${TITLE}' tab — consolidated T2-prep view that MNP reviews instead of preparing.`);
 }
 
 // ── Helpers ──

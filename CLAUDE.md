@@ -41,11 +41,15 @@ have variants, see "Tab name compatibility" below):
 - `🗂 Categories` — category list (default + user-custom)
 - `📒 Transactions` — main ledger (cash basis), 14 cols B-N, last col is Total formula
 - `🧾 Invoices` — invoice log, 17 cols B-Q, deposit columns O/P/Q
-- `📋 HST Returns` — quarterly HST return workbook
-- `📅 Year-End` — year-end summary + corp tax estimator
+- `📋 HST Returns` — quarterly HST return workbook (C3 is FY Start, auto-detected from latest transaction)
+- `📅 Year-End` — year-end summary + corp tax estimator + per-category breakdown
 - `💼 Payroll` — pay runs, T4 source of truth
 - `📝 Work Log` — contemporaneous work entries (CRA audit defence)
 - `📑 CRA Remittances` — every payment to CRA (HST, payroll, corp tax)
+- `🏦 Account Balances` — bank reconciliation. Per row: account + period + opening + closing. Sheet computes expected closing from Transactions and flags discrepancies.
+- `📓 Adjusting Entries` — year-end accruals (AR, AP, prepaids). Bridges cash-basis to accrual-basis for the T2.
+- `🛠 Fixed Assets` — CCA tracker. Per asset: class + cost + UCC. Computes annual CCA for Schedule 8.
+- `📊 T2 Worksheet` — consolidated T2-prep view. Pulls from every other tab to produce the data MNP reviews.
 
 Every sheet creation goes through `functions/api/google-setup.js`. Schema
 upgrades for existing sheets go through `functions/api/setup/migrate.js`
@@ -93,18 +97,18 @@ The category `Internal Transfer` is excluded from P&L AND HST math
    fetch('/api/debug/whoami', {headers: {'Authorization': 'Bearer ' + sessionStorage.getItem('tradebooks_session')}}).then(r => r.json()).then(d => console.log(JSON.stringify(d, null, 2)))
    ```
 
-## Pending — the review-only roadmap
+## Review-only roadmap — STATUS
 
-To unlock MNP review-only engagement, the missing pieces are (in build order):
+To unlock MNP review-only engagement (the north-star goal), three pieces were
+needed. As of 2026-04-25, all three shipped:
 
-1. **Year-end accrual entries module** (highest leverage). Prompts at FYE:
-   "any invoices outstanding at Mar 31? any bills you owe? prepaid insurance?
-   accrued utilities?" → posts adjusting journal entries. Without this, MNP
-   still has to make the entries themselves.
-2. **CCA tracker** — fixed assets (vehicles, tools, equipment) with correct
-   CCA class + half-year rule. Schedule 8 prep.
-3. **Draft T2 schedules** — at minimum Schedule 100/125 GIFI lines populated
-   from Year-End data, plus Schedule 1 book-to-tax adjustments.
+1. ✅ **Year-end accrual entries module** — `📓 Adjusting Entries` tab + `/api/accrual/log` endpoint + UI on Year-End Package tab. AR / AP / Prepaids / Accruals.
+2. ✅ **CCA tracker** — `🛠 Fixed Assets` tab with pre-loaded CCA classes (8/10/12/50/etc.). Computes UCC + annual CCA via formulas. Half-year rule applied to Additions.
+3. ✅ **T2 worksheet** — `📊 T2 Worksheet` tab pulls everything together: Schedule 125 (Income Statement w/ GIFI codes), Schedule 1 (book-to-tax adjustments), Schedule 8 (CCA summary), Schedule 100 (rough Balance Sheet), tax estimate. THIS is the document MNP reviews.
+
+Foundation also shipped:
+- ✅ **Bank reconciliation** — `🏦 Account Balances` tab. Catches missed/duplicate/wrong-sign rows by comparing expected vs actual closing balance.
+- ✅ **Per-category breakdown** on Year-End tab via dynamic QUERY pivot.
 
 ## Conventions + gotchas
 
@@ -163,15 +167,34 @@ Edit `app/index.html` directly in browser DevTools to iterate fast on
 front-end changes without redeploying. Real changes must be committed
 + pushed to take effect for users.
 
-## Status as of 2026-04-25
+## Status as of 2026-04-25 (end of Day 1)
 
-- All deposit invoice + CRA payments + year-end package features shipped
-- Sheet migration system shipped (idempotent, auto-detected on app load)
+**Shipped today:**
+- Deposit invoice + CRA payments + year-end package features
+- Sheet migration system (idempotent, auto-detected on app load via banner)
 - Auth flow bug fixed (was silently dropping plain Google sign-in callback)
 - OAuth scope expanded to include `drive.file`
-- Diagnostic endpoint live for debugging account state
-- Caleb's wife is the first real-world stress tester
-- Pending: accruals module, CCA tracker, T2 schedules (the review-only roadmap)
+- Diagnostic endpoint live for debugging account state (`/api/debug/whoami`)
+- 4 importer bug fixes (bank tagging, income categorization, AMEX dedup, HST FY)
+- Sign architecture refactor — bank statement direction = source of truth
+- Per-row + bulk sign-flip UI for AI extraction errors
+- Total (incl HST) column N on Transactions
+- 🏦 Account Balances tab (bank reconciliation)
+- Per-category breakdown on Year-End tab (dynamic QUERY)
+- 📓 Adjusting Entries tab + /api/accrual/log + UI form
+- 🛠 Fixed Assets tab (CCA tracker)
+- 📊 T2 Worksheet tab (consolidated T2-prep view for MNP)
+
+**Migration count:** 9 idempotent migrations in `functions/api/setup/migrate.js`. Existing users hit "Update sheet to latest schema" once and get all of it.
+
+**The review-only roadmap is done at the structural level.** Caleb's wife can now:
+1. Import bank/AMEX statements (with sign-flip safety net)
+2. Reconcile against statement balances
+3. Log CRA payments
+4. Log year-end accruals
+5. Track fixed assets / CCA
+6. Generate the T2 Worksheet that MNP reviews
+7. Build a year-end package with everything bundled into a Drive folder
 
 ## Next session — start here
 
@@ -182,52 +205,37 @@ She's been the first real-world user. Whatever she found (UX confusion,
 errors, missing fields, "I expected X here") trumps speculative new
 features. Fix what hurts before building forward.
 
-### Step 2 — start on the review-only roadmap, in this order
-The single highest-leverage next-feature direction. All three deliver
-toward the "MNP just reviews and files for FY2027" goal:
+### Step 2 — depending on what's broken or what's next
 
-1. **Year-end accruals module** (~2-3 hours) — THE linchpin. New tab or
-   section in Year-End. Walks the user through end-of-year adjustments:
-   - Invoices outstanding at Mar 31 → AR
-   - Bills owed but unpaid → AP
-   - Prepaid insurance / utilities
-   - Accrued utilities / wages
-   - Depreciation (deferred to CCA tracker — see #2)
-   Each prompt → posts an adjusting journal entry to a new tab `📓 Adjusting Entries`.
-   Year-End summary picks them up so the cash-basis books become accrual-ready
-   for the T2. **Without this, MNP still has to make the entries themselves —
-   so the review-only engagement doesn't fly.**
+The review-only roadmap is structurally complete. Future work splits into:
 
-2. **CCA tracker** (~2 hours) — new tab `🛠 Fixed Assets`. Each row: asset
-   description, purchase date, cost, CCA class, prior UCC, half-year rule
-   flag. Computes current-year CCA + ending UCC. Feeds Schedule 8.
+**Real-world testing fixes** — whatever Caleb's wife (or future users) finds when actually using these tabs. Bugs trump new features.
 
-3. **Draft T2 schedules** (~3-4 hours) — most ambitious. Generate from
-   Year-End data:
-   - Schedule 100 (Balance Sheet) — GIFI codes
-   - Schedule 125 (Income Statement) — GIFI codes
-   - Schedule 1 (book-to-tax adjustments — meals 50%, depreciation reversal, etc.)
-   - Schedule 8 (CCA — pulls from #2)
-   Output as a downloadable PDF or printable view MNP can verify against
-   their T2 software.
-
-### Step 3 — smaller polish (only if accruals/CCA/T2 are done or blocked)
-
-- **Receipt scanner → Transaction link.** Currently a scanned receipt PDF
-  goes to Drive but isn't tied to its Transaction row. Add a column to
-  Transactions for receipt Drive URL, write it from the scanner flow when
-  the user accepts the categorization.
+**Polish / nice-to-haves:**
+- **Per-FY HST tabs** (deferred from Day 1) — currently single HST Returns tab with editable C3. Could split into per-FY tabs for permanent filed-return archive.
+- **Receipt scanner → Transaction link** — scanned PDF goes to Drive but isn't tied to its Transaction row.
 - **Mobile UX pass** on Invoice Wizard — kitchen-table flow on phone.
-  Already partially mobile-friendly; needs a real review on a small screen.
-- **"What is this?" tooltips** on year-end accruals (non-accountants need
-  to understand what a prepaid expense is before they can answer the prompt).
-- **Google OAuth verification** — only matters if tradebooks goes beyond
-  Caleb's family. Weeks-long process, lots of paperwork. Skip unless
-  productizing.
+- **"What is this?" tooltips** on accruals UI for non-accountants.
 
-### Why this order
+**Integration / enhancement:**
+- **Auto-detect AR at FYE** — when user opens accruals form, pre-populate from Invoices tab where Status != Paid and Date Issued is in the FY.
+- **Pre-populate AP from common bills** (e.g. recent utility patterns).
+- **Snapshot HST returns when filing** — preserve filed numbers.
 
-The accruals module alone closes the biggest gap between cash-basis books
-and what an accountant can sign off on. CCA + T2 schedules build on it.
-By the time FY2027 ends (Mar 31, 2027), all three should be in place,
-tested over the year, and ready for MNP review-only engagement.
+**Productization (if going beyond Caleb's family):**
+- **Google OAuth verification** — weeks-long process, lots of paperwork.
+- **Multi-user / team support** — currently single-user; would need real architecture.
+- **Stripe billing / subscription handling** — `subscription_status` field exists but no payment flow.
+
+### Why the system is now "review-ready"
+
+By March 31, 2027 (end of FY2027), Caleb's wife's workflow:
+1. Throughout the year: import statements, log CRA payments, log invoices, scan receipts → all flowing to the books
+2. Reconcile each statement period via 🏦 Account Balances → catches errors early
+3. At FYE: log year-end accruals (AR/AP/prepaids) → 📓 Adjusting Entries
+4. Update 🛠 Fixed Assets opening UCC + add new acquisitions → CCA computes
+5. Open 📊 T2 Worksheet → all the numbers MNP needs are there
+6. Build year-end package → Drive folder with cover letter + books snapshot + statements + receipts
+7. Email link to MNP → they review (not prepare), verify, file
+
+That should drop accountant fees from $3-5k (full prep) to $500-1.5k (review-only).

@@ -1,10 +1,15 @@
 // ════════════════════════════════════════════════════════════════════
-// POST /api/setup/migrate
+// POST /api/setup/migrate           (applies migrations, returns summary)
+// GET  /api/setup/migrate?dryRun=1  (lists pending migrations, no writes)
 //
 // Idempotent schema migration for users whose Google Sheet was set up before
 // new tabs / columns existed. Reads current spreadsheet metadata, applies the
 // minimum set of changes to bring it to the latest schema, returns a summary
 // of what was added (or "Already up to date").
+//
+// dryRun is the same flow with all writes skipped — used by the front-end
+// to detect pending migrations on app load and show an "update available"
+// banner without touching the user's sheet.
 //
 // Each migration is a small, self-contained block. Add new ones by appending
 // another `await applyXxx(...)` call below; the existing logic is untouched.
@@ -33,10 +38,24 @@ const FMT_CURRENCY = { numberFormat: { type: 'CURRENCY', pattern: '$#,##0.00' } 
 
 export const onRequestOptions = () => options();
 
+// POST → apply migrations
 export async function onRequestPost({ request, env }) {
+  return runMigrations(request, env, /* dryRun */ false);
+}
+
+// GET → check what's pending (dryRun by default — never writes via GET)
+export async function onRequestGet({ request, env }) {
+  return runMigrations(request, env, /* dryRun */ true);
+}
+
+async function runMigrations(request, env, dryRunDefault) {
   const auth = await authenticateRequest(request, env);
   if (!auth) return json({ ok: false, error: 'Unauthorized' }, 401);
   const userId = auth.userId;
+
+  const url = new URL(request.url);
+  const dryRunParam = url.searchParams.get('dryRun');
+  const dryRun = dryRunParam ? dryRunParam !== 'false' && dryRunParam !== '0' : dryRunDefault;
 
   const meta = await getSpreadsheetMetadata(env, userId);
   if (!meta.ok) return json({ ok: false, error: 'Could not read sheet: ' + meta.error });
@@ -46,13 +65,14 @@ export async function onRequestPost({ request, env }) {
   const errors = [];
 
   // ── Migration 1: ensure 📑 CRA Remittances tab exists ──
-  await applyCraRemittancesTab(env, userId, sheetsByTitle, changes, errors);
+  await applyCraRemittancesTab(env, userId, sheetsByTitle, changes, errors, dryRun);
 
   // ── Migration 2: ensure Invoices tab has deposit columns O/P/Q ──
-  await applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, errors);
+  await applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, errors, dryRun);
 
   return json({
     ok: true,
+    dryRun,
     changes,
     errors,
     upToDate: changes.length === 0 && errors.length === 0,
@@ -62,10 +82,16 @@ export async function onRequestPost({ request, env }) {
 // ════════════════════════════════════════════════════════════════════
 // Migration 1: 📑 CRA Remittances tab
 // ════════════════════════════════════════════════════════════════════
-async function applyCraRemittancesTab(env, userId, sheetsByTitle, changes, errors) {
+async function applyCraRemittancesTab(env, userId, sheetsByTitle, changes, errors, dryRun) {
   const TITLE = '📑 CRA Remittances';
   if (sheetsByTitle[TITLE]) {
     return;  // already exists — nothing to do
+  }
+
+  // In dry-run mode, just record that this migration is pending and skip writes.
+  if (dryRun) {
+    changes.push(`Add '${TITLE}' tab — needed for the CRA Payments Log to track HST, payroll, and corp tax remittances with PDF receipts.`);
+    return;
   }
 
   // Pick a sheetId that doesn't collide with anything existing. 1000 is the
@@ -237,7 +263,7 @@ async function applyCraRemittancesTab(env, userId, sheetsByTitle, changes, error
 // ════════════════════════════════════════════════════════════════════
 // Migration 2: Invoices tab — deposit columns O / P / Q
 // ════════════════════════════════════════════════════════════════════
-async function applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, errors) {
+async function applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, errors, dryRun) {
   const TITLE = '🧾 Invoices';
   const inv = sheetsByTitle[TITLE];
   if (!inv) {
@@ -251,6 +277,11 @@ async function applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, e
   // The Invoices schema needs at least 17 columns (A gutter + B-Q data).
   if (currentColCount >= 17) {
     return;  // already migrated — nothing to do
+  }
+
+  if (dryRun) {
+    changes.push(`Add deposit columns (Deposit Amount / Deposit Date Received / Balance Due) to '${TITLE}' — enables tracking down payments on jobs.`);
+    return;
   }
 
   // ── Step 1: expand the grid to 17 columns ──

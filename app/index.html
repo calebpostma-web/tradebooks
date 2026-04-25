@@ -617,6 +617,21 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
   <button class="tab" onclick="showTab('taxai')"><span class="tab-icon">🧠</span>Tax Intelligence</button>
 </div>
 
+<!-- ── Schema-update banner ── Auto-shown when /api/setup/migrate?dryRun=1 reports
+     pending migrations. Sticky under the tabs so the user sees it on every screen. -->
+<div id="schemaBanner" style="display:none;background:linear-gradient(90deg,var(--amberlt) 0%, #fff8e8 100%);border-bottom:2px solid var(--amber);padding:.7rem 1.5rem">
+  <div style="max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+    <div style="flex:1;min-width:240px">
+      <div style="font-weight:600;font-size:.88rem;color:var(--amber);margin-bottom:.2rem">🔄 Sheet update available</div>
+      <div id="schemaBannerDetail" style="font-size:.78rem;color:var(--ink2);line-height:1.5">Your books need a quick schema upgrade to enable new features. Takes a few seconds, no data loss.</div>
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button id="schemaBannerApply" onclick="schemaBannerApply()" style="background:var(--amber);color:white;border:none;border-radius:4px;padding:.5rem 1rem;font-size:.82rem;font-weight:500;cursor:pointer">Update now</button>
+      <button onclick="schemaBannerDismiss()" style="background:white;border:1px solid var(--amber);color:var(--amber);border-radius:4px;padding:.5rem .9rem;font-size:.82rem;cursor:pointer">Not now</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════════════════════════════════════════════
      TAB 0 — WHAT HAPPENED TODAY? (HOME)
 ════════════════════════════════════════════════════════════ -->
@@ -3079,7 +3094,14 @@ function doLogout() {
 function showLogin()      { setScreen('login'); }
 function showSignup()     { setScreen('signup'); }
 function showOnboarding() { setScreen('onboarding'); }
-function showApp()        { setScreen('app'); }
+function showApp()        {
+  setScreen('app');
+  // Fire-and-forget schema check — banner will appear if migrations are pending.
+  // Defined later in the file; guard for definition order.
+  if (typeof checkPendingSchemaMigrations === 'function') {
+    setTimeout(() => checkPendingSchemaMigrations(), 800);
+  }
+}
 function showLoading(msg) {
   document.getElementById('loadingMsg').textContent = msg || 'Loading…';
   setScreen('loading');
@@ -7941,6 +7963,91 @@ function renderSettings(){
       Combined corp rate: ${((0.09 + prov.provSBD)*100).toFixed(1)}%
     </div>
   `;
+}
+
+// ── Schema-update banner ────────────────────────────────────────────
+// Auto-detects pending sheet migrations on app init via dryRun, shows a
+// sticky banner if any are pending. User dismiss is sessionStorage-scoped.
+const SCHEMA_DISMISS_KEY = 'tradebooks_schema_dismissed_v1';
+const SCHEMA_OK_KEY = 'tradebooks_schema_ok_session';
+
+async function checkPendingSchemaMigrations(){
+  // Don't bother checking if the user already dismissed this session.
+  if(sessionStorage.getItem(SCHEMA_DISMISS_KEY)) return;
+  // Or if we already verified no pending changes this session — saves a round-trip.
+  if(sessionStorage.getItem(SCHEMA_OK_KEY)) return;
+
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token) return;
+  if(!USER_CONFIG?.sheetId) return;  // Onboarding hasn't connected a sheet yet
+
+  try {
+    const r = await fetch('/api/setup/migrate?dryRun=1', {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const d = await r.json();
+    if(!d.ok) return;  // Silent fail — banner stays hidden, won't block the app
+    if(d.upToDate || !(d.changes || []).length){
+      // Cache "no migrations needed" for the rest of the session
+      sessionStorage.setItem(SCHEMA_OK_KEY, '1');
+      return;
+    }
+    // Render banner with the list of pending changes
+    const banner = document.getElementById('schemaBanner');
+    const detail = document.getElementById('schemaBannerDetail');
+    if(banner && detail){
+      const list = d.changes.map(c => `<div style="margin-top:.2rem">• ${esc(c)}</div>`).join('');
+      detail.innerHTML = `Your books need a quick schema upgrade. Takes a few seconds, no data loss.${list}`;
+      banner.style.display = '';
+    }
+  } catch(err){
+    // Silent — never let a banner check break the app
+    console.warn('Schema check failed:', err);
+  }
+}
+
+function schemaBannerDismiss(){
+  sessionStorage.setItem(SCHEMA_DISMISS_KEY, '1');
+  const b = document.getElementById('schemaBanner');
+  if(b) b.style.display = 'none';
+}
+
+async function schemaBannerApply(){
+  const btn = document.getElementById('schemaBannerApply');
+  const detail = document.getElementById('schemaBannerDetail');
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ toast('Please sign in first'); return; }
+
+  btn.disabled = true; btn.textContent = '⏳ Updating…';
+  detail.textContent = 'Applying changes to your Google Sheet…';
+
+  try {
+    const r = await fetch('/api/setup/migrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    });
+    const d = await r.json();
+    if(d.ok){
+      sessionStorage.setItem(SCHEMA_OK_KEY, '1');
+      const banner = document.getElementById('schemaBanner');
+      if(banner){
+        // Show a brief success state, then collapse the banner
+        banner.style.background = 'linear-gradient(90deg,var(--greenlt) 0%, #f0fbf4 100%)';
+        banner.style.borderBottom = '2px solid var(--green)';
+        detail.innerHTML = `<span style="color:var(--green);font-weight:500">✅ Sheet updated — ${(d.changes || []).length} change(s) applied.</span>`;
+        btn.style.background = 'var(--green)';
+        btn.textContent = '✓ Done';
+        setTimeout(() => { banner.style.display = 'none'; }, 3500);
+      }
+      toast('Sheet schema updated');
+    } else {
+      detail.innerHTML = `<span style="color:var(--red)">❌ ${esc(d.error || 'Update failed')}</span>`;
+      btn.disabled = false; btn.textContent = 'Update now';
+    }
+  } catch(err){
+    detail.innerHTML = `<span style="color:var(--red)">❌ Connection error: ${esc(err.message)}</span>`;
+    btn.disabled = false; btn.textContent = 'Update now';
+  }
 }
 
 // ── Sheet schema migration ──────────────────────────────────────────

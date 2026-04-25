@@ -184,6 +184,13 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
         { properties: { sheetId: 900, title: '📝 Work Log', index: 7,
             gridProperties: { rowCount: 1000, columnCount: 9, frozenRowCount: 11 },
             tabColor: COLORS.brown } },
+        // 📑 CRA Remittances — one row per payment to CRA. Backs the year-end
+        // package and gives MNP the paper trail they ask for.
+        // 9 cols B-J: Date Paid, Type, Period, Amount, Confirmation #, Account,
+        // PDF Link, Notes, Linked Txn Ref
+        { properties: { sheetId: 1000, title: '📑 CRA Remittances', index: 8,
+            gridProperties: { rowCount: 500, columnCount: 11, frozenRowCount: 11 },
+            tabColor: COLORS.teal } },
       ],
     }),
   });
@@ -347,7 +354,7 @@ function colWidth(sheetId, startIdx, endIdx, px) {
 // ════════════════════════════════════════════════════════════════════
 async function applyStyling(accessToken, spreadsheetId) {
   const authHeader = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
-  const DASH = 100, CFG = 200, TXN = 300, INV = 500, HST = 600, YE = 700, PAY = 800, WLOG = 900;
+  const DASH = 100, CFG = 200, TXN = 300, INV = 500, HST = 600, YE = 700, PAY = 800, WLOG = 900, REM = 1000;
   const requests = [];
 
   // ─── DASHBOARD ───
@@ -643,6 +650,43 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(WLOG, 6, 7, 70));    // G Rate
   requests.push(colWidth(WLOG, 7, 8, 200));   // H Notes
   requests.push(colWidth(WLOG, 8, 9, 180));   // I Entry Audit
+
+  // ─── CRA REMITTANCES ───
+  // 11 cols (A gutter + B-J data, plus K reserve): Date Paid, Type, Period,
+  // Amount, Confirmation #, Account, PDF Link, Notes, Linked Txn Ref.
+  // Backs the year-end MNP package — every dollar paid to CRA, with receipt.
+  requests.push(...bannerRequest(REM, 0, 0, 11, COLORS.teal));
+  requests.push(...sectionRequest(REM, 1, 1, 6, COLORS.teal));
+  requests.push(cellFormat(REM, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
+  requests.push(cellFormat(REM, 2, 2, 10, 6, { backgroundColor: COLORS.tealTint, numberFormat: FMT_CURRENCY.numberFormat }));
+  requests.push(headerRowRequest(REM, 10, 1, 11, COLORS.teal));
+  requests.push({ updateDimensionProperties: { range: { sheetId: REM, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
+  requests.push(bandingRequest(REM, 11, 500, 1, 11, COLORS.tealTint));
+  requests.push(cellFormat(REM, 11, 1, 500, 2, FMT_DATE));      // B Date Paid
+  requests.push(cellFormat(REM, 11, 4, 500, 5, FMT_CURRENCY));  // E Amount
+  // Type dropdown (col C, idx 2)
+  requests.push({
+    setDataValidation: {
+      range: { sheetId: REM, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 2, endColumnIndex: 3 },
+      rule: { condition: { type: 'ONE_OF_LIST', values: [
+        { userEnteredValue: 'HST' },
+        { userEnteredValue: 'Payroll (PD7A)' },
+        { userEnteredValue: 'Corporate Tax Instalment' },
+        { userEnteredValue: 'Corporate Tax Final' },
+        { userEnteredValue: 'Other' },
+      ]}, showCustomUi: true },
+    }
+  });
+  requests.push(colWidth(REM, 0, 1, 30));    // A gutter
+  requests.push(colWidth(REM, 1, 2, 100));   // B Date Paid
+  requests.push(colWidth(REM, 2, 3, 170));   // C Type
+  requests.push(colWidth(REM, 3, 4, 130));   // D Period Covered
+  requests.push(colWidth(REM, 4, 5, 110));   // E Amount
+  requests.push(colWidth(REM, 5, 6, 140));   // F Confirmation #
+  requests.push(colWidth(REM, 6, 7, 80));    // G Account
+  requests.push(colWidth(REM, 7, 8, 220));   // H PDF Drive Link
+  requests.push(colWidth(REM, 8, 9, 220));   // I Notes
+  requests.push(colWidth(REM, 9, 10, 130));  // J Linked Txn Ref
 
   const stylingResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
     method: 'POST', headers: authHeader,
@@ -996,6 +1040,41 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   ]]});
   data.push({ range: "'📝 Work Log'!B11:I11", values: [[
     'Date', 'Employee', 'Business', 'Task Description', 'Hours', 'Rate', 'Notes', 'Entry Audit',
+  ]]});
+
+  // ─── CRA REMITTANCES TAB ───
+  // One row per payment to CRA. Drives the year-end MNP package — every dollar
+  // out the door to CRA, with confirmation # and PDF receipt. Type column is a
+  // dropdown so totals can be summed by category. Linked Txn Ref ties back to
+  // the Transactions row (category 'Internal Transfer') so cash reconciles.
+  data.push({ range: "'📑 CRA Remittances'!A1", values: [[
+    `CRA REMITTANCES LOG  —  HST · Payroll source deductions · Corp tax  ·  ${fye} fiscal year`
+  ]]});
+  data.push({ range: "'📑 CRA Remittances'!B2", values: [['REMITTANCE TOTALS  (YTD)']] });
+  data.push({ range: "'📑 CRA Remittances'!B3:F3", values: [[
+    'HST paid to CRA',                    '=IFERROR(SUMIF(C12:C500,"HST",E12:E500),0)', '', '', ''
+  ]]});
+  data.push({ range: "'📑 CRA Remittances'!B4:F4", values: [[
+    'Payroll source deductions paid',     '=IFERROR(SUMIF(C12:C500,"Payroll (PD7A)",E12:E500),0)', '', '', ''
+  ]]});
+  data.push({ range: "'📑 CRA Remittances'!B5:F5", values: [[
+    'Corporate tax instalments paid',     '=IFERROR(SUMIF(C12:C500,"Corporate Tax Instalment",E12:E500),0)', '', '', ''
+  ]]});
+  data.push({ range: "'📑 CRA Remittances'!B6:F6", values: [[
+    'Corporate tax (final) paid',         '=IFERROR(SUMIF(C12:C500,"Corporate Tax Final",E12:E500),0)', '', '', ''
+  ]]});
+  data.push({ range: "'📑 CRA Remittances'!B7:F7", values: [[
+    'TOTAL paid to CRA',                  '=IFERROR(SUM(E12:E500),0)', '', '', ''
+  ]]});
+  data.push({ range: "'📑 CRA Remittances'!B8:F8", values: [[
+    'Receipts attached (count)',          '=IFERROR(COUNTIF(H12:H500,"<>"),0)', '', '', ''
+  ]]});
+  data.push({ range: "'📑 CRA Remittances'!B9:F9", values: [[
+    'Missing receipts (count)',           '=IFERROR(COUNTA(B12:B500)-COUNTIF(H12:H500,"<>"),0)', '', '', ''
+  ]]});
+  data.push({ range: "'📑 CRA Remittances'!B11:J11", values: [[
+    'Date Paid', 'Type', 'Period Covered', 'Amount', 'Confirmation #', 'Account',
+    'PDF Receipt (Drive)', 'Notes', 'Linked Txn Ref',
   ]]});
 
   const valuesResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {

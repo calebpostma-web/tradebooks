@@ -1134,6 +1134,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
     <button class="cra-sub-tab" onclick="craShowPanel('t2')">🏢 Corporate Tax (T2)</button>
     <button class="cra-sub-tab" onclick="craShowPanel('payroll')">👥 Payroll (PD7A)</button>
     <button class="cra-sub-tab" onclick="craShowPanel('t4')">📋 T4 Slips</button>
+    <button class="cra-sub-tab" onclick="craShowPanel('payments')">💸 Payments Log</button>
     <button class="cra-sub-tab" onclick="craShowPanel('tips')">💡 Tax-Saving Ideas</button>
   </div>
 
@@ -2037,6 +2038,87 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       </div>
     </div>
   </div><!-- /cra-panel-tips -->
+
+  <!-- ── PAYMENTS LOG ── Caleb's accountant flagged this: MNP needs proof of every CRA payment for year-end backup. -->
+  <div class="cra-panel" id="cra-panel-payments">
+    <div class="card">
+      <div class="card-title">Log a payment to CRA</div>
+      <p style="font-size:.82rem;color:var(--ink3);margin-bottom:1rem;line-height:1.55">
+        Every time you pay CRA — HST, payroll source deductions, corporate tax instalment — log it here.
+        Attach the confirmation PDF and it gets filed in your Drive folder and tied to a bank transaction automatically.
+        MNP needs this paper trail at year-end.
+      </p>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Payment type</label>
+          <select id="rem_type" onchange="remTypeChanged()" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;background:white">
+            <option value="HST">HST quarterly remittance</option>
+            <option value="Payroll (PD7A)">Payroll source deductions (PD7A)</option>
+            <option value="Corporate Tax Instalment">Corporate tax instalment</option>
+            <option value="Corporate Tax Final">Corporate tax — final balance</option>
+            <option value="Other">Other CRA payment</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Date paid</label>
+          <input type="date" id="rem_datePaid">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Period covered<small id="rem_periodHint" style="color:var(--ink3);font-weight:400;margin-left:.4rem">— e.g. Q4 2025-2026</small></label>
+          <input type="text" id="rem_period" placeholder="Q4 2025-2026">
+        </div>
+        <div class="field">
+          <label>Amount (CAD)</label>
+          <input type="number" id="rem_amount" min="0" step="0.01" placeholder="0.00" style="font-family:var(--mono)">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>CRA confirmation #<small style="color:var(--ink3);font-weight:400;margin-left:.4rem">— from My Business Account</small></label>
+          <input type="text" id="rem_confirmation" placeholder="e.g. 1234567890">
+        </div>
+        <div class="field">
+          <label>Paid from</label>
+          <select id="rem_account" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;background:white">
+            <option value="BMO">BMO chequing</option>
+            <option value="Cash">Cash</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field"><label>Notes (optional)</label><textarea id="rem_notes" placeholder="Anything MNP should know about this payment"></textarea></div>
+
+      <div class="field" style="margin-top:.5rem">
+        <label>Confirmation receipt PDF (optional but recommended)</label>
+        <div style="border:1px dashed var(--rule);border-radius:var(--radius);padding:.85rem;background:var(--paper2)">
+          <input type="file" id="rem_pdfFile" accept="application/pdf,image/png,image/jpeg" onchange="remPdfPicked(event)" style="font-size:.82rem;width:100%">
+          <div id="rem_pdfPreview" style="display:none;margin-top:.5rem;font-size:.78rem;color:var(--green)">
+            <span id="rem_pdfName"></span> <button onclick="remPdfClear()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.78rem;margin-left:.5rem">× remove</button>
+          </div>
+          <div style="font-size:.7rem;color:var(--ink3);margin-top:.4rem">Saved to Drive at <code>AI Bookkeeper CRA Remittances/[year]/</code> with a shareable link in the sheet.</div>
+        </div>
+      </div>
+
+      <div class="btn-row" style="margin-top:1.1rem">
+        <button class="btn btn-green" id="rem_logBtn" onclick="remLogPayment()">💸 Log payment</button>
+        <button class="btn btn-outline" onclick="remClear()">Clear form</button>
+      </div>
+      <div id="rem_status" style="font-size:.85rem;color:var(--ink3);margin-top:.75rem;line-height:1.55"></div>
+    </div>
+
+    <div class="card" style="margin-top:1.25rem;background:var(--paper2);border-left:3px solid var(--green)">
+      <div class="card-title" style="font-size:.85rem">Why this matters at year-end</div>
+      <div style="font-size:.78rem;color:var(--ink2);line-height:1.6">
+        MNP doesn't have access to your CRA My Business Account. They need to see proof — date, amount, confirmation # — for every dollar you paid CRA during the fiscal year. Logging payments here as you make them means: (1) the bank transaction is auto-recorded so cash reconciles, (2) the PDF receipt is filed in your Drive, and (3) when the Year-End Package builder runs, all your CRA receipts come along automatically. No hunting through emails in March.
+      </div>
+    </div>
+  </div><!-- /cra-panel-payments -->
 
 </div><!-- /page taxfiling -->
 </div><!-- /panel-taxfiling -->
@@ -5369,10 +5451,141 @@ function dismissReceiptTip() {
 // TAB 4 — CRA TAX FILING
 // ════════════════════════════════════════════════════════════
 function craShowPanel(p){
-  document.querySelectorAll('.cra-sub-tab').forEach((el,i)=>el.classList.toggle('active',['hst','t2','payroll','t4','tips'][i]===p));
+  document.querySelectorAll('.cra-sub-tab').forEach((el,i)=>el.classList.toggle('active',['hst','t2','payroll','t4','payments','tips'][i]===p));
   document.querySelectorAll('.cra-panel').forEach(el=>el.classList.remove('active'));
   document.getElementById('cra-panel-'+p).classList.add('active');
 }
+
+// ── CRA Payments Log ────────────────────────────────────────────────
+// Form-driven logging of every CRA payment. Posts to /api/remittance/log
+// which writes both the 📑 CRA Remittances row AND the matching Internal
+// Transfer row in 📒 Transactions, and uploads the PDF receipt to Drive.
+
+let remPdfData = null;  // { base64, filename, mimeType } when a file is picked
+
+// Update the period-format hint when the type changes — HST is quarterly,
+// payroll is monthly, corp tax is annual or per instalment.
+function remTypeChanged(){
+  const type = document.getElementById('rem_type').value;
+  const hint = document.getElementById('rem_periodHint');
+  const period = document.getElementById('rem_period');
+  if(!hint || !period) return;
+  if(type === 'HST'){
+    hint.textContent = '— e.g. Q4 2025-2026';
+    period.placeholder = 'Q4 2025-2026';
+  } else if(type === 'Payroll (PD7A)'){
+    hint.textContent = '— e.g. Mar 2026 (the pay-period month)';
+    period.placeholder = 'Mar 2026';
+  } else if(type.startsWith('Corporate Tax')){
+    hint.textContent = '— e.g. FY2026 instalment 3';
+    period.placeholder = 'FY2026 instalment 3';
+  } else {
+    hint.textContent = '— what this payment was for';
+    period.placeholder = 'Description';
+  }
+}
+
+function remPdfPicked(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    remPdfData = {
+      base64: String(reader.result).split(',').pop(),
+      filename: file.name,
+      mimeType: file.type || 'application/pdf',
+    };
+    document.getElementById('rem_pdfPreview').style.display = '';
+    document.getElementById('rem_pdfName').textContent = file.name;
+  };
+  reader.readAsDataURL(file);
+}
+
+function remPdfClear(){
+  remPdfData = null;
+  document.getElementById('rem_pdfFile').value = '';
+  document.getElementById('rem_pdfPreview').style.display = 'none';
+}
+
+function remClear(){
+  ['rem_period','rem_amount','rem_confirmation','rem_notes'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('rem_datePaid').value = new Date().toISOString().split('T')[0];
+  remPdfClear();
+  const status = document.getElementById('rem_status'); if(status) status.innerHTML = '';
+}
+
+async function remLogPayment(){
+  const btn = document.getElementById('rem_logBtn');
+  const status = document.getElementById('rem_status');
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ toast('Please sign in first'); return; }
+  if(!USER_CONFIG.sheetId){ toast('Connect your Google Sheet first'); return; }
+
+  const type = document.getElementById('rem_type').value;
+  const period = document.getElementById('rem_period').value.trim();
+  const amount = parseFloat(document.getElementById('rem_amount').value) || 0;
+  const datePaid = document.getElementById('rem_datePaid').value;
+  const confirmation = document.getElementById('rem_confirmation').value.trim();
+  const account = document.getElementById('rem_account').value;
+  const notes = document.getElementById('rem_notes').value.trim();
+
+  // Client-side validation — match the server's checks so the user sees a fast,
+  // human error instead of a 400 round-trip.
+  if(!period){ toast('Enter the period covered'); return; }
+  if(amount <= 0){ toast('Enter a payment amount'); return; }
+  if(!datePaid){ toast('Pick the date you paid'); return; }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Logging…';
+  status.innerHTML = 'Posting to your sheet…';
+
+  const payload = { type, period, amount, datePaid, confirmation, account, notes };
+  if(remPdfData) payload.pdf = remPdfData;
+
+  try {
+    const r = await fetch('/api/remittance/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if(d.ok){
+      btn.textContent = '✓ Logged!';
+      btn.style.background = 'var(--green)';
+      const sheetLink = USER_CONFIG?.sheetUrl
+        ? `<a href="${USER_CONFIG.sheetUrl}" target="_blank" style="color:var(--green)">Open Sheet ↗</a>`
+        : '';
+      const driveLink = d.pdfDriveUrl
+        ? `<br><a href="${d.pdfDriveUrl}" target="_blank" style="color:var(--green)">View receipt PDF on Drive ↗</a>`
+        : '';
+      const warningHtml = (d.warnings || []).filter(Boolean).map(w =>
+        `<div style="color:var(--amber);margin-top:.4rem;font-size:.78rem">⚠ ${esc(w)}</div>`
+      ).join('');
+      status.innerHTML = `✅ <strong>${esc(type)}</strong> payment of <strong>$${fmtMoney(amount)}</strong> logged for <strong>${esc(period)}</strong>. Bank transaction recorded as Internal Transfer (excluded from P&L). ${sheetLink}${driveLink}${warningHtml}`;
+      // Reset form for the next entry but keep the date (likely paying multiple things at once)
+      const keepDate = datePaid;
+      remClear();
+      document.getElementById('rem_datePaid').value = keepDate;
+      setTimeout(() => { btn.disabled = false; btn.textContent = '💸 Log payment'; btn.style.background = ''; }, 2000);
+    } else {
+      status.innerHTML = `❌ ${esc(d.error || 'Unknown error')}`;
+      btn.disabled = false;
+      btn.textContent = '💸 Log payment';
+    }
+  } catch(err){
+    status.innerHTML = `❌ Connection error: ${esc(err.message)}`;
+    btn.disabled = false;
+    btn.textContent = '💸 Log payment';
+  }
+}
+
+// Default the date field on first reveal of the panel.
+document.addEventListener('DOMContentLoaded', () => {
+  const d = document.getElementById('rem_datePaid');
+  if(d && !d.value) d.value = new Date().toISOString().split('T')[0];
+});
 
 function craSetPeriod(q,el){
   document.querySelectorAll('.period-card').forEach(c=>{

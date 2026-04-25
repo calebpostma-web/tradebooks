@@ -172,3 +172,62 @@ front-end changes without redeploying. Real changes must be committed
 - Diagnostic endpoint live for debugging account state
 - Caleb's wife is the first real-world stress tester
 - Pending: accruals module, CCA tracker, T2 schedules (the review-only roadmap)
+
+## Next session — start here
+
+When Caleb comes back, the playbook is:
+
+### Step 1 — paste any bug list from his wife
+She's been the first real-world user. Whatever she found (UX confusion,
+errors, missing fields, "I expected X here") trumps speculative new
+features. Fix what hurts before building forward.
+
+### Step 2 — start on the review-only roadmap, in this order
+The single highest-leverage next-feature direction. All three deliver
+toward the "MNP just reviews and files for FY2027" goal:
+
+1. **Year-end accruals module** (~2-3 hours) — THE linchpin. New tab or
+   section in Year-End. Walks the user through end-of-year adjustments:
+   - Invoices outstanding at Mar 31 → AR
+   - Bills owed but unpaid → AP
+   - Prepaid insurance / utilities
+   - Accrued utilities / wages
+   - Depreciation (deferred to CCA tracker — see #2)
+   Each prompt → posts an adjusting journal entry to a new tab `📓 Adjusting Entries`.
+   Year-End summary picks them up so the cash-basis books become accrual-ready
+   for the T2. **Without this, MNP still has to make the entries themselves —
+   so the review-only engagement doesn't fly.**
+
+2. **CCA tracker** (~2 hours) — new tab `🛠 Fixed Assets`. Each row: asset
+   description, purchase date, cost, CCA class, prior UCC, half-year rule
+   flag. Computes current-year CCA + ending UCC. Feeds Schedule 8.
+
+3. **Draft T2 schedules** (~3-4 hours) — most ambitious. Generate from
+   Year-End data:
+   - Schedule 100 (Balance Sheet) — GIFI codes
+   - Schedule 125 (Income Statement) — GIFI codes
+   - Schedule 1 (book-to-tax adjustments — meals 50%, depreciation reversal, etc.)
+   - Schedule 8 (CCA — pulls from #2)
+   Output as a downloadable PDF or printable view MNP can verify against
+   their T2 software.
+
+### Step 3 — smaller polish (only if accruals/CCA/T2 are done or blocked)
+
+- **Receipt scanner → Transaction link.** Currently a scanned receipt PDF
+  goes to Drive but isn't tied to its Transaction row. Add a column to
+  Transactions for receipt Drive URL, write it from the scanner flow when
+  the user accepts the categorization.
+- **Mobile UX pass** on Invoice Wizard — kitchen-table flow on phone.
+  Already partially mobile-friendly; needs a real review on a small screen.
+- **"What is this?" tooltips** on year-end accruals (non-accountants need
+  to understand what a prepaid expense is before they can answer the prompt).
+- **Google OAuth verification** — only matters if tradebooks goes beyond
+  Caleb's family. Weeks-long process, lots of paperwork. Skip unless
+  productizing.
+
+### Why this order
+
+The accruals module alone closes the biggest gap between cash-basis books
+and what an accountant can sign off on. CCA + T2 schedules build on it.
+By the time FY2027 ends (Mar 31, 2027), all three should be in place,
+tested over the year, and ready for MNP review-only engagement.

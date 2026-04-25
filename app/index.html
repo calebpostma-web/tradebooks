@@ -3379,7 +3379,19 @@ IMPORTANT CREDIT CARD CONTEXT:
 
   return `You are a Canadian ${C.businessType === 'incorporated' ? 'corporate' : 'small business'} bookkeeper. ${bankContext}
 
-CATEGORIES (use exact names): ${EXP_CATS.join(', ')}
+EXPENSE CATEGORIES (use these for DEBIT rows — money out): ${EXP_CATS.join(', ')}
+
+INCOME CATEGORIES (use these for CREDIT rows — money in): ${INCOME_CATS.join(', ')}
+
+CRITICAL: Match the category to the direction of the money.
+- DEBIT (money leaving the account) → pick from EXPENSE CATEGORIES
+- CREDIT (money coming in) → pick from INCOME CATEGORIES. Common cases:
+   * Customer payment for an invoice → "Service Revenue" (or "Sales Revenue" if they bought a product)
+   * Travel credit / cashback / refund → "Other Income"
+   * Interest earned on the account → "Interest Income"
+   * Refund of an expense (vendor return) → use the matching expense category, the negative will offset later
+- "PAYMENT RECEIVED" / "THANK YOU" on a credit card statement is the bank paying off the bill. Mark this as "SKIP — not a business expense" so it doesn't double-count with the matching BMO bill payment row. (If the user is only importing the credit card statement and NOT the bank statement, they can flip it back to "Internal Transfer" manually.)
+- E-transfer / direct deposit from a known client → income, NOT Internal Transfer
 
 SHARED RULES: Gas/fuel→Fuel | Restaurants/cafes→Meals & Entertainment | Memberships→Dues & Memberships | Hardware/supply stores→Supplies | Uniforms/workwear→Uniforms | Accounting/legal→Professional Fees | Tools under $500→Small Tools | Equipment over $500→Equipment Purchase | Phone/internet→Telephone | Hydro/utilities→Utilities | Insurance→Insurance | Payroll→Wages & Salaries
 
@@ -3519,11 +3531,26 @@ function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace
 // ════════════════════════════════════════════════════════════
 // TAB 1 — STATEMENT IMPORTER (PDF + CSV)
 // ════════════════════════════════════════════════════════════
-let impBank='AMEX', impRawRows=[], impTxns=[];
+// impBankType — 'CC' (credit card) or 'BANK' (chequing). Drives parsing /
+// rule-engine logic that depends on statement format.
+// impBank   — the actual bank name string ('AMEX', 'BMO', etc) that gets
+// written to the Account column on each transaction. Pulled from
+// USER_CONFIG so users on Visa, RBC, etc. get correctly tagged too.
+// Default 'CC' to match the visually-active "Credit Card" button on page load —
+// otherwise an upload before any button click silently tags rows with the
+// WRONG bank, which is the bug Caleb's wife hit.
+let impBankType = 'CC';
+let impBank = (typeof USER_CONFIG !== 'undefined' && USER_CONFIG?.creditCard) || 'AMEX';
+let impRawRows=[], impTxns=[];
 let impPdfB64=null; // set when a PDF is loaded
 
 function setBank(b,el){
-  impBank=b;
+  impBankType = b;
+  if (b === 'CC') {
+    impBank = USER_CONFIG?.creditCard || 'AMEX';
+  } else if (b === 'BANK') {
+    impBank = USER_CONFIG?.primaryBank || 'BMO';
+  }
   document.querySelectorAll('.bank-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
 }
@@ -3574,7 +3601,7 @@ function impParseCSV(text,src){
     const row=parseCSVLine(lines[i]);
     if(row.length<2)continue;
     let date='',desc='',amount=0;
-    if(impBank==='AMEX'){
+    if(impBankType==='CC'){
       date=row[0]?.trim()||'';
       if(row.length>=4){desc=row[2]?.trim()||'';amount=parseFloat(row[3]?.replace(/[^0-9.\-]/g,'')||'0')}
       else{desc=row[1]?.trim()||'';amount=parseFloat(row[2]?.replace(/[^0-9.\-]/g,'')||'0')}
@@ -3605,7 +3632,7 @@ function normDate(d){
   return d;
 }
 function loadSample(){
-  const s=impBank==='AMEX'
+  const s=impBankType==='CC'
     ?`Date,Description,Amount\n12/16/2025,"COSTCO WHOLESALE",-45.18\n12/18/2025,"A CUT ABOVE UNIFORMS",-29.51\n12/29/2025,"MIKES PLACE RESTAURANT",-106.62\n11/03/2025,"COSTCO ANNUAL MEMBERSHIP",-146.90\n11/19/2025,"MNP LLP ACCOUNTING",-6033.35\n01/15/2026,"SHELL FUEL",-87.40\n01/20/2026,"ROGERS WIRELESS",-95.00\n01/22/2026,"HOME DEPOT",-234.50\n02/05/2026,"CANADIAN TIRE TOOLS",-189.99\n02/14/2026,"STAPLES OFFICE",-67.45`
     :`Date,Type,Description,Cheque No.,Amount\n12/22/2025,Debit,PAYROLL - EMPLOYEE,,- 1000.00\n12/31/2025,Debit,BANK MONTHLY FEE,,- 10.50\n10/30/2025,Debit,CRA HST PAYMENT,,- 1623.47\n11/07/2025,Debit,EQUIPMENT PURCHASE,,- 33900.00\n12/30/2025,Debit,PAYROLL - EMPLOYEE 2,,- 3000.00\n01/05/2026,Debit,INSURANCE PREMIUM,,- 1200.00\n01/15/2026,Debit,HYDRO UTILITY,,- 345.00`;
   impParseCSV(s,`${impBank} sample`);
@@ -3648,7 +3675,11 @@ async function impAnalyzePDF(){
   txt.textContent='Reading PDF statement with AI…';
   fill.style.width='15%'; pct.textContent='15%';
 
-  const bankName = impBank==='AMEX' ? 'American Express credit card' : 'BMO Bank';
+  // Display name for the prompt — uses the actual bank name from USER_CONFIG.
+  // 'AMEX' / 'BMO' are just the most common defaults.
+  const bankName = impBankType==='CC'
+    ? `${impBank || 'Credit card'} (credit card)`
+    : `${impBank || 'BMO'} (bank account)`;
   const prompt = getStatementPrompt(true);
 
   try {
@@ -3730,7 +3761,7 @@ async function runImpAI(){
     txt.textContent=`Analyzing batch ${b+1} of ${batches.length}…`;
     const batch=batches[b];
     // Build a bank-specific prompt so rules match the account being imported
-  const isBankStmt = impBank === 'BANK';
+    const isBankStmt = impBankType === 'BANK';
     const prompt = getCategorizePrompt(batch, isBankStmt);
     try{
       const raw=await callClaude(prompt);
@@ -3759,8 +3790,13 @@ function ruleCategory(d,amt,bank='AMEX'){
   if(isBMO&&/MSP.*DIV|DIV.*MSP|OWNER.*DIV/.test(d))return'Owner Draw / Distribution';
   if(isBMO&&/INTERAC.*RCVD|ETRNSFR.*RCVD|E-TRANSFER.*RCVD/.test(d))return amt>0?'Income Received':'Internal Transfer';
   if(isBMO&&amt>0&&/RCVD|RECEIVED|DEPOSIT/.test(d))return'Income Received';
-  // AMEX-specific: payment received = BMO paying the bill
-  if(!isBMO&&/PAYMENT.*RECEIVED|THANK YOU|ONLINE PAYMENT/.test(d))return'Internal Transfer';
+  // AMEX-specific: "PAYMENT RECEIVED / THANK YOU" is the bank paying off the
+  // credit card. The matching BMO row ("AMEX BILL PYMT") is the canonical
+  // record of the transfer. If we mark BOTH as Internal Transfer, the user
+  // sees the same cash movement twice in their Transactions tab. Default to
+  // SKIP so it's auto-excluded from the import; user can flip it back to
+  // Internal Transfer if they're not importing the BMO side.
+  if(!isBMO&&/PAYMENT.*RECEIVED|THANK YOU|ONLINE PAYMENT/.test(d))return'SKIP — not a business expense';
   // Credit card bill payments & internal transfers — always skip/flag
   if(/AMEX.*BILL|BILL.*PYMT|BILL.*PMT|MSP.*DIV|DIV.*MSP/.test(d))return'Internal Transfer';
   if(/INTERAC.*ETRNSFR.*RCVD|ETRNSFR.*RCVD/.test(d))return amt>0?'Income Received':'Internal Transfer';
@@ -3834,15 +3870,29 @@ const EXCLUDED_CATS=new Set(['SKIP — not a business expense','Owner Draw / Dis
 const ADD_CATEGORY_SENTINEL = '__add_new_category__';
 
 /**
- * Build the <option> HTML for an expense-category dropdown. Always appends a
- * sentinel "+ Add new category…" row at the bottom so users can create a
- * category without leaving the page they're on.
+ * Build the <option> HTML for a category dropdown. Includes BOTH expense and
+ * income categories grouped under <optgroup> so users can categorize either
+ * direction (CREDIT rows need income cats too — that was a bug previously
+ * where money-in transactions could only be tagged as expenses).
+ *
+ * Always appends a sentinel "+ Add new category…" row at the bottom so users
+ * can create a category without leaving the page they're on.
  */
 function expenseCategoryOptions(selectedCat){
-  const opts = EXP_CATS.map(c => `<option value="${esc(c)}"${c===selectedCat?' selected':''}>${esc(c)}</option>`);
-  opts.push(`<option disabled>──────────</option>`);
-  opts.push(`<option value="${ADD_CATEGORY_SENTINEL}" style="color:var(--green);font-weight:500">+ Add new category…</option>`);
-  return opts.join('');
+  // Expense categories first — most rows on a statement are expenses
+  const expOpts = EXP_CATS.map(c => `<option value="${esc(c)}"${c===selectedCat?' selected':''}>${esc(c)}</option>`).join('');
+  // Income categories grouped separately. Skip ones already in EXP_CATS to
+  // avoid duplicates ('Income Received' is in both lists for legacy reasons).
+  const incOpts = INCOME_CATS
+    .filter(c => !EXP_CATS.includes(c))
+    .map(c => `<option value="${esc(c)}"${c===selectedCat?' selected':''}>${esc(c)}</option>`)
+    .join('');
+  return `
+    <optgroup label="Expenses (money out)">${expOpts}</optgroup>
+    <optgroup label="Income (money in)">${incOpts}</optgroup>
+    <option disabled>──────────</option>
+    <option value="${ADD_CATEGORY_SENTINEL}" style="color:var(--green);font-weight:500">+ Add new category…</option>
+  `;
 }
 
 /**
@@ -3947,7 +3997,10 @@ async function sendToSheets(){
   status.textContent = statusMsg;
 
   const payload = {
-    bank: impBank === 'CC' ? (USER_CONFIG?.creditCard || 'AMEX') : (USER_CONFIG?.primaryBank || 'BMO'),
+    // impBank is now always the actual bank name (AMEX / BMO / Visa / RBC etc),
+    // resolved from USER_CONFIG when the user picked Credit Card or Bank Account.
+    // Sent as-is to the server, which writes it into the Account column.
+    bank: impBank,
     rows: rows.map(tx => ({
       date: tx.date,
       vendor: tx.vendor,
@@ -4103,16 +4156,20 @@ function showReview(){document.getElementById('imp-step3').classList.add('hidden
 
 function getExpRows(){return impTxns.filter(tx=>!tx.excluded&&!EXCLUDED_CATS.has(tx.category)&&tx.category!=='')}
 function expCSV(){
-  const pay=impBank==='AMEX'?'AMEX':'BMO Bank Transfer';
-  const amex=impBank==='AMEX'?'Yes':'No';
+  // Use the actual bank name as the payment method, plus the AMEX flag for
+  // sheets that have a specific AMEX column (legacy compatibility).
+  const pay = impBankType === 'CC' ? impBank : `${impBank} Bank Transfer`;
+  const amex = impBankType === 'CC' && /amex/i.test(impBank) ? 'Yes' : 'No';
   const header='DATE,VENDOR / PAYEE,DESCRIPTION,TOTAL CHARGED (incl HST),CATEGORY,HST PAID (extracted),NET EXPENSE (excl HST),PAYMENT METHOD,AMEX?,NOTES\n';
   const body=getExpRows().map(tx=>[tx.date,`"${tx.vendor}"`,`"${tx.description.replace(/"/g,'""')}"`,Math.abs(tx.amount).toFixed(2),`"${tx.category}"`,tx.hst.toFixed(2),Math.abs(tx.net).toFixed(2),pay,amex,''].join(',')).join('\n');
   dlFile('statement-import.csv',header+body,'text/csv');
   toast(`Downloaded ${getExpRows().length} rows — import into your Transactions tab`);
 }
 function expClipboard(){
-  const pay=impBank==='AMEX'?'AMEX':'BMO Bank Transfer';
-  const amex=impBank==='AMEX'?'Yes':'No';
+  // Use the actual bank name as the payment method, plus the AMEX flag for
+  // sheets that have a specific AMEX column (legacy compatibility).
+  const pay = impBankType === 'CC' ? impBank : `${impBank} Bank Transfer`;
+  const amex = impBankType === 'CC' && /amex/i.test(impBank) ? 'Yes' : 'No';
   const txt=getExpRows().map(tx=>[tx.date,tx.vendor,tx.description,Math.abs(tx.amount).toFixed(2),tx.category,tx.hst.toFixed(2),Math.abs(tx.net).toFixed(2),pay,amex,''].join('\t')).join('\n');
   navigator.clipboard.writeText(txt).then(()=>toast(`${getExpRows().length} rows copied — click B12 in Transactions tab then Ctrl+V`));
 }

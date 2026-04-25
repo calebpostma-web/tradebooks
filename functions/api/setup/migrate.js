@@ -83,6 +83,9 @@ async function runMigrations(request, env, dryRunDefault) {
   // ── Migration 3: ensure Transactions tab has Total (incl HST) column N ──
   await applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes, errors, dryRun);
 
+  // ── Migration 4: HST Returns C3 — smart FY start (data-driven default) ──
+  await applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, errors, dryRun);
+
   return json({
     ok: true,
     dryRun,
@@ -473,6 +476,41 @@ async function applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes,
   if (!formulaRes.ok) errors.push(`Failed to write Total formula: ${formulaRes.error}`);
 
   changes.push(`Added 'Total (incl HST)' column N to '${txnTab.title}' — every row now shows the gross signed amount that matches what hit the bank.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 4: HST Returns — smart Fiscal Year Start (C3) formula
+// ════════════════════════════════════════════════════════════════════
+// Old formula defaulted C3 to today's FY-in-progress. If the user just
+// imported transactions for the FY that JUST ENDED, the HST tab would show
+// an empty quarterly window because it was looking at next year. New formula
+// derives FY from the latest transaction date, falling back to today.
+// User can still type any date in C3 manually to view past FYs.
+async function applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  const hstTab = Object.values(sheetsByTitle).find(s => /hst returns/i.test(s.title));
+  if (!hstTab) return;  // No HST Returns tab — likely a partial sheet
+
+  // We can't easily detect "is the formula already updated" without reading C3.
+  // To stay idempotent + cheap on dry-run, just always rewrite both C3 and the
+  // label. A re-run is harmless because the values are the same.
+  if (dryRun) {
+    changes.push(`Update '${hstTab.title}' C3 to auto-detect Fiscal Year from your latest transaction (was hardcoded to today's FY, which broke when importing prior-year data).`);
+    return;
+  }
+
+  const labelRes = await writeRange(env, userId, `'${hstTab.title}'!B3`,
+    [['Fiscal Year Start (auto-detected — type a date here to view a different FY):']]);
+  if (!labelRes.ok) errors.push(`Failed to update HST FY label: ${labelRes.error}`);
+
+  // The formula references the Transactions tab — resolve its actual title
+  // (handles legacy emoji prefixes).
+  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
+  const txnTitle = txnTab ? txnTab.title : '📒 Transactions';
+  const formula = `=IFERROR(DATE(YEAR(MAX('${txnTitle}'!B12:B1000))-IF(MONTH(MAX('${txnTitle}'!B12:B1000))<4,1,0),4,1),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))`;
+  const formulaRes = await writeRange(env, userId, `'${hstTab.title}'!C3`, [[formula]]);
+  if (!formulaRes.ok) errors.push(`Failed to update HST FY formula: ${formulaRes.error}`);
+
+  changes.push(`Updated '${hstTab.title}' C3 to auto-detect Fiscal Year from your latest transaction.`);
 }
 
 // ── Helpers ──

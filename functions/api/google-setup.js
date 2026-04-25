@@ -888,12 +888,14 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📋 HST Returns'!A2", values: [['Figures auto-pull from the 📒 Transactions tab. Enter on CRA My Business Account each quarter.']] });
 
   // Fiscal Year Start cell at C3 — parameterizes the quarterly period windows.
-  // Defaults to April 1 of the current fiscal year (assumes Apr–Mar fiscal year,
-  // which is standard for Ontario trades businesses). User can edit this one cell
-  // to roll to a new fiscal year or shift to a calendar-year filing window.
-  data.push({ range: "'📋 HST Returns'!B3", values: [['Fiscal Year Start (edit to roll forward):']] });
+  // SMART DEFAULT: derives the FY from the latest transaction in the Transactions
+  // tab, NOT from today's date. Why: most users open the HST tab to file a return
+  // for the year they just finished bookkeeping (which may not be the FY in
+  // progress on today's calendar). If there are no transactions yet, falls back
+  // to today's FY. User can override C3 manually any time to view past FYs.
+  data.push({ range: "'📋 HST Returns'!B3", values: [['Fiscal Year Start (auto-detected — type a date here to view a different FY):']] });
   data.push({ range: "'📋 HST Returns'!C3", values: [[
-    '=DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1)'
+    "=IFERROR(DATE(YEAR(MAX('📒 Transactions'!B12:B1000))-IF(MONTH(MAX('📒 Transactions'!B12:B1000))<4,1,0),4,1),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))"
   ]]});
 
   data.push({ range: "'📋 HST Returns'!B4:G4", values: [[

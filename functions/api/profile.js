@@ -77,8 +77,16 @@ export async function onRequestPut(context) {
         employees = excluded.employees,
         structure = excluded.structure,
         activities = excluded.activities,
-        sheet_id = excluded.sheet_id,
-        script_url = excluded.script_url,
+        -- DEFENSIVE: don't blow away sheet_id / script_url if the payload
+        -- doesn't carry them. Otherwise an empty form field (or a save
+        -- before the profile finishes hydrating client-side) silently
+        -- disconnects the user's Google Sheet — the symptom we caught was
+        -- the migrate endpoint reporting 'No sheet connected' even though
+        -- the user clearly had one.
+        sheet_id = CASE WHEN excluded.sheet_id IS NOT NULL AND excluded.sheet_id != ''
+                        THEN excluded.sheet_id ELSE sheet_id END,
+        script_url = CASE WHEN excluded.script_url IS NOT NULL AND excluded.script_url != ''
+                          THEN excluded.script_url ELSE script_url END,
         updated_at = datetime('now')
     `).bind(
       auth.userId,

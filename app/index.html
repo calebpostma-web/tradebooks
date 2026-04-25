@@ -3800,7 +3800,7 @@ function impRender(){
       <td class="mono">${tx.date}</td>
       <td><div>${esc(tx.vendor)}</div>${tx.reason?`<div style="font-size:.7rem;color:var(--ink3)">${esc(tx.reason)}</div>`:''}</td>
       <td class="${isPos?'pos':'neg'}">$${fmtMoney(Math.abs(tx.amount))}</td>
-      <td><select class="cat-sel" onchange="impChangeCat(${idx},this.value)">${EXP_CATS.map(c=>`<option value="${c}"${c===tx.category?' selected':''}>${c}</option>`).join('')}</select></td>
+      <td><select class="cat-sel" onchange="impChangeCat(${idx},this.value)">${expenseCategoryOptions(tx.category)}</select></td>
       <td class="mono right">${tx.hst>0?'$'+fmtMoney(tx.hst):'—'}</td>
       <td class="mono right">$${fmtMoney(Math.abs(tx.net))}</td>
       <td><span style="font-family:var(--mono);font-size:.68rem">${CONF[tx.confidence]||'⚪'} ${tx.confidence||'—'}</span></td>
@@ -3828,7 +3828,73 @@ function impRenderStats(){
 // transfers land in Transactions as "Internal Transfer" (excluded from P&L),
 // deposits land as positive ledger entries and trigger invoice-match proposals.
 const EXCLUDED_CATS=new Set(['SKIP — not a business expense','Owner Draw / Distribution']);
-function impChangeCat(idx,cat){impTxns[idx].category=cat;impTxns[idx].excluded=EXCLUDED_CATS.has(cat);calcHST();impRenderStats()}
+
+// Sentinel value the "+ Add new category…" option carries. Picked because it
+// can never collide with a real category name (parens + ellipsis).
+const ADD_CATEGORY_SENTINEL = '__add_new_category__';
+
+/**
+ * Build the <option> HTML for an expense-category dropdown. Always appends a
+ * sentinel "+ Add new category…" row at the bottom so users can create a
+ * category without leaving the page they're on.
+ */
+function expenseCategoryOptions(selectedCat){
+  const opts = EXP_CATS.map(c => `<option value="${esc(c)}"${c===selectedCat?' selected':''}>${esc(c)}</option>`);
+  opts.push(`<option disabled>──────────</option>`);
+  opts.push(`<option value="${ADD_CATEGORY_SENTINEL}" style="color:var(--green);font-weight:500">+ Add new category…</option>`);
+  return opts.join('');
+}
+
+/**
+ * Prompts the user for a new custom category name, validates, persists to
+ * USER_CONFIG.customExpenseCats + the backend profile, then refreshes EXP_CATS
+ * and any open dropdowns. Calls onAdded(name) on success so the caller can
+ * apply the new category to the row that triggered the prompt.
+ */
+async function addCustomCategoryPrompt(onAdded){
+  const name = (window.prompt('Name for the new category? (e.g. "Shop Materials", "Disposal Fees")') || '').trim();
+  if(!name) return null;
+  // Reject duplicates (case-insensitive). If they pick an existing name, just
+  // route them to it instead of failing — friendlier than an error.
+  const lower = name.toLowerCase();
+  const existing = EXP_CATS.find(c => c.toLowerCase() === lower);
+  if(existing){
+    if(typeof onAdded === 'function') onAdded(existing);
+    toast(`"${existing}" already exists — selected it for you`);
+    return existing;
+  }
+  // Append + persist
+  USER_CONFIG.customExpenseCats = [...(USER_CONFIG.customExpenseCats || []), name];
+  refreshCategoryLists();   // updates EXP_CATS in place
+  // Persist to the backend so it sticks across sessions / devices
+  try {
+    await saveProfile({ ...USER_CONFIG });
+    toast(`Added category "${name}"`);
+  } catch(err){
+    toast(`Saved locally but profile save failed: ${err.message}`);
+  }
+  if(typeof onAdded === 'function') onAdded(name);
+  return name;
+}
+
+function impChangeCat(idx, cat){
+  if(cat === ADD_CATEGORY_SENTINEL){
+    // Snap the dropdown back to the previous value while we prompt
+    impRender();
+    addCustomCategoryPrompt(newName => {
+      impTxns[idx].category = newName;
+      impTxns[idx].excluded = EXCLUDED_CATS.has(newName);
+      impRender();        // re-render so the new option appears in every row
+      calcHST();
+      impRenderStats();
+    });
+    return;
+  }
+  impTxns[idx].category = cat;
+  impTxns[idx].excluded = EXCLUDED_CATS.has(cat);
+  calcHST();
+  impRenderStats();
+}
 function impToggleExcl(idx){impTxns[idx].excluded=!impTxns[idx].excluded;impRender();impRenderStats()}
 function impReset(){
   document.getElementById('imp-step2').classList.add('hidden');
@@ -4576,6 +4642,22 @@ No other text, just the JSON.`;
   document.getElementById('rcptAnalyzeBtn').disabled=false;
 }
 
+// Receipt scanner category change — same sentinel handling as the importer.
+// Re-renders the result panel so the new category appears in the dropdown.
+function rcptChangeCat(cat){
+  if(cat === ADD_CATEGORY_SENTINEL){
+    // Snap back to the previous value, then prompt
+    const sel = document.getElementById('rcptCatSel');
+    if(sel) sel.value = rcptResult.category || '';
+    addCustomCategoryPrompt(newName => {
+      rcptResult.category = newName;
+      rcptShowResult();
+    });
+    return;
+  }
+  rcptResult.category = cat;
+}
+
 function rcptShowResult(){
   document.getElementById('rcptBadge').style.display='inline-block';
   const r=rcptResult;
@@ -4590,8 +4672,8 @@ function rcptShowResult(){
     </div>
     <div style="margin-top:1rem">
       <label style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:.4rem">Category</label>
-      <select class="field" style="width:auto;padding:.5rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem" id="rcptCatSel" onchange="rcptResult.category=this.value">
-        ${EXP_CATS.map(c=>`<option value="${c}"${c===r.category?' selected':''}>${c}</option>`).join('')}
+      <select class="field" style="width:auto;padding:.5rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem" id="rcptCatSel" onchange="rcptChangeCat(this.value)">
+        ${expenseCategoryOptions(r.category)}
       </select>
     </div>
     ${r.notes?`<div style="margin-top:.75rem;font-size:.82rem;color:var(--ink3);line-height:1.5">${esc(r.notes)}</div>`:''}`;
@@ -7986,7 +8068,15 @@ async function checkPendingSchemaMigrations(){
       headers: { 'Authorization': 'Bearer ' + token },
     });
     const d = await r.json();
-    if(!d.ok) return;  // Silent fail — banner stays hidden, won't block the app
+    if(!d.ok){
+      // Special case — if the dry run failed because the Google connection is
+      // missing, we want to surface that to the user rather than silently swallow.
+      // Same banner UI, different content + action.
+      if(d.needsReauth){
+        showSchemaBannerForReauth(d.error || 'Google access expired');
+      }
+      return;
+    }
     if(d.upToDate || !(d.changes || []).length){
       // Cache "no migrations needed" for the rest of the session
       sessionStorage.setItem(SCHEMA_OK_KEY, '1');
@@ -8004,6 +8094,29 @@ async function checkPendingSchemaMigrations(){
     // Silent — never let a banner check break the app
     console.warn('Schema check failed:', err);
   }
+}
+
+// Repaints the schema banner as a "Google connection lost" prompt. Different
+// message + a button that re-runs the Google OAuth flow (prompt=consent) so a
+// fresh refresh_token is saved server-side.
+function showSchemaBannerForReauth(errMsg){
+  const banner = document.getElementById('schemaBanner');
+  const detail = document.getElementById('schemaBannerDetail');
+  const applyBtn = document.getElementById('schemaBannerApply');
+  if(!banner || !detail || !applyBtn) return;
+  // Switch to red-ish accent to signal urgency vs. the normal amber update prompt
+  banner.style.background = 'linear-gradient(90deg,var(--redlt) 0%, #fff5f5 100%)';
+  banner.style.borderBottom = '2px solid var(--red)';
+  detail.querySelector ? null : null;  // no-op
+  detail.innerHTML = `
+    <div style="font-weight:600;color:var(--red);margin-bottom:.2rem">Google connection lost</div>
+    <div style="font-size:.78rem;color:var(--ink2)">${esc(errMsg)} — sign back in with Google to reconnect (your sheet and data stay put).</div>`;
+  applyBtn.textContent = '🔓 Reconnect Google';
+  applyBtn.onclick = () => {
+    if(typeof loginWithGoogle === 'function') loginWithGoogle();
+    else toast('Go to sign-in screen and click Sign in with Google');
+  };
+  banner.style.display = '';
 }
 
 function schemaBannerDismiss(){
@@ -8087,7 +8200,20 @@ async function migrateSheetSchema(){
       }
       setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 Update sheet to latest schema'; btn.style.background = ''; btn.style.color = ''; }, 3000);
     } else {
-      status.innerHTML = `<span style="color:var(--red)">❌ ${esc(d.error || 'Migration failed')}</span>`;
+      // If the failure is a missing Google connection, show a recovery CTA
+      // instead of a dead-end error. Same flow as the banner — re-run OAuth.
+      if(d.needsReauth){
+        status.innerHTML = `
+          <div style="background:var(--redlt);border-left:3px solid var(--red);padding:.7rem .9rem;border-radius:4px">
+            <div style="font-weight:600;color:var(--red);margin-bottom:.3rem">Google connection lost</div>
+            <div style="color:var(--ink2);font-size:.78rem;margin-bottom:.5rem">${esc(d.error || 'Re-authentication required.')} Your sheet and data are safe — we just need a fresh Google access grant.</div>
+            <button onclick="loginWithGoogle()" style="background:var(--red);color:white;border:none;border-radius:4px;padding:.45rem .9rem;font-size:.82rem;cursor:pointer">🔓 Reconnect Google</button>
+          </div>`;
+      } else if(d.noSheet){
+        status.innerHTML = `<span style="color:var(--red)">❌ No Google Sheet connected. Use 'Build my Google Sheet' (or paste a sheet ID into the field above and Save).</span>`;
+      } else {
+        status.innerHTML = `<span style="color:var(--red)">❌ ${esc(d.error || 'Migration failed')}</span>`;
+      }
       btn.disabled = false;
       btn.textContent = '🔄 Update sheet to latest schema';
     }

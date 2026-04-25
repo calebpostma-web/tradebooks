@@ -153,13 +153,22 @@ export function generateRef(bank, date, amount, vendor) {
  * Read the spreadsheet metadata (tab list + grid properties). Used by the
  * migration endpoint to figure out which schema upgrades to apply.
  * Returns: { ok, sheets: [{ sheetId, title, gridProperties: { rowCount, columnCount, ...} }] }
+ *         | { ok: false, error, needsReauth?, noSheet? }
+ *
+ * `needsReauth` is forwarded from getGoogleAccessToken so callers can show a
+ * "Reconnect Google" CTA instead of a generic error. `noSheet` distinguishes
+ * the "you never connected a sheet" case from the "Google connection lost" case.
  */
 export async function getSpreadsheetMetadata(env, userId) {
     const sheetId = await getUserSheetId(env, userId);
-    if (!sheetId) return { ok: false, error: 'No sheet connected' };
+    if (!sheetId) return { ok: false, error: 'No Google Sheet connected to this account.', noSheet: true };
 
     const tok = await getGoogleAccessToken(env, userId);
-    if (!tok.ok) return tok;
+    if (!tok.ok) {
+        // Pass needsReauth through so the front-end can offer a re-sign-in flow
+        // instead of a dead-end error message.
+        return { ok: false, error: tok.error, needsReauth: !!tok.needsReauth };
+    }
 
     const fields = encodeURIComponent('sheets(properties(sheetId,title,index,gridProperties))');
     const resp = await fetch(

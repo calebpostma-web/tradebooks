@@ -58,7 +58,17 @@ async function runMigrations(request, env, dryRunDefault) {
   const dryRun = dryRunParam ? dryRunParam !== 'false' && dryRunParam !== '0' : dryRunDefault;
 
   const meta = await getSpreadsheetMetadata(env, userId);
-  if (!meta.ok) return json({ ok: false, error: 'Could not read sheet: ' + meta.error });
+  if (!meta.ok) {
+    // Pass through needsReauth + noSheet so the front-end can route the user to
+    // the right recovery flow (reconnect Google vs. create a sheet) instead of
+    // showing a dead-end "Could not read sheet" error.
+    return json({
+      ok: false,
+      error: meta.error,
+      needsReauth: !!meta.needsReauth,
+      noSheet: !!meta.noSheet,
+    });
+  }
 
   const sheetsByTitle = Object.fromEntries(meta.sheets.map(s => [s.title, s]));
   const changes = [];

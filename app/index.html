@@ -8054,6 +8054,16 @@ const SCHEMA_DISMISS_KEY = 'tradebooks_schema_dismissed_v1';
 const SCHEMA_OK_KEY = 'tradebooks_schema_ok_session';
 
 async function checkPendingSchemaMigrations(){
+  // Highest priority: if the most recent Google sign-in didn't actually
+  // persist a refresh token (Google's prompt=consent quirk), we already
+  // know the connection is broken — show the revoke-and-retry banner
+  // immediately without a round-trip.
+  if(sessionStorage.getItem('tb_google_access_not_persisted')){
+    const revokeUrl = sessionStorage.getItem('tb_google_revoke_url') || 'https://myaccount.google.com/permissions';
+    showSchemaBannerForRevokeAndRetry(revokeUrl);
+    return;
+  }
+
   // Don't bother checking if the user already dismissed this session.
   if(sessionStorage.getItem(SCHEMA_DISMISS_KEY)) return;
   // Or if we already verified no pending changes this session — saves a round-trip.
@@ -8094,6 +8104,38 @@ async function checkPendingSchemaMigrations(){
     // Silent — never let a banner check break the app
     console.warn('Schema check failed:', err);
   }
+}
+
+// Repaints the schema banner with the "Google didn't actually issue us a
+// refresh token even though you re-consented" recovery instructions. This is
+// Google's known quirk: prompt=consent gets ignored if the user has any prior
+// offline-access grant for our app on Google's side. The fix is to revoke at
+// myaccount.google.com/permissions then sign in fresh.
+function showSchemaBannerForRevokeAndRetry(revokeUrl){
+  const banner = document.getElementById('schemaBanner');
+  const detail = document.getElementById('schemaBannerDetail');
+  const applyBtn = document.getElementById('schemaBannerApply');
+  if(!banner || !detail || !applyBtn) return;
+  banner.style.background = 'linear-gradient(90deg,var(--redlt) 0%, #fff5f5 100%)';
+  banner.style.borderBottom = '2px solid var(--red)';
+  detail.innerHTML = `
+    <div style="font-weight:600;color:var(--red);margin-bottom:.3rem">⚠ Google didn't grant offline access</div>
+    <div style="font-size:.8rem;color:var(--ink2);line-height:1.5">
+      You signed in but Google's records show prior consent, so it didn't issue a fresh access token.
+      To fix this once and for all:
+      <ol style="margin:.4rem 0 .4rem 1.4rem;padding:0;font-size:.8rem;line-height:1.6">
+        <li>Open <a href="${esc(revokeUrl)}" target="_blank" style="color:var(--red);font-weight:500">Google account permissions ↗</a></li>
+        <li>Find this app and click <strong>Remove Access</strong></li>
+        <li>Come back here and click <strong>🔓 Sign in with Google again</strong></li>
+      </ol>
+    </div>`;
+  applyBtn.textContent = '🔓 Sign in with Google again';
+  applyBtn.onclick = () => {
+    sessionStorage.removeItem('tb_google_access_not_persisted');
+    sessionStorage.removeItem('tb_google_revoke_url');
+    if(typeof loginWithGoogle === 'function') loginWithGoogle();
+  };
+  banner.style.display = '';
 }
 
 // Repaints the schema banner as a "Google connection lost" prompt. Different
@@ -8520,6 +8562,20 @@ async function handleLoginCallback(code) {
     // Persist the TradeBooks JWT just like email/password login does
     sessionStorage.setItem(AUTH_KEY, d.token);
     if (d.user) sessionStorage.setItem(PROFILE_KEY, JSON.stringify(d.user));
+
+    // Detect Google's "I won't issue you a refresh token even with prompt=consent"
+    // failure mode. When this happens the user just signed in successfully BUT
+    // the server still can't act on their sheet. Stash a flag for the schema
+    // banner check to surface a revoke-and-retry instruction.
+    if (d.googleAccessReady === false) {
+      sessionStorage.setItem('tb_google_access_not_persisted', '1');
+      sessionStorage.setItem('tb_google_revoke_url', d.revokeUrl || 'https://myaccount.google.com/permissions');
+      // Force the schema check to run again on next showApp() so the banner repaints
+      sessionStorage.removeItem('tradebooks_schema_ok_session');
+      sessionStorage.removeItem('tradebooks_schema_dismissed_v1');
+    } else {
+      sessionStorage.removeItem('tb_google_access_not_persisted');
+    }
 
     // Stash the short-lived Google access token so onboarding can create the
     // sheet without triggering a second OAuth popup. Expires in ~1h; after

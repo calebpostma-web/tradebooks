@@ -185,6 +185,45 @@ export async function getSpreadsheetMetadata(env, userId) {
 }
 
 /**
+ * Resolve the actual tab title in the user's sheet that matches a logical
+ * name (case-insensitive, ignoring a leading emoji + whitespace prefix).
+ *
+ * Why this exists: sheets created by the legacy Apps Script bookkeeper used
+ * different emoji prefixes than the current google-setup.js (e.g. '🧾 Transactions'
+ * vs '📒 Transactions'). Hard-coding the modern tab name in the year-end
+ * checklist + builder breaks for any user with an older sheet.
+ *
+ * Resolution order:
+ *   1. Exact match.
+ *   2. Match by suffix after stripping any leading non-letter prefix (so
+ *      '🧾 Transactions' matches a logical name 'Transactions' or
+ *      '📒 Transactions').
+ *
+ * Returns the resolved tab title (with whatever emoji it actually has) or
+ * null when no candidate matches.
+ */
+export function resolveTabName(sheets, logicalName) {
+  if (!sheets || !sheets.length) return null;
+  const wanted = String(logicalName || '').trim();
+  if (!wanted) return null;
+
+  // 1. Exact match wins
+  for (const s of sheets) {
+    if (s.title === wanted) return s.title;
+  }
+
+  // 2. Strip leading non-letter chars (emoji + space) from both sides and
+  //    compare. Compare case-insensitive. We keep the actual title from the
+  //    sheet so callers reference what's really there.
+  const strip = s => String(s || '').replace(/^[^A-Za-z]+/, '').trim().toLowerCase();
+  const wantedStripped = strip(wanted);
+  for (const s of sheets) {
+    if (strip(s.title) === wantedStripped) return s.title;
+  }
+  return null;
+}
+
+/**
  * Run a raw spreadsheets:batchUpdate (for structure changes — addSheet,
  * updateSheetProperties, repeatCell, etc). Distinct from the values:batchUpdate
  * exported above as `batchUpdate` (which only writes cell values).

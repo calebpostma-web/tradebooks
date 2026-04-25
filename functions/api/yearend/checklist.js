@@ -21,14 +21,17 @@
 // ════════════════════════════════════════════════════════════════════
 
 import { getGoogleAccessToken } from '../../_google.js';
-import { readRange } from '../../_sheets.js';
+import { readRange, getSpreadsheetMetadata, resolveTabName } from '../../_sheets.js';
 import { authenticateRequest, json, options, fiscalYearOf, fiscalYearMonths } from '../../_shared.js';
 import { findOrCreateFolder, listFolderFiles } from '../../_drive.js';
 
-const TXN_TAB = '📒 Transactions';
-const INV_TAB = '🧾 Invoices';
-const REM_TAB = '📑 CRA Remittances';
-const PAY_TAB = '💼 Payroll';
+// Logical tab names — these get resolved against the user's actual sheet
+// metadata so we work with both modern (📒 Transactions) and legacy
+// (🧾 Transactions, no-emoji, etc) tab namings.
+const TAB_TXN = 'Transactions';
+const TAB_INV = 'Invoices';
+const TAB_REM = 'CRA Remittances';
+const TAB_PAY = 'Payroll';
 const RECEIPTS_PARENT = 'AI Bookkeeper Receipts';
 const YEAREND_PARENT = 'AI Bookkeeper Year-End';
 
@@ -47,13 +50,25 @@ export async function onRequest({ request, env }) {
   const tok = await getGoogleAccessToken(env, userId);
   if (!tok.ok) return json({ ok: false, error: tok.error || 'Drive token unavailable' }, 401);
 
+  // Resolve actual tab names from sheet metadata (handles legacy emoji prefixes
+  // and freshly-created sheets uniformly). Bail with a helpful error if the
+  // sheet is unreachable so we don't fire 4 broken reads.
+  const meta = await getSpreadsheetMetadata(env, userId);
+  if (!meta.ok) return json({ ok: false, error: meta.error || 'Could not read sheet metadata' });
+  const tabTxn = resolveTabName(meta.sheets, TAB_TXN);
+  const tabInv = resolveTabName(meta.sheets, TAB_INV);
+  const tabRem = resolveTabName(meta.sheets, TAB_REM);
+  const tabPay = resolveTabName(meta.sheets, TAB_PAY);
+
   // Run sheet reads + Drive list in parallel. Each branch handles its own
   // errors — we don't want a single Drive hiccup to kill the whole checklist.
+  // For tabs that don't exist we synthesize a "no data" result rather than
+  // hitting the API with a known-bad range.
   const [txnRows, invRows, remRows, payRows, statementFiles, receiptFiles] = await Promise.all([
-    safeReadRange(env, userId, `'${TXN_TAB}'!B12:M1000`),
-    safeReadRange(env, userId, `'${INV_TAB}'!B12:Q500`),
-    safeReadRange(env, userId, `'${REM_TAB}'!B12:J500`),
-    safeReadRange(env, userId, `'${PAY_TAB}'!B12:Q500`),
+    tabTxn ? safeReadRange(env, userId, `'${tabTxn}'!B12:M1000`) : missingTabResult(TAB_TXN),
+    tabInv ? safeReadRange(env, userId, `'${tabInv}'!B12:Q500`)  : missingTabResult(TAB_INV),
+    tabRem ? safeReadRange(env, userId, `'${tabRem}'!B12:J500`)  : missingTabResult(TAB_REM),
+    tabPay ? safeReadRange(env, userId, `'${tabPay}'!B12:Q500`)  : missingTabResult(TAB_PAY),
     listStatementFiles(tok.accessToken, fy),
     listReceiptFiles(tok.accessToken, fy),
   ]);
@@ -290,6 +305,17 @@ async function safeReadRange(env, userId, range) {
   } catch (err) {
     return { ok: false, error: err.message };
   }
+}
+
+// Synthetic result when a tab the checklist expects isn't in the sheet at
+// all. Same shape as safeReadRange so the checks treat it as an empty range
+// with a helpful explanation, rather than a hard failure.
+function missingTabResult(logicalName) {
+  return {
+    ok: false,
+    error: `'${logicalName}' tab not found in your sheet. Run Settings → Update sheet to latest schema, or check your tab names.`,
+    values: [],
+  };
 }
 
 async function listStatementFiles(accessToken, fy) {

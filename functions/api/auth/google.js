@@ -116,13 +116,28 @@ export async function onRequestPost({ request, env }) {
     ).bind(user.id, user.name || name, user.email || email).run();
   }
 
-  // Save refresh token so future sheet ops can re-auth without the user
+  // Save refresh token so future sheet ops can re-auth without the user.
+  // Track whether we actually got a refresh_token in this exchange so the
+  // front-end can flag the user when Google silently fails to return one.
+  let refreshTokenSaved = false;
   if (tokenData.refresh_token) {
     try {
       await saveGoogleRefreshToken(env, user.id, tokenData.refresh_token, tokenData.access_token, tokenData.expires_in);
+      refreshTokenSaved = true;
     } catch (e) {
       console.warn('saveGoogleRefreshToken failed:', e.message);
     }
+  }
+
+  // Whether the user has ANY usable refresh token (just-saved or pre-existing).
+  // If neither, server-side sheet ops will fail and we should warn the user up
+  // front rather than letting them drift into a confusing loop.
+  let hasUsableRefreshToken = refreshTokenSaved;
+  if (!hasUsableRefreshToken) {
+    const profileRow = await env.DB.prepare(
+      'SELECT google_refresh_token FROM profiles WHERE user_id = ?'
+    ).bind(user.id).first();
+    hasUsableRefreshToken = !!(profileRow && profileRow.google_refresh_token);
   }
 
   // 6. Load profile for the response so the frontend can route correctly
@@ -147,6 +162,12 @@ export async function onRequestPost({ request, env }) {
     accessToken: tokenData.access_token,    // short-lived, used for immediate sheet build
     expiresIn: tokenData.expires_in,
     googleProfile: { sub: googleSub, email, name, picture: idPayload.picture || '' },
+    // Flag: true when sheet ops can run server-side. False = user needs to
+    // revoke at https://myaccount.google.com/permissions and re-grant.
+    // This is the well-known Google quirk where prompt=consent is sometimes
+    // ignored if the user has any prior offline-access grant for this app.
+    googleAccessReady: hasUsableRefreshToken,
+    revokeUrl: 'https://myaccount.google.com/permissions',
   });
 }
 

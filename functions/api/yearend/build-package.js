@@ -26,7 +26,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 import { getGoogleAccessToken, getUserSheetId } from '../../_google.js';
-import { readRange } from '../../_sheets.js';
+import { readRange, getSpreadsheetMetadata, resolveTabName } from '../../_sheets.js';
 import { authenticateRequest, json, options, fiscalYearOf, parseFiscalYearEnd } from '../../_shared.js';
 import {
   findOrCreateFolder, createFolder, makeShareable, uploadFile,
@@ -34,10 +34,12 @@ import {
   createCoverLetterDoc,
 } from '../../_drive.js';
 
-const REM_TAB = '📑 CRA Remittances';
-const TXN_TAB = '📒 Transactions';
-const INV_TAB = '🧾 Invoices';
-const PAY_TAB = '💼 Payroll';
+// Logical tab names — resolved against actual sheet metadata at request time
+// so we work with both modern and legacy emoji prefixes.
+const TAB_REM = 'CRA Remittances';
+const TAB_TXN = 'Transactions';
+const TAB_INV = 'Invoices';
+const TAB_PAY = 'Payroll';
 
 const PACKAGES_PARENT = 'AI Bookkeeper Year-End Packages';
 const STATEMENTS_PARENT = 'AI Bookkeeper Year-End';
@@ -67,6 +69,14 @@ export async function onRequestPost({ request, env }) {
 
   const spreadsheetId = await getUserSheetId(env, userId);
   if (!spreadsheetId) return json({ ok: false, error: 'No sheet connected' }, 400);
+
+  // Resolve actual tab names so we work with both new and legacy sheets.
+  const meta = await getSpreadsheetMetadata(env, userId);
+  const sheets = meta.ok ? meta.sheets : [];
+  const tabRem = resolveTabName(sheets, TAB_REM);
+  // tabTxn / tabInv / tabPay aren't used directly here — the package builder
+  // exports the entire spreadsheet as XLSX (all tabs included), so they only
+  // need to be resolved if/when we add per-tab CSV exports.
 
   const log = [];   // step-by-step record we return so the UI can show what happened
   const warnings = [];
@@ -102,7 +112,12 @@ export async function onRequestPost({ request, env }) {
     // ── 3. Pull CRA Remittances rows for this FY ──────────────────────────
     const remittancesForFy = [];
     try {
-      const remRead = await readRange(env, userId, `'${REM_TAB}'!B12:J500`);
+      // tabRem may be null if the user's sheet doesn't have a CRA Remittances
+      // tab yet (legacy sheets). Skip the read in that case — no remittances
+      // to enumerate.
+      const remRead = tabRem
+        ? await readRange(env, userId, `'${tabRem}'!B12:J500`)
+        : { ok: true, values: [] };
       if (remRead.ok) {
         for (const row of (remRead.values || [])) {
           if (!row[0]) continue;

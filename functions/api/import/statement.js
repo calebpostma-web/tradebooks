@@ -120,9 +120,13 @@ export async function onRequestPost({ request, env }) {
             vendor: row.vendor,
             invNum: candidate.invNum,
             client: candidate.client,
-            invAmount: candidate.total,
+            invAmount: candidate.expected,   // what this leg of the invoice is owed
+            invTotal: candidate.total,       // full invoice total, for context
             invDate: candidate.dateIssued,
             confidence: candidate.confidence,
+            // 'deposit' = first leg → flip Unpaid/Awaiting to Deposit Received.
+            // 'final'   = closing payment → flip to Paid.
+            nextLeg: candidate.nextLeg,
           });
           matchStatus = 'Unmatched';  // pending user confirmation
         } else {
@@ -180,23 +184,68 @@ export async function onRequestPost({ request, env }) {
 // ── Invoice matching ─────────────────────────────────────────────────
 
 /**
- * Load open (Unpaid) invoices from the Invoices tab.
- * Columns B-K: InvNum, Date, Client, Description, Subtotal, HST, Total, HSTFlag, Due, Status
+ * Load open invoices from the Invoices tab — anything that isn't fully Paid.
+ * Columns B-Q: InvNum, Date, Client, Description, Subtotal, HST, Total, HSTFlag,
+ *              Due, Status, DatePaid, Notes, RevenueCat, DepositAmount,
+ *              DepositDate, BalanceDue
+ *
+ * For each open invoice we expose `expected` — the dollar amount we're hoping
+ * to match against an incoming deposit:
+ *   - 'Awaiting Deposit'   → expected = deposit amount        (nextLeg = 'deposit')
+ *   - 'Deposit Received'   → expected = balance due           (nextLeg = 'final')
+ *   - 'Unpaid' (no dep)    → expected = total                 (nextLeg = 'final')
+ *   - 'Unpaid' (deposit set but date blank — legacy edge case) → treat as Awaiting Deposit
  */
 async function loadOpenInvoices(env, userId) {
-  const result = await readRange(env, userId, `'${INVOICES_TAB}'!B12:K500`);
+  // Read out to col Q so the deposit columns are included. Sheets returns ragged
+  // rows (trailing empty cells stripped), so destructure with defaults.
+  const result = await readRange(env, userId, `'${INVOICES_TAB}'!B12:Q500`);
   if (!result.ok) return [];
   const invoices = [];
   for (const row of result.values) {
-    const [invNum, dateIssued, client, desc, sub, hst, total, hstFlag, due, status] = row;
-    if (!invNum || (status && String(status).toLowerCase() !== 'unpaid')) continue;
+    const invNum = row[0];
+    const dateIssued = row[1] || '';
+    const client = row[2] || '';
+    const sub = row[4];
+    const hst = row[5];
+    const total = parseFloat(row[6]) || 0;
+    const status = (row[9] || '').toString().trim();
+    const depositAmount = parseFloat(row[13]) || 0;
+    const depositDate = (row[14] || '').toString().trim();
+    const balanceDue = parseFloat(row[15]) || 0;
+
+    if (!invNum) continue;
+    const sLower = status.toLowerCase();
+    if (sLower === 'paid' || sLower === 'cancelled') continue;
+
+    let expected, nextLeg;
+    if (sLower === 'deposit received') {
+      // Deposit already in the books; we're now looking for the final-balance payment.
+      expected = balanceDue > 0 ? balanceDue : Math.max(0, total - depositAmount);
+      nextLeg = 'final';
+    } else if (sLower === 'awaiting deposit' || (depositAmount > 0 && !depositDate)) {
+      // Deposit hasn't landed yet — match against the deposit amount.
+      expected = depositAmount;
+      nextLeg = 'deposit';
+    } else {
+      // Plain unpaid invoice (legacy or no deposit configured).
+      expected = total;
+      nextLeg = 'final';
+    }
+
     invoices.push({
       invNum: String(invNum),
-      dateIssued: dateIssued || '',
-      client: client || '',
+      dateIssued,
+      client,
       subtotal: parseFloat(sub) || 0,
       hst: parseFloat(hst) || 0,
-      total: parseFloat(total) || 0,
+      total,
+      depositAmount,
+      depositDate,
+      balanceDue,
+      status,
+      expected,
+      nextLeg, // 'deposit' or 'final' — passed through to confirm-match
     });
   }
   return invoices;
@@ -204,10 +253,15 @@ async function loadOpenInvoices(env, userId) {
 
 /**
  * Find the best-matching open invoice for a deposit.
+ * The "expected amount" depends on the invoice's current state — for invoices
+ * with status 'Deposit Received' we're looking for the balance, not the total.
+ * Date window is anchored to the issue date, which works for both legs since
+ * deposits and final payments both typically arrive within a few weeks.
+ *
  * Priority:
- *   1. Exact match on invoice total (incl HST), within date window.
- *   2. Exact match on invoice subtotal (client paid net of HST? rare but possible), within date window.
- * Returns the candidate or null.
+ *   1. Exact match on invoice expected amount (incl HST), within date window.
+ *   2. Exact match on net (HST-stripped) version of expected, within date window.
+ *   3. Exact match on subtotal (legacy fallback).
  */
 function findInvoiceMatch(openInvoices, depositDateStr, depositTotal, depositNet) {
   if (!openInvoices.length) return null;
@@ -221,9 +275,7 @@ function findInvoiceMatch(openInvoices, depositDateStr, depositTotal, depositNet
     const daysApart = Math.abs((depositDate - invDate) / (1000 * 60 * 60 * 24));
     if (daysApart > MATCH_DATE_WINDOW_DAYS) continue;
 
-    if (approxEqual(depositTotal, inv.total)) {
-      candidates.push({ ...inv, confidence: 'high', daysApart });
-    } else if (approxEqual(depositNet, inv.total)) {
+    if (approxEqual(depositTotal, inv.expected) || approxEqual(depositNet, inv.expected)) {
       candidates.push({ ...inv, confidence: 'high', daysApart });
     } else if (approxEqual(depositTotal, inv.subtotal) || approxEqual(depositNet, inv.subtotal)) {
       candidates.push({ ...inv, confidence: 'medium', daysApart });

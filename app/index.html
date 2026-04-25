@@ -956,6 +956,25 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <label>Revenue Category<small style="color:var(--ink3);font-weight:400;margin-left:.4rem">— for Year-End bucketing when this invoice is paid</small></label>
           <select id="invCategory" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;font-family:var(--sans);background:white"></select>
         </div>
+        <div class="toggle-row" id="invDepositRow" style="margin-top:.9rem">
+          <div class="toggle-lbl">Deposit / down payment<small id="invDepLabel">Required upfront before work begins</small></div>
+          <label class="toggle-sw"><input type="checkbox" id="invDepositOn" onchange="toggleDeposit()"><div class="t-track"></div><div class="t-knob"></div></label>
+        </div>
+        <div id="invDepositFields" style="display:none;margin-top:.6rem;padding:.85rem 1rem;background:var(--paper2);border-left:3px solid var(--green);border-radius:4px">
+          <div class="field-row">
+            <div class="field" style="margin-bottom:0">
+              <label>Deposit amount (CAD, incl HST)</label>
+              <input type="number" id="invDepositAmt" min="0" step="0.01" placeholder="e.g. 1000.00" oninput="invUpdate()" style="font-family:var(--mono)">
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label>Date received<small style="color:var(--ink3);font-weight:400;margin-left:.35rem">— leave blank if not paid yet</small></label>
+              <input type="date" id="invDepositDate" oninput="invUpdate()">
+            </div>
+          </div>
+          <div style="font-size:.72rem;color:var(--ink3);margin-top:.55rem;line-height:1.5">
+            <strong style="color:var(--ink2)">Tip:</strong> At the kitchen table, set the amount and leave the date blank — the invoice will print "Required deposit before work begins". Once the e-transfer arrives, fill in the date and the invoice shows the deposit credited with the remaining balance due.
+          </div>
+        </div>
         <div class="totals-box" id="invTotalsBox"></div>
         <div class="field" style="margin-top:1.1rem"><label>Notes (optional)</label><textarea id="invNotes" placeholder="Payment due within 30 days." oninput="invUpdate()"></textarea></div>
         <div class="btn-row">
@@ -3737,16 +3756,22 @@ async function sendToSheets(){
       const matches = Array.isArray(d.proposedMatches) ? d.proposedMatches : [];
       if(matches.length){
         msg += `<div style="background:var(--blueLight,#e3eefa);border:1px solid var(--blue);border-radius:var(--radius);padding:.8rem 1rem;margin-top:.85rem;font-size:.85rem;line-height:1.6">`;
-        msg += `<strong>💡 ${matches.length} deposit${matches.length>1?'s':''} look like open invoice${matches.length>1?'s':''}.</strong> Confirm to mark the invoice Paid.`;
+        msg += `<strong>💡 ${matches.length} deposit${matches.length>1?'s':''} look like open invoice${matches.length>1?'s':''}.</strong> Confirm to update the invoice.`;
         msg += `<div style="margin-top:.5rem;display:flex;flex-direction:column;gap:.4rem">`;
         matches.forEach((m, i) => {
           const safeClient = esc(m.client || '');
           const safeInv = esc(m.invNum || '');
+          const leg = m.nextLeg === 'deposit' ? 'deposit' : 'final payment';
+          const legBadge = m.nextLeg === 'deposit'
+            ? `<span style="display:inline-block;background:var(--amberlt);color:var(--amber);font-size:.65rem;font-family:var(--mono);letter-spacing:.04em;padding:.1rem .4rem;border-radius:3px;margin-left:.4rem;text-transform:uppercase">deposit</span>`
+            : `<span style="display:inline-block;background:var(--greenlt);color:var(--green);font-size:.65rem;font-family:var(--mono);letter-spacing:.04em;padding:.1rem .4rem;border-radius:3px;margin-left:.4rem;text-transform:uppercase">final</span>`;
+          const safeDate = esc(m.date || '');
+          const safeLeg = esc(m.nextLeg || 'final');
           msg += `<div id="match-${i}" style="background:#fff;border:1px solid var(--rule);border-radius:4px;padding:.55rem .75rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">`;
-          msg += `<div style="flex:1;min-width:180px;font-size:.8rem"><strong>$${Math.abs(m.amount||0).toFixed(2)}</strong> on ${esc(m.date||'')} → Invoice #${safeInv} (${safeClient})</div>`;
+          msg += `<div style="flex:1;min-width:180px;font-size:.8rem"><strong>$${Math.abs(m.amount||0).toFixed(2)}</strong> on ${safeDate} → Invoice #${safeInv} (${safeClient})${legBadge}</div>`;
           msg += `<div style="display:flex;gap:.3rem">`;
-          msg += `<button onclick="confirmInvoiceMatch(${m.txnRow}, '${safeInv}', ${i})" style="background:var(--green);color:#fff;border:none;border-radius:4px;padding:.3rem .75rem;cursor:pointer;font-size:.75rem">Confirm match</button>`;
-          msg += `<button onclick="confirmInvoiceMatch(${m.txnRow}, '', ${i})" style="background:var(--grey,#eee);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:.3rem .75rem;cursor:pointer;font-size:.75rem">Not a match</button>`;
+          msg += `<button onclick="confirmInvoiceMatch(${m.txnRow}, '${safeInv}', ${i}, '${safeLeg}', '${safeDate}')" style="background:var(--green);color:#fff;border:none;border-radius:4px;padding:.3rem .75rem;cursor:pointer;font-size:.75rem">Confirm ${leg}</button>`;
+          msg += `<button onclick="confirmInvoiceMatch(${m.txnRow}, '', ${i}, '', '')" style="background:var(--grey,#eee);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:.3rem .75rem;cursor:pointer;font-size:.75rem">Not a match</button>`;
           msg += `</div></div>`;
         });
         msg += `</div></div>`;
@@ -3770,8 +3795,12 @@ async function sendToSheets(){
   }
 }
 
-// Phase 2A — confirm or dismiss a proposed deposit → invoice match
-async function confirmInvoiceMatch(txnRow, invNum, cardIdx){
+// Phase 2A — confirm or dismiss a proposed deposit → invoice match.
+// `leg` is 'deposit' (first payment) or 'final' (closing payment). The server
+// uses it to choose between flipping status to 'Deposit Received' vs 'Paid'.
+// `txnDate` is the bank-statement date — passed through so the server can
+// back-fill Deposit Date Received (col P) or Date Paid (col L) accordingly.
+async function confirmInvoiceMatch(txnRow, invNum, cardIdx, leg, txnDate){
   const token = sessionStorage.getItem(AUTH_KEY);
   const card = document.getElementById(`match-${cardIdx}`);
   if(!token){ toast('Please sign in first'); return; }
@@ -3780,17 +3809,23 @@ async function confirmInvoiceMatch(txnRow, invNum, cardIdx){
     const r = await fetch('/api/import/confirm-match', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ txnRow, invNum }),
+      body: JSON.stringify({ txnRow, invNum, leg: leg || '', txnDate: txnDate || '' }),
     });
     const d = await r.json();
     if(d.ok){
+      // Server tells us the actual transition that happened (handles legacy
+      // matches where the front-end didn't pass a leg).
+      const newStatus = d.newStatus || (leg === 'deposit' ? 'Deposit Received' : 'Paid');
+      const successCopy = invNum
+        ? (newStatus === 'Deposit Received'
+            ? `✓ Deposit recorded — Invoice #${esc(invNum)} now Deposit Received. Balance still owed.`
+            : `✓ Invoice #${esc(invNum)} marked Paid in full.`)
+        : `Dismissed — deposit left unmatched.`;
       if(card){
         card.style.background = invNum ? '#e6f5e6' : '#f4f4f4';
-        card.innerHTML = invNum
-          ? `<div style="flex:1;font-size:.8rem;color:var(--green)">✓ Invoice #${esc(invNum)} marked Paid, deposit linked.</div>`
-          : `<div style="flex:1;font-size:.8rem;color:var(--ink3)">Dismissed — deposit left unmatched.</div>`;
+        card.innerHTML = `<div style="flex:1;font-size:.8rem;color:${invNum?'var(--green)':'var(--ink3)'}">${successCopy}</div>`;
       }
-      toast(invNum ? `Invoice #${invNum} marked Paid` : 'Match dismissed');
+      toast(invNum ? (newStatus === 'Deposit Received' ? `Invoice #${invNum} → Deposit Received` : `Invoice #${invNum} marked Paid`) : 'Match dismissed');
     } else {
       if(card) card.style.opacity = '1';
       toast('Match failed: ' + (d.error || 'unknown error'));
@@ -3905,6 +3940,21 @@ function setInvCurrency(c){
 function regenInv(){invNum=String((USER_CONFIG?.invoiceStart||1001)+Math.floor(Math.random()*200));document.getElementById('invNumDisp').textContent=invNum;invUpdate()}
 function customInv(v){if(v){invNum=v;document.getElementById('invNumDisp').textContent=v;invUpdate()}}
 
+// ── Deposit / down payment toggle ───────────────────────────────────
+// When ON, deposit fields are revealed. Amount is gross (incl HST). Date is
+// optional — blank means "required but not yet received" (kitchen-table flow).
+function toggleDeposit(){
+  const on = document.getElementById('invDepositOn').checked;
+  const wrap = document.getElementById('invDepositFields');
+  if(wrap) wrap.style.display = on ? '' : 'none';
+  if(!on){
+    // Clear the inputs so a hidden state can't leak amounts into the preview/save
+    const a=document.getElementById('invDepositAmt'); if(a) a.value='';
+    const d=document.getElementById('invDepositDate'); if(d) d.value='';
+  }
+  invUpdate();
+}
+
 function renderLines(){
   document.getElementById('lineItemsWrap').innerHTML=invLines.map((l,i)=>`
     <div class="line-item-row">
@@ -3944,11 +3994,21 @@ function invUpdate(){
   const total = sub + hstAmt;
   const curCode = invCurrency; // 'CAD' or 'USD'
 
+  // Deposit / down payment — gross (incl HST). Only applies on CAD invoices.
+  const depOn = !!document.getElementById('invDepositOn')?.checked && invCurrency==='CAD';
+  const depAmt = depOn ? Math.max(0, parseFloat(document.getElementById('invDepositAmt')?.value)||0) : 0;
+  const depDate = depOn ? (document.getElementById('invDepositDate')?.value || '') : '';
+  // Cap deposit at total so "balance due" never goes negative in the display
+  const depEffective = Math.min(depAmt, total);
+  const balanceDue = depAmt > 0 ? Math.max(0, Math.round((total - depEffective)*100)/100) : total;
+
   const noTaxLbl = invCurrency==='USD' ? `No tax (USD — zero-rated)` : `No ${taxType}`;
   document.getElementById('invTotalsBox').innerHTML=`
     <div class="tot-row"><span class="tot-lbl">Subtotal</span><span class="tot-val">$${fmtMoney(sub)} ${curCode}</span></div>
     ${hst?`<div class="tot-row"><span class="tot-lbl">${taxLabel}</span><span class="tot-val">$${fmtMoney(hstAmt)} ${curCode}</span></div>`:`<div class="tot-row"><span class="tot-lbl" style="color:var(--red)">${noTaxLbl}</span><span class="tot-val">—</span></div>`}
-    <div class="tot-row final"><span>Total</span><span class="tot-val big">$${fmtMoney(total)} ${curCode}</span></div>`;
+    <div class="tot-row final"><span>Total</span><span class="tot-val big">$${fmtMoney(total)} ${curCode}</span></div>
+    ${depAmt>0 && depDate ? `<div class="tot-row" style="color:var(--green)"><span class="tot-lbl">Less deposit received ${fmtDate(depDate)}</span><span class="tot-val">−$${fmtMoney(depEffective)} ${curCode}</span></div><div class="tot-row final"><span>Balance Due</span><span class="tot-val big" style="color:var(--green)">$${fmtMoney(balanceDue)} ${curCode}</span></div>` : ''}
+    ${depAmt>0 && !depDate ? `<div class="tot-row" style="color:var(--amber);font-style:italic"><span class="tot-lbl">Required deposit before work begins</span><span class="tot-val">$${fmtMoney(depAmt)} ${curCode}</span></div>` : ''}`;
 
   // Update company header in preview
   const co = INV_COMPANIES[activeCompany] || {};
@@ -4008,10 +4068,25 @@ function invUpdate(){
     return `<tr><td>${esc(l.desc)||'<em style="color:var(--ink3)">Description</em>'}</td><td class="mono">${l.qty||1}</td><td class="mono">$${fmtMoney(parseFloat(l.rate)||0)}</td><td class="mono" style="text-align:right">$${fmtMoney(amt)}</td></tr>`;
   }).join('');
 
+  // Footer rows. Three layouts:
+  //   1. No deposit → Subtotal / HST / TOTAL DUE (current behaviour)
+  //   2. Deposit received (date filled) → ... / Total / Less deposit / Balance Due
+  //   3. Deposit required (no date) → ... / TOTAL DUE / "Required deposit before work" callout
+  const depRow = depAmt>0 && depDate
+    ? `<tr><td colspan="3" class="flbl" style="text-align:right;color:var(--green)">Less deposit received ${esc(fmtDate(depDate))}</td><td class="mono" style="text-align:right;color:var(--green)">−$${fmtMoney(depEffective)}</td></tr>`
+    : '';
+  const finalLabel = depAmt>0 && depDate ? 'BALANCE DUE' : 'TOTAL DUE';
+  const finalAmt = depAmt>0 && depDate ? balanceDue : total;
+  const depRequiredRow = depAmt>0 && !depDate
+    ? `<tr><td colspan="4" style="padding-top:.6rem"><div style="background:#fff8e1;border-left:3px solid var(--amber);padding:.55rem .8rem;border-radius:3px;font-size:.78rem;color:var(--amber)"><strong>Required deposit before work begins:</strong> $${fmtMoney(depAmt)} ${curCode} — please e-transfer the deposit before materials are ordered.</div></td></tr>`
+    : '';
   document.getElementById('prevFoot').innerHTML = `
     <tr><td colspan="3" class="flbl" style="text-align:right">Subtotal</td><td class="mono" style="text-align:right">$${fmtMoney(sub)}</td></tr>
     ${hst?`<tr><td colspan="3" class="flbl" style="text-align:right">${taxLabel}</td><td class="mono" style="text-align:right">$${fmtMoney(hstAmt)}</td></tr>`:''}
-    <tr class="gtotal"><td colspan="3" style="color:var(--ink3);font-size:.74rem;font-family:var(--mono)">TOTAL DUE (${curCode})</td><td style="text-align:right;color:var(--green)">$${fmtMoney(total)}</td></tr>`;
+    ${depAmt>0 && depDate ? `<tr><td colspan="3" class="flbl" style="text-align:right">Total</td><td class="mono" style="text-align:right">$${fmtMoney(total)}</td></tr>` : ''}
+    ${depRow}
+    <tr class="gtotal"><td colspan="3" style="color:var(--ink3);font-size:.74rem;font-family:var(--mono)">${finalLabel} (${curCode})</td><td style="text-align:right;color:var(--green)">$${fmtMoney(finalAmt)}</td></tr>
+    ${depRequiredRow}`;
 
   // Builder-only CAD equivalent panel (hidden from PDF)
   const cadBox=document.getElementById('invCadEqvBox');
@@ -4155,6 +4230,14 @@ async function invSendToSheets(){
 
   const co = INV_COMPANIES[activeCompany] || INV_COMPANIES.primary || {};
   const category = document.getElementById('invCategory')?.value || 'Consulting Revenue';
+
+  // Deposit / down payment — only meaningful on CAD invoices (HST treatment).
+  // Stored gross (incl HST). Date may be blank → "required but not received".
+  const depOn = !!document.getElementById('invDepositOn')?.checked && invCurrency==='CAD';
+  const depAmt = depOn ? Math.max(0, parseFloat(document.getElementById('invDepositAmt')?.value)||0) : 0;
+  const depDate = depOn ? (document.getElementById('invDepositDate')?.value || '') : '';
+  const balanceDue = depAmt>0 ? Math.max(0, Math.round((total - Math.min(depAmt,total))*100)/100) : total;
+
   const payload = {
     type: 'invoice',
     invoice: {
@@ -4163,6 +4246,9 @@ async function invSendToSheets(){
       desc, sub, hstAmt, total,
       hst: effectiveHst ? 'Yes' : 'No',
       category,
+      depositAmount: depAmt,        // CAD, gross (incl HST). 0 = no deposit.
+      depositDate: depDate,         // ISO yyyy-mm-dd or '' if not received yet
+      balanceDue,                   // total - deposit (capped at 0)
       lines: invLines.map(l=>({
         desc: l.desc,
         qty: parseFloat(l.qty)||0,
@@ -4186,7 +4272,13 @@ async function invSendToSheets(){
       btn.textContent = '✓ Sent!';
       btn.style.background = 'var(--green)';
       const sheetLink = USER_CONFIG?.sheetUrl ? `<a href="${USER_CONFIG.sheetUrl}" target="_blank" style="color:var(--green)">Open Sheet ↗</a>` : '';
-      status.innerHTML = `✅ Invoice #${invNum} added to <strong>Invoices</strong>. Revenue will post to <strong>Transactions</strong> when the deposit is imported and matched. ${sheetLink}`;
+      let depMsg = '';
+      if(depAmt>0 && depDate){
+        depMsg = ` <strong>Deposit of $${fmtMoney(depAmt)} recorded as received ${fmtDate(depDate)}</strong> — balance owing $${fmtMoney(balanceDue)}.`;
+      } else if(depAmt>0){
+        depMsg = ` Status set to <strong>Awaiting deposit</strong> — $${fmtMoney(depAmt)} required before work begins.`;
+      }
+      status.innerHTML = `✅ Invoice #${invNum} added to <strong>Invoices</strong>.${depMsg} Revenue will post to <strong>Transactions</strong> when the deposit is imported and matched. ${sheetLink}`;
     } else {
       status.textContent = '❌ ' + (d.error || 'Unknown error');
       btn.disabled = false;
@@ -4198,7 +4290,22 @@ async function invSendToSheets(){
     btn.textContent = '📊 Send to Google Sheets';
   }
 }
-function invClear(){document.getElementById('invClient').value='';document.getElementById('invAddr').value='';document.getElementById('invEmail').value='';document.getElementById('invNotes').value='';invLines=[{desc:'',qty:1,rate:''}];const fx=document.getElementById('invFxRate');if(fx)fx.value='';setInvCurrency('CAD');renderLines();invUpdate()}
+function invClear(){
+  document.getElementById('invClient').value='';
+  document.getElementById('invAddr').value='';
+  document.getElementById('invEmail').value='';
+  document.getElementById('invNotes').value='';
+  invLines=[{desc:'',qty:1,rate:''}];
+  const fx=document.getElementById('invFxRate'); if(fx) fx.value='';
+  // Reset deposit toggle + fields
+  const depOn=document.getElementById('invDepositOn'); if(depOn) depOn.checked=false;
+  const depAmt=document.getElementById('invDepositAmt'); if(depAmt) depAmt.value='';
+  const depDate=document.getElementById('invDepositDate'); if(depDate) depDate.value='';
+  const depWrap=document.getElementById('invDepositFields'); if(depWrap) depWrap.style.display='none';
+  setInvCurrency('CAD');
+  renderLines();
+  invUpdate();
+}
 
 // ════════════════════════════════════════════════════════════
 // TAB 3 — RECEIPT SCANNER

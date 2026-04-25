@@ -163,7 +163,7 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
             gridProperties: { rowCount: 1000, columnCount: 13, frozenRowCount: 11 },
             tabColor: COLORS.teal } },
         { properties: { sheetId: 500, title: '🧾 Invoices', index: 3,
-            gridProperties: { rowCount: 500, columnCount: 14, frozenRowCount: 11 },
+            gridProperties: { rowCount: 500, columnCount: 17, frozenRowCount: 11 },
             tabColor: COLORS.blue } },
         { properties: { sheetId: 600, title: '📋 HST Returns', index: 4,
             gridProperties: { rowCount: 40, columnCount: 10 },
@@ -457,20 +457,24 @@ async function applyStyling(accessToken, spreadsheetId) {
 
   // ─── INVOICES ───
   // 14 cols: A gutter, B Invoice #, C Date, D Client, E Description, F Amount excl HST,
-  // G HST, H Total, I HST flag, J Due, K Status, L Date Paid, M Notes, N Revenue Category
-  requests.push(...bannerRequest(INV, 0, 0, 14, COLORS.blue));
+  // G HST, H Total, I HST flag, J Due, K Status, L Date Paid, M Notes, N Revenue Category,
+  // O Deposit Amount, P Deposit Date Received, Q Balance Due
+  requests.push(...bannerRequest(INV, 0, 0, 17, COLORS.blue));
   requests.push(...sectionRequest(INV, 1, 1, 6, COLORS.blue));
   requests.push(cellFormat(INV, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
   requests.push(cellFormat(INV, 2, 2, 10, 6, { backgroundColor: COLORS.blueTint }));
-  requests.push(headerRowRequest(INV, 10, 1, 14, COLORS.blue));
+  requests.push(headerRowRequest(INV, 10, 1, 17, COLORS.blue));
   requests.push({ updateDimensionProperties: { range: { sheetId: INV, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(INV, 11, 500, 1, 14, COLORS.blueTint));
+  requests.push(bandingRequest(INV, 11, 500, 1, 17, COLORS.blueTint));
   requests.push(cellFormat(INV, 11, 2, 500, 3, FMT_DATE));
   requests.push(cellFormat(INV, 11, 5, 500, 6, FMT_CURRENCY));
   requests.push(cellFormat(INV, 11, 6, 500, 7, FMT_CURRENCY));
   requests.push(cellFormat(INV, 11, 7, 500, 8, FMT_CURRENCY));
   requests.push(cellFormat(INV, 11, 9, 500, 10, FMT_DATE));
   requests.push(cellFormat(INV, 11, 11, 500, 12, FMT_DATE));
+  requests.push(cellFormat(INV, 11, 14, 500, 15, FMT_CURRENCY));  // O Deposit Amount
+  requests.push(cellFormat(INV, 11, 15, 500, 16, FMT_DATE));      // P Deposit Date Received
+  requests.push(cellFormat(INV, 11, 16, 500, 17, FMT_CURRENCY));  // Q Balance Due
   requests.push({
     setDataValidation: {
       range: { sheetId: INV, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 8, endColumnIndex: 9 },
@@ -480,7 +484,14 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push({
     setDataValidation: {
       range: { sheetId: INV, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 10, endColumnIndex: 11 },
-      rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: 'Unpaid' }, { userEnteredValue: 'Paid' }, { userEnteredValue: 'Overdue' }, { userEnteredValue: 'Cancelled' }] }, showCustomUi: true },
+      rule: { condition: { type: 'ONE_OF_LIST', values: [
+        { userEnteredValue: 'Unpaid' },
+        { userEnteredValue: 'Awaiting Deposit' },
+        { userEnteredValue: 'Deposit Received' },
+        { userEnteredValue: 'Paid' },
+        { userEnteredValue: 'Overdue' },
+        { userEnteredValue: 'Cancelled' },
+      ] }, showCustomUi: true },
     }
   });
   requests.push(colWidth(INV, 0, 1, 30));
@@ -492,11 +503,14 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(INV, 6, 7, 90));
   requests.push(colWidth(INV, 7, 8, 110));
   requests.push(colWidth(INV, 8, 9, 70));
-  requests.push(colWidth(INV, 9, 10, 110));
+  requests.push(colWidth(INV, 9, 10, 130));  // K Status — wider for new labels
   requests.push(colWidth(INV, 10, 11, 90));
   requests.push(colWidth(INV, 11, 12, 110));
   requests.push(colWidth(INV, 12, 13, 200));
   requests.push(colWidth(INV, 13, 14, 150));  // N Revenue Category
+  requests.push(colWidth(INV, 14, 15, 110));  // O Deposit Amount
+  requests.push(colWidth(INV, 15, 16, 130));  // P Deposit Date Received
+  requests.push(colWidth(INV, 16, 17, 110));  // Q Balance Due
 
   // ─── HST RETURNS ───
   requests.push(...bannerRequest(HST, 0, 0, 7, COLORS.teal));
@@ -802,12 +816,15 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'🧾 Invoices'!B5:C5", values: [['Total invoiced excl HST', '=SUM(F12:F500)']] });
   data.push({ range: "'🧾 Invoices'!B6:C6", values: [['Total HST on invoices',   '=SUM(G12:G500)']] });
   data.push({ range: "'🧾 Invoices'!B7:C7", values: [['Total invoiced incl HST', '=SUM(H12:H500)']] });
-  data.push({ range: "'🧾 Invoices'!B8:C8", values: [['Outstanding — unpaid',    '=SUMIF(K12:K500,"Unpaid",H12:H500)']] });
-  data.push({ range: "'🧾 Invoices'!B9:C9", values: [['Collected — paid',        '=SUMIF(K12:K500,"Paid",H12:H500)']] });
-  data.push({ range: "'🧾 Invoices'!B11:N11", values: [[
+  // Collected = full Total on Paid invoices + Deposit Amount on Deposit-Received invoices.
+  // Outstanding = everything invoiced minus what's been collected.
+  // (Awaiting Deposit + Unpaid contribute their full Total to outstanding.)
+  data.push({ range: "'🧾 Invoices'!B8:C8", values: [['Outstanding — not yet paid', '=SUM(H12:H500)-SUMIF(K12:K500,"Paid",H12:H500)-SUMIF(K12:K500,"Deposit Received",O12:O500)']] });
+  data.push({ range: "'🧾 Invoices'!B9:C9", values: [['Collected — paid + deposits', '=SUMIF(K12:K500,"Paid",H12:H500)+SUMIF(K12:K500,"Deposit Received",O12:O500)']] });
+  data.push({ range: "'🧾 Invoices'!B11:Q11", values: [[
     'Invoice #', 'Date Issued', 'Client', 'Service Description', 'Amount (excl HST)',
     `HST (${taxPct}%)`, 'Total Invoiced', 'HST?', 'Due Date', 'Status', 'Date Paid', 'Notes',
-    'Revenue Category',
+    'Revenue Category', 'Deposit Amount', 'Deposit Date Received', 'Balance Due',
   ]]});
 
   // HST RETURNS

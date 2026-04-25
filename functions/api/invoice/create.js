@@ -30,6 +30,24 @@ export async function onRequestPost({ request, env }) {
   const inv = body.invoice || {};
   const category = inv.category || 'Consulting Revenue';
 
+  // Deposit / down payment fields. Stored gross (incl HST). Date may be blank
+  // when the deposit is required-but-not-yet-received (kitchen-table flow).
+  const depositAmount = parseFloat(inv.depositAmount) || 0;
+  const depositDate = (inv.depositDate || '').trim();
+  const total = parseFloat(inv.total) || 0;
+  const balanceDue = depositAmount > 0
+    ? Math.max(0, Math.round((total - Math.min(depositAmount, total)) * 100) / 100)
+    : total;
+
+  // Status state machine:
+  //   - No deposit field set                                → 'Unpaid'   (legacy)
+  //   - Deposit amount > 0, no date received yet            → 'Awaiting Deposit'
+  //   - Deposit amount > 0 and date received                → 'Deposit Received'
+  //   - 'Paid' is set later by the bank-match flow.
+  let status = 'Unpaid';
+  if (depositAmount > 0 && depositDate) status = 'Deposit Received';
+  else if (depositAmount > 0) status = 'Awaiting Deposit';
+
   // Columns B-K: InvNum, Date, Client, Description, Subtotal, HST, Total, HSTFlag, Due, Status
   const invRow = [[
     inv.invNum || '',
@@ -38,25 +56,37 @@ export async function onRequestPost({ request, env }) {
     inv.desc || '',
     parseFloat(inv.sub) || 0,
     parseFloat(inv.hstAmt) || 0,
-    parseFloat(inv.total) || 0,
+    total,
     inv.hst || 'Yes',
     inv.dueVal || '',
-    'Unpaid',
+    status,
   ]];
 
   const invResult = await appendRows(env, userId, `'${INVOICES_TAB}'!B12:K`, invRow);
   if (!invResult.ok) return json({ ok: false, error: 'Invoice write failed: ' + invResult.error });
 
-  // Write Revenue Category to col N on the row we just appended.
+  // Resolve the row number we just appended to so we can write the additive
+  // columns (Revenue Category, deposit fields). Sheets returns updatedRange
+  // looking like "'🧾 Invoices'!B45:K45".
   const match = /!B(\d+):K(\d+)/.exec(invResult.updates.updatedRange);
   if (match) {
     const row = parseInt(match[1]);
+    // Col N — Revenue Category (existing behaviour)
     const catResult = await writeRange(env, userId, `'${INVOICES_TAB}'!N${row}`, [[category]]);
-    if (!catResult.ok) {
-      // Don't block the invoice creation — category write is additive.
-      console.warn('Invoice category write failed:', catResult.error);
+    if (!catResult.ok) console.warn('Invoice category write failed:', catResult.error);
+
+    // Cols O, P, Q — Deposit Amount, Deposit Date Received, Balance Due.
+    // Only write when a deposit is actually flagged so legacy-shaped sheets
+    // (no headers in O/P/Q) don't get noise from no-deposit invoices.
+    if (depositAmount > 0) {
+      const depResult = await writeRange(
+        env, userId,
+        `'${INVOICES_TAB}'!O${row}:Q${row}`,
+        [[depositAmount, depositDate || '', balanceDue]]
+      );
+      if (!depResult.ok) console.warn('Invoice deposit write failed:', depResult.error);
     }
   }
 
-  return json({ ok: true, invNum: inv.invNum });
+  return json({ ok: true, invNum: inv.invNum, status, balanceDue });
 }

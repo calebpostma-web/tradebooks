@@ -90,53 +90,53 @@ export async function onRequestPost({ request, env }) {
     }
     existingRefs.add(refLC);
 
-    // Determine sign. Parser gives us raw amount (positive) and category tells us direction.
-    const rawAmount = Math.abs(parseFloat(row.net) || parseFloat(row.amount) || 0);
+    // Sign comes from the bank statement (positive = money in, negative = money out)
+    // — NOT from the category. The front-end has already extracted HST and signed
+    // `net` correctly based on the parsed direction. Pre-fix, the server overrode
+    // the sign based on a hardcoded DEFAULT_INCOME_CATS set, which broke for any
+    // user-defined income category (e.g. "Customer Payment of Invoice"): those
+    // landed as expenses with negative amounts. Trusting the bank-direction sign
+    // makes user-custom categories Just Work and is more robust generally.
+    const signedNet = parseFloat(row.net) || parseFloat(row.amount) || 0;
+    const rawAmount = Math.abs(signedNet);
     const hstAmount = Math.abs(parseFloat(row.hst) || 0);
 
-    let signedAmount;       // col E
+    let signedAmount = signedNet;
     let finalCategory = cat;
     let matchStatus = 'N/A';
     let relatedInvoice = '';
 
     if (TRANSFER_CATS.has(cat)) {
-      // Amex bill payment from BMO → negative, Internal Transfer, not P&L.
+      // Internal transfers keep their bank-direction sign (BMO->AMEX is -, AMEX
+      // receiving the same is +). The matching pair offsets in P&L because both
+      // sides are excluded by the Internal Transfer filter.
       finalCategory = 'Internal Transfer';
-      // Sign based on parser hint: if the row debited (amount negative on source),
-      // keep it negative. For transfers between own accounts we use negative by convention
-      // (money leaving the observed account).
-      signedAmount = -rawAmount;
-    } else if (DEFAULT_INCOME_CATS.has(cat)) {
-      signedAmount = rawAmount;
-      // For deposits, try to propose a match against an open invoice.
-      if (cat === 'Income Received' || cat.includes('Revenue') || cat.includes('Income')) {
-        const candidate = findInvoiceMatch(openInvoices, row.date, rawAmount + hstAmount, rawAmount);
-        if (candidate) {
-          proposedMatches.push({
-            // Row position in the append batch — resolved to sheet row below after append.
-            batchIndex: txnRows.length,
-            date: row.date,
-            amount: rawAmount,
-            vendor: row.vendor,
-            invNum: candidate.invNum,
-            client: candidate.client,
-            invAmount: candidate.expected,   // what this leg of the invoice is owed
-            invTotal: candidate.total,       // full invoice total, for context
-            invDate: candidate.dateIssued,
-            confidence: candidate.confidence,
-            // 'deposit' = first leg → flip Unpaid/Awaiting to Deposit Received.
-            // 'final'   = closing payment → flip to Paid.
-            nextLeg: candidate.nextLeg,
-          });
-          matchStatus = 'Unmatched';  // pending user confirmation
-        } else {
-          matchStatus = 'Unmatched';
-        }
+      // signedAmount already = signedNet from bank
+    } else if (signedNet > 0) {
+      // Money in. Try to propose an invoice match regardless of which specific
+      // income category the user picked (custom categories like "Customer
+      // Payment of Invoice" should match too).
+      const candidate = findInvoiceMatch(openInvoices, row.date, rawAmount + hstAmount, rawAmount);
+      if (candidate) {
+        proposedMatches.push({
+          batchIndex: txnRows.length,
+          date: row.date,
+          amount: rawAmount,
+          vendor: row.vendor,
+          invNum: candidate.invNum,
+          client: candidate.client,
+          invAmount: candidate.expected,
+          invTotal: candidate.total,
+          invDate: candidate.dateIssued,
+          confidence: candidate.confidence,
+          nextLeg: candidate.nextLeg,
+        });
+        matchStatus = 'Unmatched';  // pending user confirmation
+      } else {
+        matchStatus = 'Unmatched';
       }
-    } else {
-      // Expense category
-      signedAmount = -rawAmount;
     }
+    // Else: expense, signedAmount already negative from signedNet
 
     // Row layout (B-M): Date | Party | Description | Amount | Category | HST? | HST | Account | Source | Ref | Related Invoice | Match Status
     txnRows.push([

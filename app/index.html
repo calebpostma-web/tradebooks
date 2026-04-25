@@ -3322,13 +3322,24 @@ function updateTaxProfile() {
 
 function calcHST() {
   const rate = USER_CONFIG.taxRate || 0.13;
+  // HST extraction works in BOTH directions:
+  //   - Expense (negative): HST is the ITC portion of what you paid
+  //   - Income (positive):  HST is the amount you COLLECTED on the sale
+  // The amount sign reflects bank direction (in vs out) and is preserved.
+  // Pre-fix (until 2026-04-25), positive amounts were always treated as net
+  // with HST=0 — which was wrong for HST-registered businesses collecting
+  // HST on customer invoice payments. That bug made the HST return show
+  // 0 collected even when invoices had been paid.
   impTxns.forEach(tx => {
-    if (NO_HST.has(tx.category) || tx.amount > 0) {
+    if (NO_HST.has(tx.category)) {
+      // Wages, insurance, bank charges, transfers — exempt from HST in both directions
       tx.hst = 0;
       tx.net = tx.amount;
     } else {
-      tx.hst = Math.round(Math.abs(tx.amount) / (1 + rate) * rate * 100) / 100;
-      tx.net = -(Math.abs(tx.amount) - tx.hst);
+      const sign = tx.amount >= 0 ? 1 : -1;
+      const gross = Math.abs(tx.amount);
+      tx.hst = Math.round(gross / (1 + rate) * rate * 100) / 100;
+      tx.net = sign * (gross - tx.hst);
     }
   });
 }

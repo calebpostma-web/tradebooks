@@ -613,6 +613,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
   <button class="tab" onclick="showTab('receipt')"><span class="tab-icon">📷</span>Receipt Scanner</button>
   <button class="tab" onclick="showTab('taxfiling')"><span class="tab-icon">🗂</span>CRA Tax Filing</button>
   <button class="tab" onclick="showTab('payroll')"><span class="tab-icon">👥</span>Payroll</button>
+  <button class="tab" onclick="showTab('yearend')"><span class="tab-icon">📦</span>Year-End Package</button>
   <button class="tab" onclick="showTab('taxai')"><span class="tab-icon">🧠</span>Tax Intelligence</button>
 </div>
 
@@ -2333,6 +2334,97 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
 
 
 <!-- ════════════════════════════════════════════════════════════
+     YEAR-END PACKAGE PANEL
+═════════════════════════════════════════════════════════════ -->
+<div class="panel" id="panel-yearend">
+<div class="page">
+  <div class="page-header">
+    <h1 class="page-title">Year-End Package</h1>
+    <p class="page-sub">Everything MNP needs in one Drive folder. Built from your books, statements, and CRA receipts — refreshable any time.</p>
+  </div>
+
+  <!-- Fiscal year selector + headline status -->
+  <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+    <div>
+      <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.4rem">Fiscal year</div>
+      <select id="yeFy" onchange="yearendLoadChecklist()" style="font-size:1rem;padding:.45rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);background:white;font-family:var(--serif);font-weight:500"></select>
+      <div id="yeFyWindow" style="font-size:.78rem;color:var(--ink3);margin-top:.3rem"></div>
+    </div>
+    <div id="yeOverall" style="text-align:right">
+      <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;margin-bottom:.4rem">Overall readiness</div>
+      <div id="yeOverallBadge" style="font-size:1rem;padding:.4rem .9rem;border-radius:var(--radius);display:inline-block;background:var(--paper2);color:var(--ink3)">— loading —</div>
+    </div>
+  </div>
+
+  <!-- Checklist -->
+  <div class="card" style="margin-top:1rem">
+    <div class="card-title">Checklist</div>
+    <p style="font-size:.78rem;color:var(--ink3);margin-bottom:.85rem;line-height:1.55">Each item shows what MNP needs from you for this fiscal year. Green = done, amber = partial, red = action needed.</p>
+    <div id="yeChecklist" style="display:flex;flex-direction:column;gap:.5rem">
+      <div style="font-size:.85rem;color:var(--ink3);text-align:center;padding:2rem">Loading checklist…</div>
+    </div>
+  </div>
+
+  <!-- Statement archive -->
+  <div class="card" style="margin-top:1rem">
+    <div class="card-title">Statement archive</div>
+    <p style="font-size:.78rem;color:var(--ink3);margin-bottom:.85rem;line-height:1.55">
+      Drop monthly bank or AMEX statement PDFs here. Each goes to <code>AI Bookkeeper Year-End/[FY]/Statements/</code> in Drive and is included automatically when you build the package.
+    </p>
+    <div class="field-row">
+      <div class="field" style="margin-bottom:0">
+        <label>Bank / source</label>
+        <select id="ye_stmtBank" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;background:white">
+          <option value="BMO">BMO</option>
+          <option value="AMEX">AMEX</option>
+          <option value="Other">Other (type below)</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Statement month</label>
+        <input type="month" id="ye_stmtMonth">
+      </div>
+    </div>
+    <div class="field" id="ye_stmtBankOtherWrap" style="display:none">
+      <label>Custom bank name</label>
+      <input type="text" id="ye_stmtBankOther" placeholder="e.g. PCFinancial">
+    </div>
+    <div class="field">
+      <label>Statement PDF</label>
+      <div style="border:1px dashed var(--rule);border-radius:var(--radius);padding:.85rem;background:var(--paper2)">
+        <input type="file" id="ye_stmtFile" accept="application/pdf,image/png,image/jpeg" onchange="yearendStmtFilePicked(event)" style="font-size:.82rem;width:100%">
+        <div id="ye_stmtFileName" style="display:none;margin-top:.5rem;font-size:.78rem;color:var(--green)"></div>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:.75rem">
+      <button class="btn btn-green" id="ye_stmtUploadBtn" onclick="yearendUploadStatement()">⬆ Upload statement</button>
+    </div>
+    <div id="ye_stmtStatus" style="font-size:.82rem;margin-top:.5rem;line-height:1.55"></div>
+
+    <!-- Coverage grid -->
+    <div style="margin-top:1.1rem">
+      <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.5rem">Coverage for this fiscal year</div>
+      <div id="ye_stmtCoverage" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:.4rem">
+        <div style="font-size:.78rem;color:var(--ink3);grid-column:1/-1">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Build package -->
+  <div class="card" style="margin-top:1rem;background:var(--greenlt);border-left:3px solid var(--green)">
+    <div class="card-title">Build the package</div>
+    <p style="font-size:.82rem;color:var(--ink2);line-height:1.6;margin-bottom:.85rem">
+      Creates a fresh Drive folder containing: cover letter, full books snapshot (XLSX), all uploaded statements, copies of CRA receipts for this year, and shortcuts to your expense receipts. Returns a single shareable link you can email to MNP.
+    </p>
+    <div class="btn-row">
+      <button class="btn btn-green" id="ye_buildBtn" onclick="yearendBuildPackage()">📦 Build year-end package</button>
+    </div>
+    <div id="ye_buildStatus" style="font-size:.85rem;margin-top:.75rem;line-height:1.6"></div>
+  </div>
+</div>
+</div><!-- /panel-yearend -->
+
+<!-- ════════════════════════════════════════════════════════════
      TAX INTELLIGENCE PANEL
 ═════════════════════════════════════════════════════════════ -->
 <div class="panel" id="panel-taxai">
@@ -3381,11 +3473,12 @@ document.addEventListener('DOMContentLoaded', () => initAuth());
 // SHARED UTILITIES
 // ════════════════════════════════════════════════════════════
 function showTab(t){
-  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['home','importer','invoice','receipt','taxfiling','payroll','taxai'][i]===t));
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['home','importer','invoice','receipt','taxfiling','payroll','yearend','taxai'][i]===t));
   document.querySelectorAll('.panel').forEach(el=>el.classList.remove('active'));
   document.getElementById('panel-'+t).classList.add('active');
   // Lazy load on first open
   if (t === 'payroll') { try { payrollInit(); } catch(e) { console.warn(e); } }
+  if (t === 'yearend') { try { yearendInit(); } catch(e) { console.warn(e); } }
 }
 function toast(msg,ms=3500){
   const el=document.getElementById('toast');
@@ -6320,6 +6413,265 @@ function payrollGuidelineForRate(age, taskText) {
   return band ? { source: 'band', label: band.label, min: band.min, max: band.max } : null;
 }
 
+// ════════════════════════════════════════════════════════════════════
+// YEAR-END PACKAGE TAB
+// ════════════════════════════════════════════════════════════════════
+let yearendInitialized = false;
+let yePdfData = null;  // { base64, filename, mimeType } for current statement upload
+
+async function yearendInit(){
+  // Populate fiscal-year selector. Show current FY + 2 previous so the user
+  // can build packages for prior years too.
+  const sel = document.getElementById('yeFy');
+  if(!sel) return;
+  if(!yearendInitialized){
+    const fye = USER_CONFIG?.fiscalYearEnd || 'December 31';
+    const currentFy = computeCurrentFy(fye);
+    const opts = [];
+    for(let i = 0; i < 3; i++){
+      const fyEnd = currentFy.fyEndYear - i;
+      opts.push(`<option value="FY${fyEnd}">FY${fyEnd}  (ending ${fye}, ${fyEnd})</option>`);
+    }
+    sel.innerHTML = opts.join('');
+
+    // Default the statement month to the most recent completed month
+    const stmtMonth = document.getElementById('ye_stmtMonth');
+    if(stmtMonth){
+      const d = new Date();
+      d.setDate(0);  // last day of previous month
+      stmtMonth.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    }
+
+    // "Other" bank input toggle
+    document.getElementById('ye_stmtBank').addEventListener('change', e => {
+      document.getElementById('ye_stmtBankOtherWrap').style.display = e.target.value === 'Other' ? '' : 'none';
+    });
+
+    yearendInitialized = true;
+  }
+  // Always reload data on tab open in case user logged a payment elsewhere
+  await Promise.all([yearendLoadChecklist(), yearendLoadCoverage()]);
+}
+
+// Compute the FY label that today's date falls into. Mirrors the server's
+// fiscalYearOf logic in _shared.js, kept simple for client use.
+function computeCurrentFy(fyeString){
+  const map = {january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+  const m = String(fyeString).match(/^([a-zA-Z]+)\s+(\d{1,2})$/);
+  const month = m ? (map[m[1].toLowerCase()] || 12) : 12;
+  const day = m ? (parseInt(m[2], 10) || 31) : 31;
+  const today = new Date();
+  let endYear = today.getUTCFullYear();
+  const endThisYear = new Date(Date.UTC(endYear, month-1, day, 23, 59, 59));
+  if(today > endThisYear) endYear += 1;
+  return { fyEndYear: endYear, month, day };
+}
+
+async function yearendLoadChecklist(){
+  const fy = document.getElementById('yeFy')?.value;
+  const fye = USER_CONFIG?.fiscalYearEnd || 'December 31';
+  if(!fy) return;
+  const wrap = document.getElementById('yeChecklist');
+  const overall = document.getElementById('yeOverallBadge');
+  const window = document.getElementById('yeFyWindow');
+  wrap.innerHTML = `<div style="font-size:.85rem;color:var(--ink3);text-align:center;padding:1rem">Loading checklist…</div>`;
+
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ wrap.innerHTML = `<div style="color:var(--red);font-size:.85rem">Sign in required</div>`; return; }
+
+  try {
+    const r = await fetch(`/api/yearend/checklist?fy=${encodeURIComponent(fy)}&fye=${encodeURIComponent(fye)}`, {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const d = await r.json();
+    if(!d.ok){
+      wrap.innerHTML = `<div style="color:var(--red);font-size:.85rem">Error: ${esc(d.error || 'Unknown')}</div>`;
+      return;
+    }
+    if(window) window.textContent = `${d.startDate} → ${d.endDate}`;
+    // Overall badge colour
+    const colour = d.overall === 'green' ? 'var(--green)' : d.overall === 'amber' ? 'var(--amber)' : 'var(--red)';
+    const bg = d.overall === 'green' ? 'var(--greenlt)' : d.overall === 'amber' ? 'var(--amberlt)' : 'var(--redlt)';
+    const label = d.overall === 'green' ? '✅ Ready to send' : d.overall === 'amber' ? '⚠ Almost there' : '❌ Action needed';
+    overall.style.background = bg;
+    overall.style.color = colour;
+    overall.textContent = label;
+
+    // Render items
+    wrap.innerHTML = d.items.map(item => renderChecklistItem(item)).join('');
+  } catch(err){
+    wrap.innerHTML = `<div style="color:var(--red);font-size:.85rem">Connection error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderChecklistItem(item){
+  const colour = item.status === 'green' ? 'var(--green)' : item.status === 'amber' ? 'var(--amber)' : 'var(--red)';
+  const icon = item.status === 'green' ? '✓' : item.status === 'amber' ? '⚠' : '✗';
+  const bg = item.status === 'green' ? 'var(--greenlt)' : item.status === 'amber' ? 'var(--amberlt)' : 'var(--redlt)';
+  let actionBtn = '';
+  if(item.action){
+    if(item.action.tab){
+      const subTab = item.action.subTab ? `;craShowPanel('${esc(item.action.subTab)}')` : '';
+      actionBtn = `<button onclick="showTab('${esc(item.action.tab)}')${subTab}" style="background:white;border:1px solid ${colour};color:${colour};border-radius:4px;padding:.3rem .65rem;font-size:.74rem;cursor:pointer;white-space:nowrap">${esc(item.action.label)}</button>`;
+    } else if(item.action.sheetTab && USER_CONFIG?.sheetUrl){
+      actionBtn = `<a href="${USER_CONFIG.sheetUrl}" target="_blank" style="background:white;border:1px solid ${colour};color:${colour};border-radius:4px;padding:.3rem .65rem;font-size:.74rem;text-decoration:none;white-space:nowrap">${esc(item.action.label)}</a>`;
+    }
+  }
+  return `
+    <div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem .9rem;background:${bg};border-left:3px solid ${colour};border-radius:4px">
+      <div style="font-size:1rem;color:${colour};font-weight:700;line-height:1.4;min-width:1.2rem">${icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;font-size:.86rem;color:var(--ink);margin-bottom:.15rem">${esc(item.label)}</div>
+        <div style="font-size:.78rem;color:var(--ink2);line-height:1.5">${esc(item.detail)}</div>
+      </div>
+      ${actionBtn ? `<div>${actionBtn}</div>` : ''}
+    </div>`;
+}
+
+async function yearendLoadCoverage(){
+  const fy = document.getElementById('yeFy')?.value;
+  const fye = USER_CONFIG?.fiscalYearEnd || 'December 31';
+  if(!fy) return;
+  const grid = document.getElementById('ye_stmtCoverage');
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token) return;
+
+  try {
+    const r = await fetch(`/api/yearend/list-statements?fy=${encodeURIComponent(fy)}&fye=${encodeURIComponent(fye)}`, {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const d = await r.json();
+    if(!d.ok){ grid.innerHTML = `<div style="color:var(--red);font-size:.78rem;grid-column:1/-1">Error: ${esc(d.error)}</div>`; return; }
+    grid.innerHTML = d.months.map(m => {
+      const bmoOk = !!m.bmo, amexOk = !!m.amex;
+      const bothColour = (bmoOk && amexOk) ? 'var(--green)' : (bmoOk || amexOk) ? 'var(--amber)' : 'var(--red)';
+      const bothBg     = (bmoOk && amexOk) ? 'var(--greenlt)' : (bmoOk || amexOk) ? 'var(--amberlt)' : 'var(--redlt)';
+      return `
+        <div style="border:1px solid ${bothColour};background:${bothBg};border-radius:var(--radius);padding:.4rem .55rem;text-align:center">
+          <div style="font-family:var(--mono);font-size:.65rem;color:var(--ink3)">${esc(m.month)}</div>
+          <div style="display:flex;justify-content:center;gap:.4rem;margin-top:.2rem;font-size:.7rem;font-family:var(--mono)">
+            <span style="color:${bmoOk?'var(--green)':'var(--red)'}">${bmoOk?'✓':'✗'}BMO</span>
+            <span style="color:${amexOk?'var(--green)':'var(--red)'}">${amexOk?'✓':'✗'}AMEX</span>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(err){
+    grid.innerHTML = `<div style="color:var(--red);font-size:.78rem;grid-column:1/-1">Connection error</div>`;
+  }
+}
+
+function yearendStmtFilePicked(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    yePdfData = {
+      base64: String(reader.result).split(',').pop(),
+      filename: file.name,
+      mimeType: file.type || 'application/pdf',
+    };
+    const nameEl = document.getElementById('ye_stmtFileName');
+    nameEl.style.display = '';
+    nameEl.textContent = `📎 ${file.name}`;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function yearendUploadStatement(){
+  const btn = document.getElementById('ye_stmtUploadBtn');
+  const status = document.getElementById('ye_stmtStatus');
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ toast('Please sign in first'); return; }
+
+  let bank = document.getElementById('ye_stmtBank').value;
+  if(bank === 'Other') bank = (document.getElementById('ye_stmtBankOther').value || '').trim();
+  const month = document.getElementById('ye_stmtMonth').value;
+  if(!bank){ toast('Pick a bank'); return; }
+  if(!month){ toast('Pick a statement month'); return; }
+  if(!yePdfData){ toast('Choose a PDF to upload'); return; }
+
+  const fye = USER_CONFIG?.fiscalYearEnd || 'December 31';
+
+  btn.disabled = true; btn.textContent = '⏳ Uploading…';
+  status.innerHTML = 'Uploading to Drive…';
+
+  try {
+    const r = await fetch('/api/yearend/upload-statement', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ bank, month, fiscalYearEnd: fye, pdf: yePdfData }),
+    });
+    const d = await r.json();
+    if(d.ok){
+      btn.style.background = 'var(--green)';
+      btn.textContent = '✓ Uploaded';
+      status.innerHTML = `✅ <strong>${esc(d.bank)} ${esc(d.month)}</strong> uploaded to ${esc(d.fiscalYear)}. <a href="${d.driveUrl}" target="_blank" style="color:var(--green)">View on Drive ↗</a>`;
+      // Clear file, reload coverage + checklist
+      yePdfData = null;
+      document.getElementById('ye_stmtFile').value = '';
+      document.getElementById('ye_stmtFileName').style.display = 'none';
+      await Promise.all([yearendLoadCoverage(), yearendLoadChecklist()]);
+      setTimeout(() => { btn.disabled = false; btn.textContent = '⬆ Upload statement'; btn.style.background = ''; }, 2000);
+    } else {
+      status.innerHTML = `❌ ${esc(d.error || 'Upload failed')}`;
+      btn.disabled = false; btn.textContent = '⬆ Upload statement';
+    }
+  } catch(err){
+    status.innerHTML = `❌ Connection error: ${esc(err.message)}`;
+    btn.disabled = false; btn.textContent = '⬆ Upload statement';
+  }
+}
+
+async function yearendBuildPackage(){
+  const btn = document.getElementById('ye_buildBtn');
+  const status = document.getElementById('ye_buildStatus');
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ toast('Please sign in first'); return; }
+
+  const fy = document.getElementById('yeFy')?.value;
+  const fye = USER_CONFIG?.fiscalYearEnd || 'December 31';
+  const businessName = USER_CONFIG?.businessName || 'My Business';
+
+  if(!confirm(`Build year-end package for ${fy}? This creates a new Drive folder and may take 30-60 seconds.`)) return;
+
+  btn.disabled = true; btn.textContent = '⏳ Building… (this can take a minute)';
+  status.innerHTML = 'Creating folder, exporting books, copying receipts…';
+
+  try {
+    const r = await fetch('/api/yearend/build-package', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ fy, fye, businessName }),
+    });
+    const d = await r.json();
+    if(d.ok){
+      btn.style.background = 'var(--green)';
+      btn.textContent = '✓ Package ready';
+      const logHtml = (d.log || []).map(l => `<li style="margin:.15rem 0">${esc(l)}</li>`).join('');
+      const warnHtml = (d.warnings || []).map(w => `<li style="margin:.15rem 0;color:var(--amber)">⚠ ${esc(w)}</li>`).join('');
+      status.innerHTML = `
+        <div style="background:var(--greenlt);border:1px solid var(--green);border-radius:var(--radius);padding:1rem;margin-bottom:.5rem">
+          <div style="font-size:.95rem;color:var(--green);font-weight:600;margin-bottom:.5rem">✅ Package built for ${esc(d.fiscalYear)}</div>
+          <div style="font-size:.82rem;color:var(--ink2);margin-bottom:.6rem"><strong>${esc(d.packageName)}</strong></div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <a href="${d.packageUrl}" target="_blank" style="background:var(--green);color:white;border-radius:4px;padding:.45rem .9rem;text-decoration:none;font-size:.85rem;font-weight:500">📂 Open package on Drive →</a>
+            <button onclick="navigator.clipboard.writeText('${d.packageUrl}');toast('Link copied')" style="background:white;border:1px solid var(--green);color:var(--green);border-radius:4px;padding:.45rem .9rem;font-size:.85rem;cursor:pointer">📋 Copy link</button>
+          </div>
+        </div>
+        ${logHtml ? `<details style="margin-top:.5rem"><summary style="cursor:pointer;font-size:.78rem;color:var(--ink3)">Build log</summary><ul style="margin:.4rem 0 0 1.2rem;font-size:.76rem;color:var(--ink2)">${logHtml}</ul></details>` : ''}
+        ${warnHtml ? `<details open style="margin-top:.4rem"><summary style="cursor:pointer;font-size:.78rem;color:var(--amber)">${(d.warnings||[]).length} warning(s)</summary><ul style="margin:.4rem 0 0 1.2rem;font-size:.76rem">${warnHtml}</ul></details>` : ''}
+      `;
+      setTimeout(() => { btn.disabled = false; btn.textContent = '📦 Build year-end package'; btn.style.background = ''; }, 4000);
+    } else {
+      status.innerHTML = `❌ ${esc(d.error || 'Build failed')}`;
+      btn.disabled = false; btn.textContent = '📦 Build year-end package';
+    }
+  } catch(err){
+    status.innerHTML = `❌ Connection error: ${esc(err.message)}`;
+    btn.disabled = false; btn.textContent = '📦 Build year-end package';
+  }
+}
+
 async function payrollInit(){
   // Default Work Log date to today
   const wld = document.getElementById('wl_date');
@@ -7569,6 +7921,17 @@ function renderSettings(){
     <div id="settingsSaveStatus" style="font-size:.82rem;color:var(--ink3);margin-top:.5rem"></div>
 
     <hr class="divider">
+    <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Sheet maintenance</div>
+    <div style="font-size:.78rem;color:var(--ink3);margin-bottom:.75rem;line-height:1.55">
+      Adds new tabs and columns to your existing Google Sheet without rebuilding it from scratch.
+      Safe to run any time — only applies what's missing. Use this after a tradebooks update introduces new fields (deposit columns, CRA Remittances tab, etc.).
+    </div>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" onclick="migrateSheetSchema()" id="migrateBtn">🔄 Update sheet to latest schema</button>
+    </div>
+    <div id="schemaMigrateStatus" style="font-size:.82rem;color:var(--ink3);margin-top:.5rem;line-height:1.55"></div>
+
+    <hr class="divider">
     <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Account</div>
     <div style="display:flex;gap:.75rem">
       <button class="btn btn-outline btn-sm" onclick="doLogout()">🔓 Log Out</button>
@@ -7578,6 +7941,54 @@ function renderSettings(){
       Combined corp rate: ${((0.09 + prov.provSBD)*100).toFixed(1)}%
     </div>
   `;
+}
+
+// ── Sheet schema migration ──────────────────────────────────────────
+// Calls /api/setup/migrate which adds missing tabs / columns to the
+// existing Google Sheet. Idempotent — safe to run any time.
+async function migrateSheetSchema(){
+  const btn = document.getElementById('migrateBtn');
+  const status = document.getElementById('schemaMigrateStatus');
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ toast('Please sign in first'); return; }
+  if(!USER_CONFIG.sheetId){ toast('Connect your Google Sheet first'); return; }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Checking your sheet…';
+  status.innerHTML = 'Reading current schema…';
+
+  try {
+    const r = await fetch('/api/setup/migrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    });
+    const d = await r.json();
+    if(d.ok){
+      btn.style.background = 'var(--green)';
+      btn.style.color = 'white';
+      btn.textContent = '✓ Done';
+      if(d.upToDate){
+        status.innerHTML = `<span style="color:var(--green)">✅ Sheet is already up to date — no changes needed.</span>`;
+      } else {
+        const changeList = (d.changes || []).map(c => `<li style="margin:.2rem 0">${esc(c)}</li>`).join('');
+        const errList = (d.errors || []).map(e => `<li style="margin:.2rem 0;color:var(--amber)">⚠ ${esc(e)}</li>`).join('');
+        status.innerHTML = `
+          <div style="color:var(--green);font-weight:500;margin-bottom:.4rem">✅ Sheet updated.</div>
+          <ul style="margin-left:1.2rem;font-size:.78rem">${changeList}${errList}</ul>
+          ${USER_CONFIG?.sheetUrl ? `<a href="${USER_CONFIG.sheetUrl}" target="_blank" style="color:var(--green);font-size:.78rem">Open your Sheet to confirm ↗</a>` : ''}
+        `;
+      }
+      setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 Update sheet to latest schema'; btn.style.background = ''; btn.style.color = ''; }, 3000);
+    } else {
+      status.innerHTML = `<span style="color:var(--red)">❌ ${esc(d.error || 'Migration failed')}</span>`;
+      btn.disabled = false;
+      btn.textContent = '🔄 Update sheet to latest schema';
+    }
+  } catch(err){
+    status.innerHTML = `<span style="color:var(--red)">❌ Connection error: ${esc(err.message)}</span>`;
+    btn.disabled = false;
+    btn.textContent = '🔄 Update sheet to latest schema';
+  }
 }
 
 async function saveSettings(){

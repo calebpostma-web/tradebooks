@@ -121,3 +121,73 @@ export async function authenticateRequest(request, env) {
   return payload;
 }
 
+// ── Fiscal year math ────────────────────────────────────────────────
+// All year-end / quarterly tooling needs a consistent way to derive the
+// fiscal year window from a user's `fiscalYearEnd` profile field
+// (e.g. "March 31", "December 31"). FY{N} ends on that date in calendar year N.
+// e.g. Postma fiscalYearEnd="March 31", so FY2026 = Apr 1 2025 → Mar 31 2026.
+
+const MONTHS = {
+  january:1, february:2, march:3, april:4, may:5, june:6,
+  july:7, august:8, september:9, october:10, november:11, december:12,
+};
+
+/**
+ * Parse a fiscal-year-end string like "March 31" → { month: 3, day: 31 }.
+ * Falls back to Dec 31 (calendar year) on bad input.
+ */
+export function parseFiscalYearEnd(s) {
+  const m = String(s || '').trim().match(/^([a-zA-Z]+)\s+(\d{1,2})$/);
+  if (!m) return { month: 12, day: 31 };
+  const month = MONTHS[m[1].toLowerCase()] || 12;
+  const day = Math.min(31, Math.max(1, parseInt(m[2], 10) || 31));
+  return { month, day };
+}
+
+/**
+ * Given a fiscal-year-end + optional reference date (defaults to today),
+ * return the fiscal year window that the reference date falls inside.
+ * Returns: { fyLabel: 'FY2026', startISO: '2025-04-01', endISO: '2026-03-31',
+ *            startDate, endDate }
+ */
+export function fiscalYearOf(fyeString, refDate = new Date()) {
+  const { month, day } = parseFiscalYearEnd(fyeString);
+  // FY{N} ends on month/day of year N. The fiscal year that contains refDate
+  // is the smallest N such that refDate <= end-of-FY{N}.
+  const refYear = refDate.getUTCFullYear();
+  // Construct the FY{refYear} end date:
+  let endDate = new Date(Date.UTC(refYear, month - 1, day, 23, 59, 59));
+  // If refDate is after that, we're in FY{refYear + 1}.
+  let fyEndYear = refYear;
+  if (refDate > endDate) {
+    fyEndYear = refYear + 1;
+    endDate = new Date(Date.UTC(fyEndYear, month - 1, day, 23, 59, 59));
+  }
+  // Start = day after previous FY end = (fyEndYear - 1, month, day) + 1 day.
+  const startDate = new Date(Date.UTC(fyEndYear - 1, month - 1, day + 1, 0, 0, 0));
+  return {
+    fyLabel: `FY${fyEndYear}`,
+    fyEndYear,
+    startISO: startDate.toISOString().slice(0, 10),
+    endISO: endDate.toISOString().slice(0, 10),
+    startDate,
+    endDate,
+  };
+}
+
+/**
+ * Enumerate the (year, monthIndex) pairs that compose a fiscal year window.
+ * For an Apr 1 → Mar 31 FY: returns 12 entries [{year:2025, month:4}, ..., {year:2026, month:3}].
+ * Used by the statement archive checklist (we expect one bank statement per month).
+ */
+export function fiscalYearMonths(startDate, endDate) {
+  const out = [];
+  const cur = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1));
+  const lastMonth = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), 1));
+  while (cur <= lastMonth) {
+    out.push({ year: cur.getUTCFullYear(), month: cur.getUTCMonth() + 1 });
+    cur.setUTCMonth(cur.getUTCMonth() + 1);
+  }
+  return out;
+}
+

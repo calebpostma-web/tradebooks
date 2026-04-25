@@ -148,3 +148,59 @@ export function generateRef(bank, date, amount, vendor) {
     const d = String(date || '').replace(/\//g, '-');
     return `${bank}-${d}-${a}-${v}`;
 }
+
+/**
+ * Read the spreadsheet metadata (tab list + grid properties). Used by the
+ * migration endpoint to figure out which schema upgrades to apply.
+ * Returns: { ok, sheets: [{ sheetId, title, gridProperties: { rowCount, columnCount, ...} }] }
+ */
+export async function getSpreadsheetMetadata(env, userId) {
+    const sheetId = await getUserSheetId(env, userId);
+    if (!sheetId) return { ok: false, error: 'No sheet connected' };
+
+    const tok = await getGoogleAccessToken(env, userId);
+    if (!tok.ok) return tok;
+
+    const fields = encodeURIComponent('sheets(properties(sheetId,title,index,gridProperties))');
+    const resp = await fetch(
+        `${SHEETS_API}/${sheetId}?fields=${fields}`,
+        { headers: { 'Authorization': `Bearer ${tok.accessToken}` } }
+    );
+    const data = await resp.json();
+    if (data.error) return { ok: false, error: data.error.message };
+    return {
+        ok: true,
+        spreadsheetId: sheetId,
+        sheets: (data.sheets || []).map(s => s.properties),
+    };
+}
+
+/**
+ * Run a raw spreadsheets:batchUpdate (for structure changes — addSheet,
+ * updateSheetProperties, repeatCell, etc). Distinct from the values:batchUpdate
+ * exported above as `batchUpdate` (which only writes cell values).
+ *
+ * requests: array of Sheets API request objects.
+ */
+export async function spreadsheetsBatchUpdate(env, userId, requests) {
+    const sheetId = await getUserSheetId(env, userId);
+    if (!sheetId) return { ok: false, error: 'No sheet connected' };
+
+    const tok = await getGoogleAccessToken(env, userId);
+    if (!tok.ok) return tok;
+
+    const resp = await fetch(
+        `${SHEETS_API}/${sheetId}:batchUpdate`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${tok.accessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ requests }),
+        }
+    );
+    const result = await resp.json();
+    if (result.error) return { ok: false, error: result.error.message };
+    return { ok: true, result };
+}

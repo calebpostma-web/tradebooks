@@ -874,6 +874,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <label style="font-size:.78rem;color:var(--ink3);display:flex;align-items:center;gap:.35rem">
             <input type="checkbox" id="hideSkip" onchange="impRender()" style="accent-color:var(--green)"> Hide skipped
           </label>
+          <button class="btn btn-outline btn-sm" onclick="impFlipAllSigns()" title="Flip the sign on every row — use if the AI got the whole batch backwards">⇅ Flip all signs</button>
           <button class="btn btn-outline btn-sm" onclick="impRerun()">↻ Re-run AI</button>
           <button class="btn btn-outline btn-sm" onclick="impReset()">← New import</button>
         </span>
@@ -3358,14 +3359,27 @@ function getStatementPrompt(isPDF) {
 
 Extract EVERY transaction from this statement. Include purchases, payments, fees, credits, and debits.
 
-RULES:
-- Negative amounts = charges/debits (money spent)
-- Positive amounts = credits/payments received
+CRITICAL — SIGN CONVENTION (think from the account holder's perspective):
+- NEGATIVE amount = money LEAVING the account (the user spent / paid this)
+   Examples: "Debit Card Purchase", "Pre-authorized Payment", "Withdrawal", "Cheque", "Bill Payment", "Service Fee", "Transfer To"
+- POSITIVE amount = money ENTERING the account (the user received this)
+   Examples: "Direct Deposit", "Interac e-Transfer Received", "ABM Deposit", "Refund", "Interest Earned", "Customer Payment", "Transfer From"
+
+BMO statements often have two amount columns: "Debit" (money out, sign as NEGATIVE) and "Credit" (money in, sign as POSITIVE). Same row will only have a value in ONE of those columns.
+
+AMEX credit card statements: charges are NEGATIVE (the user spent that), "Payment Received" is POSITIVE (their bank paid the bill — money came into the credit card balance).
+
+OTHER RULES:
 - Dates in YYYY-MM-DD format
 - Include ALL rows — user will filter later
+- If you can't tell direction from context, default to NEGATIVE and let the user correct
 
-Return ONLY a valid JSON array, no markdown, no explanation:
-[{"date":"2025-12-16","description":"COSTCO WHOLESALE","amount":-45.18}]`;
+Return ONLY a valid JSON array, no markdown, no explanation. Mix of signs is expected and important:
+[
+  {"date":"2026-01-19","description":"Debit Card Purchase, CENTRAL ONTARIO","amount":-95.05},
+  {"date":"2026-02-06","description":"Direct Deposit, POSTMA MSP/D","amount":9416.66},
+  {"date":"2026-03-19","description":"Withdrawal At, BR.0039","amount":-4424.78}
+]`;
 }
 
 function getCategorizePrompt(batch, isBankStatement) {
@@ -3842,17 +3856,50 @@ function impRender(){
   document.getElementById('impTbody').innerHTML=rows.map(tx=>{
     const idx=impTxns.indexOf(tx);
     const isPos=tx.amount>0;
+    // Sign indicator + flip button. The arrow shows direction (↑ in / ↓ out)
+    // so the user can verify each row at a glance. Click to flip if the AI
+    // got it backwards (common on certain BMO statement formats).
+    const dirArrow = isPos
+      ? `<span title="Money IN" style="color:var(--green);font-weight:600">↑</span>`
+      : `<span title="Money OUT" style="color:var(--red);font-weight:600">↓</span>`;
+    const flipBtn = `<button onclick="impFlipSign(${idx})" title="Flip the sign (AI got it backwards)" style="background:none;border:1px solid var(--rule);border-radius:3px;padding:.05rem .35rem;font-size:.7rem;cursor:pointer;color:var(--ink3);margin-left:.3rem">⇅</button>`;
     return`<tr class="${tx.excluded?'excluded':''}">
       <td><button class="excl-btn" onclick="impToggleExcl(${idx})" title="Toggle exclude">${tx.excluded?'✚':'✕'}</button></td>
       <td class="mono">${tx.date}</td>
       <td><div>${esc(tx.vendor)}</div>${tx.reason?`<div style="font-size:.7rem;color:var(--ink3)">${esc(tx.reason)}</div>`:''}</td>
-      <td class="${isPos?'pos':'neg'}">$${fmtMoney(Math.abs(tx.amount))}</td>
+      <td class="${isPos?'pos':'neg'}">${dirArrow} $${fmtMoney(Math.abs(tx.amount))} ${flipBtn}</td>
       <td><select class="cat-sel" onchange="impChangeCat(${idx},this.value)">${expenseCategoryOptions(tx.category)}</select></td>
       <td class="mono right">${tx.hst>0?'$'+fmtMoney(tx.hst):'—'}</td>
       <td class="mono right">$${fmtMoney(Math.abs(tx.net))}</td>
       <td><span style="font-family:var(--mono);font-size:.68rem">${CONF[tx.confidence]||'⚪'} ${tx.confidence||'—'}</span></td>
     </tr>`;
   }).join('');
+}
+
+// Flip the sign of one row's amount + recalc HST/net so they stay consistent.
+// User uses this when the AI extracted a row with the wrong direction (e.g.
+// labelled a customer payment as -$9416 instead of +$9416).
+function impFlipSign(idx){
+  const tx = impTxns[idx];
+  if(!tx) return;
+  tx.amount = -tx.amount;
+  // Recalc net/hst from the flipped amount using the same logic calcHST uses
+  calcHST();
+  impRender();
+  impRenderStats();
+}
+
+// Flip the signs on EVERY row at once. Escape hatch when the AI got the
+// entire batch backwards (some BMO statement formats trigger this — the
+// importer has no way to know which way the bank exported expenses).
+function impFlipAllSigns(){
+  if(!impTxns.length) return;
+  if(!confirm(`Flip the sign on all ${impTxns.length} transactions? Use this if the AI got the whole batch backwards (e.g. all your deposits came in as negative).`)) return;
+  impTxns.forEach(tx => { tx.amount = -tx.amount; });
+  calcHST();
+  impRender();
+  impRenderStats();
+  toast('Flipped all signs');
 }
 
 function impRenderStats(){

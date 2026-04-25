@@ -110,6 +110,12 @@ Foundation also shipped:
 - ✅ **Bank reconciliation** — `🏦 Account Balances` tab. Catches missed/duplicate/wrong-sign rows by comparing expected vs actual closing balance.
 - ✅ **Per-category breakdown** on Year-End tab via dynamic QUERY pivot.
 
+Importer intelligence (shipped end of Day 1):
+- ✅ **AI auto-detect bank** — PDF parser asks Claude to identify the issuing institution + account type from the statement header. Auto-sets the Account column for every row. Means Mastercard / Visa / TD / RBC users Just Work — no hardcoded list. Buttons remain as manual override.
+- ✅ **Pre-pick required for CSVs only** — CSV upload still needs Credit Card / Bank Account button click before upload (no AI to detect). PDFs skip this since AI handles it.
+- ✅ **Vendor learning** — `/api/category/vendor-history` scans Transactions tab and builds vendor → most-frequent-category map. Front-end checks this map BEFORE calling the AI for each row. Matched rows get 🧠 "Learned" confidence. AI only runs on truly new vendors. Cache invalidated after each Send-to-Sheet so the system gets steadily smarter.
+- ✅ **AMEX 'Payment Received' = Internal Transfer** (NOT skip). Both halves of the credit-card-payment pair are kept (BMO outgoing + AMEX incoming) so each account reconciles independently in 🏦 Account Balances. Earlier we tried SKIP to dedupe visually; that broke per-account reconciliation. Internal Transfer cancels in P&L by formula, so no double-counting.
+
 ## Conventions + gotchas
 
 ### CRLF line endings
@@ -184,6 +190,9 @@ front-end changes without redeploying. Real changes must be committed
 - 📓 Adjusting Entries tab + /api/accrual/log + UI form
 - 🛠 Fixed Assets tab (CCA tracker)
 - 📊 T2 Worksheet tab (consolidated T2-prep view for MNP)
+- AI auto-detects bank/account type from PDF (no more hardcoded BMO/AMEX assumption)
+- Vendor learning — `/api/category/vendor-history`. Tradebooks gets smarter with use; matched vendors skip the AI entirely with 🧠 Learned confidence.
+- Reverted AMEX 'Payment Received' from SKIP to Internal Transfer for proper per-account reconciliation.
 
 **Migration count:** 9 idempotent migrations in `functions/api/setup/migrate.js`. Existing users hit "Update sheet to latest schema" once and get all of it.
 

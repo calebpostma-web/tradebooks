@@ -3500,7 +3500,7 @@ CRITICAL: Match the category to the direction of the money.
    * Travel credit / cashback / refund → "Other Income"
    * Interest earned on the account → "Interest Income"
    * Refund of an expense (vendor return) → use the matching expense category, the negative will offset later
-- "PAYMENT RECEIVED" / "THANK YOU" on a credit card statement is the bank paying off the bill. Mark this as "SKIP — not a business expense" so it doesn't double-count with the matching BMO bill payment row. (If the user is only importing the credit card statement and NOT the bank statement, they can flip it back to "Internal Transfer" manually.)
+- "PAYMENT RECEIVED" / "THANK YOU" on a credit card statement is the bank paying off the bill. Mark this as "Internal Transfer" — both this row AND the matching bank-account row are Internal Transfer; they're excluded from P&L by formula but each contributes to its own account's reconciliation.
 - E-transfer / direct deposit from a known client → income, NOT Internal Transfer
 
 SHARED RULES: Gas/fuel→Fuel | Restaurants/cafes→Meals & Entertainment | Memberships→Dues & Memberships | Hardware/supply stores→Supplies | Uniforms/workwear→Uniforms | Accounting/legal→Professional Fees | Tools under $500→Small Tools | Equipment over $500→Equipment Purchase | Phone/internet→Telephone | Hydro/utilities→Utilities | Insurance→Insurance | Payroll→Wages & Salaries
@@ -3930,15 +3930,97 @@ async function impAnalyzePDF(){
   }
 }
 
+// Cached vendor → category map from past Transactions. Loaded lazily before
+// the first AI categorization. The more she uses tradebooks, the smarter
+// this gets — and we save AI calls for vendors we've already seen.
+let vendorHistoryMap = null;
+
+async function loadVendorHistoryIfNeeded(){
+  if(vendorHistoryMap !== null) return;
+  const token = sessionStorage.getItem(AUTH_KEY);
+  if(!token){ vendorHistoryMap = {}; return; }
+  try {
+    const r = await fetch('/api/category/vendor-history', { headers: { 'Authorization': 'Bearer ' + token }});
+    const d = await r.json();
+    vendorHistoryMap = (d.ok && d.map) ? d.map : {};
+  } catch(e){
+    vendorHistoryMap = {};
+  }
+}
+
+// Mirror of normalizeVendor in functions/api/category/vendor-history.js. Must
+// stay in sync — both sides need to produce the same key for a given vendor.
+function normalizeVendorClient(s){
+  return String(s || '')
+    .toLowerCase()
+    .replace(/\b(?:chatham|kent|london|toronto|ottawa|hamilton|windsor|sarnia)\b/gi, '')
+    .replace(/#?\d{2,}/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 30);
+}
+
+// Try to find this transaction's vendor in the learned history. Returns
+// { category, exemplar } if a match is found, null otherwise. Match strategy:
+// exact normalized key first, then prefix match (so "tirediscountergroup" can
+// match a key like "tirediscountergroupea" from a longer past entry).
+function lookupLearnedCategory(vendorOrDescription){
+  if(!vendorHistoryMap) return null;
+  const k = normalizeVendorClient(vendorOrDescription);
+  if(!k) return null;
+  if(vendorHistoryMap[k]) return vendorHistoryMap[k];
+  // Prefix match — find any key that starts with ours (or vice versa) of at
+  // least 8 chars. Avoids false matches on tiny prefixes.
+  for(const key of Object.keys(vendorHistoryMap)){
+    if(key.length < 8 || k.length < 8) continue;
+    if(key.startsWith(k.slice(0, 12)) || k.startsWith(key.slice(0, 12))){
+      return vendorHistoryMap[key];
+    }
+  }
+  return null;
+}
+
 async function runImpAI(){
   const fill=document.getElementById('impProgFill');
   const txt=document.getElementById('impProgTxt');
   const pct=document.getElementById('impProgPct');
+
+  // Step 1 — load vendor history (first run only). Quick, ~150ms typical.
+  txt.textContent='Checking vendors you\'ve categorized before…';
+  await loadVendorHistoryIfNeeded();
+
+  // Step 2 — apply learned categories first. Skip the AI for any row that
+  // matches a vendor we've seen before. This makes tradebooks faster AND more
+  // consistent the more it's used.
+  let learnedCount = 0;
+  for(const tx of impTxns){
+    const learned = lookupLearnedCategory(tx.vendor || tx.description);
+    if(learned && learned.category){
+      tx.category = learned.category;
+      tx.confidence = 'Learned';
+      tx.reason = `Matched past categorization (${learned.count} prior row${learned.count === 1 ? '' : 's'})`;
+    }
+  }
+  learnedCount = impTxns.filter(t => t.confidence === 'Learned').length;
+
+  // Step 3 — only ask the AI about rows that aren't already learned
+  const aiTxns = impTxns.filter(t => t.confidence !== 'Learned');
+  if(aiTxns.length === 0){
+    fill.style.width='100%'; pct.textContent='100%';
+    txt.textContent=`All ${impTxns.length} transactions matched past categorizations — no AI needed.`;
+    setTimeout(() => document.getElementById('impProgWrap').classList.add('hidden'), 800);
+    calcHST();impRender();impRenderStats();
+    return;
+  }
+
+  if(learnedCount > 0){
+    txt.textContent=`${learnedCount} matched past categorizations. AI handling the remaining ${aiTxns.length}…`;
+  }
+
   const BATCH=15;const batches=[];
-  for(let i=0;i<impTxns.length;i+=BATCH)batches.push(impTxns.slice(i,i+BATCH));
+  for(let i=0;i<aiTxns.length;i+=BATCH)batches.push(aiTxns.slice(i,i+BATCH));
   let done=0;
   for(let b=0;b<batches.length;b++){
-    txt.textContent=`Analyzing batch ${b+1} of ${batches.length}…`;
+    if(learnedCount === 0) txt.textContent=`Analyzing batch ${b+1} of ${batches.length}…`;
     const batch=batches[b];
     // Build a bank-specific prompt so rules match the account being imported
     const isBankStmt = impBankType === 'BANK';
@@ -3947,13 +4029,25 @@ async function runImpAI(){
       const raw=await callClaude(prompt);
       const clean=raw.replace(/\`\`\`json|\`\`\`/g,'').trim();
       const res=JSON.parse(clean);
-      const offset=b*BATCH;
-      res.forEach(r=>{const idx=offset+r.i-1;if(idx>=0&&idx<impTxns.length){impTxns[idx].category=r.category||'Other';impTxns[idx].confidence=r.confidence||'Medium';impTxns[idx].reason=r.reason||''}});
+      // The AI returns indices RELATIVE to the batch (1-based). Map back to
+      // the actual impTxns array via the batch's tx reference (each tx in
+      // batch is the same object reference in impTxns thanks to .filter).
+      res.forEach(r=>{
+        const tx = batch[r.i - 1];
+        if(tx){
+          tx.category = r.category || 'Other';
+          tx.confidence = r.confidence || 'Medium';
+          tx.reason = r.reason || '';
+        }
+      });
     } catch(e){
-      batch.forEach((t,i)=>{const idx=b*BATCH+i;impTxns[idx].category=ruleCategory(t.description,t.amount,impBank);impTxns[idx].confidence='Rule-based'});
+      batch.forEach(tx => {
+        tx.category = ruleCategory(tx.description, tx.amount, impBank);
+        tx.confidence = 'Rule-based';
+      });
     }
     done+=batch.length;
-    const p=Math.round(done/impTxns.length*100);
+    const p=Math.round((learnedCount + done) / impTxns.length * 100);
     fill.style.width=p+'%';pct.textContent=p+'%';
   }
   document.getElementById('impProgWrap').classList.add('hidden');
@@ -3971,12 +4065,13 @@ function ruleCategory(d,amt,bank='AMEX'){
   if(isBMO&&/INTERAC.*RCVD|ETRNSFR.*RCVD|E-TRANSFER.*RCVD/.test(d))return amt>0?'Income Received':'Internal Transfer';
   if(isBMO&&amt>0&&/RCVD|RECEIVED|DEPOSIT/.test(d))return'Income Received';
   // AMEX-specific: "PAYMENT RECEIVED / THANK YOU" is the bank paying off the
-  // credit card. The matching BMO row ("AMEX BILL PYMT") is the canonical
-  // record of the transfer. If we mark BOTH as Internal Transfer, the user
-  // sees the same cash movement twice in their Transactions tab. Default to
-  // SKIP so it's auto-excluded from the import; user can flip it back to
-  // Internal Transfer if they're not importing the BMO side.
-  if(!isBMO&&/PAYMENT.*RECEIVED|THANK YOU|ONLINE PAYMENT/.test(d))return'SKIP — not a business expense';
+  // credit card. Both halves get tagged Internal Transfer (the BMO outgoing
+  // and the AMEX incoming) — they offset in P&L (Internal Transfer is excluded
+  // from P&L formulas) AND each side contributes to its own account's
+  // reconciliation in the 🏦 Account Balances tab. Earlier we tried marking the
+  // AMEX side as SKIP to avoid visual duplication, but that broke AMEX-side
+  // reconciliation — so we keep both with Internal Transfer.
+  if(!isBMO&&/PAYMENT.*RECEIVED|THANK YOU|ONLINE PAYMENT/.test(d))return'Internal Transfer';
   // Credit card bill payments & internal transfers — always skip/flag
   if(/AMEX.*BILL|BILL.*PYMT|BILL.*PMT|MSP.*DIV|DIV.*MSP/.test(d))return'Internal Transfer';
   if(/INTERAC.*ETRNSFR.*RCVD|ETRNSFR.*RCVD/.test(d))return amt>0?'Income Received':'Internal Transfer';
@@ -4006,7 +4101,7 @@ function cleanVendor(d){return d.replace(/\s{2,}/g,' ').replace(/\*+/g,'').trim(
 
 function impRender(){
   const hideSkip=document.getElementById('hideSkip').checked;
-  const CONF={High:'🟢',Medium:'🟡',Low:'🔴','Rule-based':'⚪'};
+  const CONF={High:'🟢',Medium:'🟡',Low:'🔴','Rule-based':'⚪','Learned':'🧠'};
   const rows=impTxns.filter(tx=>!(hideSkip&&tx.category==='SKIP — not a business expense'));
   document.getElementById('impTbody').innerHTML=rows.map(tx=>{
     const idx=impTxns.indexOf(tx);
@@ -4280,6 +4375,11 @@ async function sendToSheets(){
       } else {
         btn.textContent = '✓ Sent to ledger';
       }
+
+      // Invalidate the cached vendor history — we just added new (vendor →
+      // category) pairs to Transactions. Next import will re-fetch and pick
+      // up everything she just categorized as "learned".
+      vendorHistoryMap = null;
 
       // NEW — proposed invoice matches for deposits
       const matches = Array.isArray(d.proposedMatches) ? d.proposedMatches : [];

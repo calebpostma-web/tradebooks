@@ -1043,6 +1043,10 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         <div id="prevNotes"></div>
         <div id="prevPayInstructions" style="display:none;margin-top:1rem;padding:.85rem 1rem;background:var(--greenlt,#eef7f2);border-left:3px solid var(--green);border-radius:4px">
           <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;color:var(--green);text-transform:uppercase;margin-bottom:.35rem">How to pay</div>
+          <div id="prevEtransfer" style="display:none;margin-bottom:.45rem">
+            <div style="font-size:.82rem;line-height:1.55">Interac e-Transfer to <span id="prevEtransferEmail" style="font-family:var(--mono);font-weight:500;color:var(--green)"></span></div>
+            <div id="prevEtransferSecurity" style="display:none;font-size:.75rem;color:var(--ink3);line-height:1.5"></div>
+          </div>
           <div id="prevPayInstructionsBody" style="font-size:.82rem;line-height:1.55;white-space:pre-wrap"></div>
         </div>
         <div id="prevTerms" style="display:none;font-size:.75rem;color:var(--ink3);font-style:italic;margin-top:.5rem"></div>
@@ -2915,6 +2919,8 @@ let USER_CONFIG = {
   invoicePhone: '',
   invoiceWebsite: '',
   invoiceLogo: '',                        // data URL for header logo
+  invoiceEtransferEmail: '',              // Interac e-Transfer recipient — own line on invoice
+  invoiceEtransferSecurity: '',           // optional security-question answer
   invoicePaymentInstructions: '',         // multi-line; rendered in its own block
   invoiceDefaultTerms: 'Payment due within 30 days. Late payments subject to 1.5% monthly interest.',
   invoiceFooterText: 'Thank you for your business.',
@@ -2923,6 +2929,8 @@ let USER_CONFIG = {
   // its own brand. Empty values fall back to the primary company's values.
   tradingSubline: '',                     // default auto-computed "o/a <businessName>"
   tradingLogo: '',                        // separate logo for the trading name
+  tradingEtransferEmail: '',              // optional — different e-transfer recipient
+  tradingEtransferSecurity: '',           // optional — different security answer
   tradingPaymentInstructions: '',         // optional — different email, etc.
   tradingFooterText: '',                  // optional alt tagline
 };
@@ -2930,8 +2938,10 @@ let USER_CONFIG = {
 // ── Invoice settings persistence (localStorage) ──────────────────
 const INV_SETTINGS_KEYS = [
   'invoicePhone','invoiceWebsite','invoiceLogo',
+  'invoiceEtransferEmail','invoiceEtransferSecurity',
   'invoicePaymentInstructions','invoiceDefaultTerms','invoiceFooterText',
   'tradingSubline','tradingLogo','tradingPaymentInstructions','tradingFooterText',
+  'tradingEtransferEmail','tradingEtransferSecurity',
 ];
 const INV_SETTINGS_STORAGE_KEY = 'tradebooks_invoice_settings';
 
@@ -3306,6 +3316,8 @@ function rebuildInvoiceCompanies() {
     phone: C.invoicePhone || '',
     website: C.invoiceWebsite || '',
     logo: C.invoiceLogo || '',
+    etransferEmail: C.invoiceEtransferEmail || '',
+    etransferSecurity: C.invoiceEtransferSecurity || '',
     paymentInstructions: C.invoicePaymentInstructions || '',
     defaultTerms: C.invoiceDefaultTerms || '',
     footerText: C.invoiceFooterText || 'Thank you for your business.',
@@ -3334,6 +3346,8 @@ function rebuildInvoiceCompanies() {
       ...sharedContact,
       // Per-trading overrides: if set, use them; else inherit from primary.
       logo: C.tradingLogo || sharedContact.logo,
+      etransferEmail: C.tradingEtransferEmail || sharedContact.etransferEmail,
+      etransferSecurity: C.tradingEtransferSecurity || sharedContact.etransferSecurity,
       paymentInstructions: C.tradingPaymentInstructions || sharedContact.paymentInstructions,
       footerText: C.tradingFooterText || sharedContact.footerText,
     };
@@ -4711,7 +4725,7 @@ function invUpdate(){
   const finalLabel = depAmt>0 && depDate ? 'BALANCE DUE' : 'TOTAL DUE';
   const finalAmt = depAmt>0 && depDate ? balanceDue : total;
   const depRequiredRow = depAmt>0 && !depDate
-    ? `<tr><td colspan="4" style="padding-top:.6rem"><div style="background:#fff8e1;border-left:3px solid var(--amber);padding:.55rem .8rem;border-radius:3px;font-size:.78rem;color:var(--amber)"><strong>Required deposit before work begins:</strong> $${fmtMoney(depAmt)} ${curCode} — please e-transfer the deposit before materials are ordered.</div></td></tr>`
+    ? `<tr><td colspan="4" style="padding-top:.6rem"><div style="background:#fff8e1;border-left:3px solid var(--amber);padding:.55rem .8rem;border-radius:3px;font-size:.78rem;color:var(--amber)"><strong>Required deposit before work begins:</strong> $${fmtMoney(depAmt)} ${curCode} — please e-transfer the deposit${co.etransferEmail?` to ${esc(co.etransferEmail)}`:''} before materials are ordered.</div></td></tr>`
     : '';
   document.getElementById('prevFoot').innerHTML = `
     <tr><td colspan="3" class="flbl" style="text-align:right">Subtotal</td><td class="mono" style="text-align:right">$${fmtMoney(sub)}</td></tr>
@@ -4747,12 +4761,28 @@ function invUpdate(){
   // Payment instructions block (from Settings → Invoice Customization)
   const payEl = document.getElementById('prevPayInstructions');
   const payBody = document.getElementById('prevPayInstructionsBody');
-  if (co.paymentInstructions) {
-    payEl.style.display = '';
-    payBody.textContent = co.paymentInstructions;
-  } else {
-    payEl.style.display = 'none';
+  const etEl = document.getElementById('prevEtransfer');
+  const etEmail = document.getElementById('prevEtransferEmail');
+  const etSec = document.getElementById('prevEtransferSecurity');
+  // The e-transfer email gets its own line so the client can't miss it; any other
+  // payment options (cheque, card) stay in the free-text block underneath.
+  if (etEl && etEmail) {
+    if (co.etransferEmail) {
+      etEl.style.display = '';
+      etEmail.textContent = co.etransferEmail;
+      if (co.etransferSecurity) {
+        etSec.style.display = '';
+        etSec.textContent = 'Security question answer: ' + co.etransferSecurity;
+      } else {
+        etSec.style.display = 'none';
+      }
+    } else {
+      etEl.style.display = 'none';
+    }
   }
+  payBody.textContent = co.paymentInstructions || '';
+  payBody.style.display = co.paymentInstructions ? '' : 'none';
+  payEl.style.display = (co.etransferEmail || co.paymentInstructions) ? '' : 'none';
   const termsEl = document.getElementById('prevTerms');
   if (co.defaultTerms) { termsEl.style.display = ''; termsEl.textContent = co.defaultTerms; }
   else { termsEl.style.display = 'none'; }
@@ -4806,6 +4836,9 @@ function invPrint(){
       /* Payment instructions block (green left-border card) */
       #prevPayInstructions{margin-top:1.1rem;padding:.85rem 1rem;background:var(--greenlt);border-left:3px solid var(--green);border-radius:4px;page-break-inside:avoid}
       #prevPayInstructionsBody{font-size:.82rem;line-height:1.6;white-space:pre-wrap}
+      #prevEtransfer{margin-bottom:.45rem}
+      #prevEtransferEmail{font-family:var(--mono);font-weight:500;color:var(--green)}
+      #prevEtransferSecurity{font-size:.75rem;color:var(--ink3);line-height:1.5}
       #prevTerms{font-size:.75rem;color:var(--ink3);font-style:italic;margin-top:.6rem}
 
       .inv-doc-footer{border-top:1px solid var(--rule);padding-top:.9rem;margin-top:1.4rem;display:flex;justify-content:space-between;align-items:flex-end;font-size:.72rem;color:var(--ink3);gap:1rem}
@@ -8435,9 +8468,14 @@ function renderSettings(){
       </div>
       <div style="font-size:.72rem;color:var(--ink3);margin-top:.3rem">Keep under ~200KB. Transparent PNG looks best.</div>
     </div>
+    <div class="field-row">
+      ${f('Interac e-Transfer email (appears on every invoice)','set_invoiceEtransferEmail',C.invoiceEtransferEmail,'email')}
+      ${f('E-Transfer security answer (optional)','set_invoiceEtransferSecurity',C.invoiceEtransferSecurity)}
+    </div>
+    <div style="font-size:.72rem;color:var(--ink3);margin:-.5rem 0 1rem;line-height:1.5">The e-transfer email prints on its own line under “How to pay”. Leave the security answer blank if you have autodeposit turned on.</div>
     <div class="field">
-      <label>Payment instructions (appears prominently on invoice — tell the client how to pay)</label>
-      <textarea id="set_invoicePaymentInstructions" rows="3" placeholder="E-transfer: your@email.com (security answer: invoice number)&#10;Cheque payable to ${C.businessName||'Your Business'}, mailed to the address above&#10;Or contact us for credit card payment" style="font-size:.85rem;font-family:inherit;width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);resize:vertical">${esc(C.invoicePaymentInstructions||'')}</textarea>
+      <label>Other payment options (optional — cheque, credit card, wire)</label>
+      <textarea id="set_invoicePaymentInstructions" rows="3" placeholder="Cheque payable to ${C.businessName||'Your Business'}, mailed to the address above&#10;Or contact us for credit card payment" style="font-size:.85rem;font-family:inherit;width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);resize:vertical">${esc(C.invoicePaymentInstructions||'')}</textarea>
     </div>
     <div class="field">
       <label>Default payment terms (appears below payment instructions)</label>
@@ -8466,9 +8504,13 @@ function renderSettings(){
         </div>
       </div>
     </div>
+    <div class="field-row">
+      ${f(`Interac e-Transfer email for ${esc(C.tradingName)} (optional)`,'set_tradingEtransferEmail',C.tradingEtransferEmail,'email')}
+      ${f('E-Transfer security answer (optional)','set_tradingEtransferSecurity',C.tradingEtransferSecurity)}
+    </div>
     <div class="field">
-      <label>Payment instructions for ${esc(C.tradingName)} (optional)</label>
-      <textarea id="set_tradingPaymentInstructions" rows="3" placeholder="Leave blank to use primary — or override with a different e-transfer email, etc." style="font-size:.85rem;font-family:inherit;width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);resize:vertical">${esc(C.tradingPaymentInstructions||'')}</textarea>
+      <label>Other payment options for ${esc(C.tradingName)} (optional)</label>
+      <textarea id="set_tradingPaymentInstructions" rows="3" placeholder="Leave blank to use primary — or list cheque / credit card options for this brand" style="font-size:.85rem;font-family:inherit;width:100%;padding:.55rem .8rem;border:1px solid var(--rule);border-radius:var(--radius);resize:vertical">${esc(C.tradingPaymentInstructions||'')}</textarea>
     </div>
     <div class="field">
       <label>Footer tagline for ${esc(C.tradingName)} (optional)</label>
@@ -8794,11 +8836,15 @@ async function saveSettings(){
   // Pulled from the form and written into USER_CONFIG + localStorage.
   USER_CONFIG.invoicePhone               = document.getElementById('set_invoicePhone')?.value || '';
   USER_CONFIG.invoiceWebsite             = document.getElementById('set_invoiceWebsite')?.value || '';
+  USER_CONFIG.invoiceEtransferEmail      = (document.getElementById('set_invoiceEtransferEmail')?.value || '').trim();
+  USER_CONFIG.invoiceEtransferSecurity   = (document.getElementById('set_invoiceEtransferSecurity')?.value || '').trim();
   USER_CONFIG.invoicePaymentInstructions = document.getElementById('set_invoicePaymentInstructions')?.value || '';
   USER_CONFIG.invoiceDefaultTerms        = document.getElementById('set_invoiceDefaultTerms')?.value || '';
   USER_CONFIG.invoiceFooterText          = document.getElementById('set_invoiceFooterText')?.value || '';
   // Trading-name branding overrides (only present in DOM when tradingName is set)
   USER_CONFIG.tradingSubline             = document.getElementById('set_tradingSubline')?.value || '';
+  USER_CONFIG.tradingEtransferEmail      = (document.getElementById('set_tradingEtransferEmail')?.value || '').trim();
+  USER_CONFIG.tradingEtransferSecurity   = (document.getElementById('set_tradingEtransferSecurity')?.value || '').trim();
   USER_CONFIG.tradingPaymentInstructions = document.getElementById('set_tradingPaymentInstructions')?.value || '';
   USER_CONFIG.tradingFooterText          = document.getElementById('set_tradingFooterText')?.value || '';
   // invoiceLogo + tradingLogo are already on USER_CONFIG via their pick handlers

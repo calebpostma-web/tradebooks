@@ -218,6 +218,8 @@ async function loadProfile(env, userId) {
     activities: row.activities || '',
     sheetId: row.sheet_id || '',
     scriptUrl: row.script_url || '',
+    customExpenseCats: safeJSON(row.custom_expense_cats, []),
+    customIncomeCats: safeJSON(row.custom_income_cats, []),
   };
 }
 

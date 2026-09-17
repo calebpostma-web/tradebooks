@@ -31,3 +31,6 @@ build/
 *.pem
 *.key
 secrets.json
+
+# ── Local one-off scripts with personal data ──
+_local/

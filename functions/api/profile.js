@@ -57,8 +57,8 @@ export async function onRequestPut(context) {
         user_id, business_name, trading_name, owner_name, email, city, province,
         hst_number, business_type, fiscal_year_end, primary_bank, credit_card,
         invoice_start, home_office_percent, clients, employees, structure,
-        activities, sheet_id, script_url, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        activities, sheet_id, script_url, custom_expense_cats, custom_income_cats, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(user_id) DO UPDATE SET
         business_name = excluded.business_name,
         trading_name = excluded.trading_name,
@@ -77,6 +77,8 @@ export async function onRequestPut(context) {
         employees = excluded.employees,
         structure = excluded.structure,
         activities = excluded.activities,
+        custom_expense_cats = excluded.custom_expense_cats,
+        custom_income_cats = excluded.custom_income_cats,
         -- DEFENSIVE: don't blow away sheet_id / script_url if the payload
         -- doesn't carry them. Otherwise an empty form field (or a save
         -- before the profile finishes hydrating client-side) silently
@@ -108,7 +110,9 @@ export async function onRequestPut(context) {
       profile.structure || '',
       profile.activities || '',
       profile.sheetId || '',
-      profile.scriptUrl || ''
+      profile.scriptUrl || '',
+      JSON.stringify(cleanCats(profile.customExpenseCats)),
+      JSON.stringify(cleanCats(profile.customIncomeCats))
     ).run();
 
     return json({ ok: true, message: 'Profile saved' });
@@ -138,7 +142,18 @@ function rowToProfile(row) {
     activities: row.activities || '',
     sheetId: row.sheet_id || '',
     scriptUrl: row.script_url || '',
+    customExpenseCats: safeJSON(row.custom_expense_cats, []),
+    customIncomeCats: safeJSON(row.custom_income_cats, []),
   };
+}
+
+// Custom categories arrive as an array of names; trim, drop blanks and
+// exact duplicates, keep the user's order.
+function cleanCats(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : [])
+    .map(c => String(c || '').trim())
+    .filter(c => c && !seen.has(c) && seen.add(c));
 }
 
 function safeJSON(str, fallback) {

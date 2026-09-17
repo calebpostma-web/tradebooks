@@ -160,10 +160,10 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
         // Positive Amount = money in; negative = money out. Category "Internal
         // Transfer" is excluded from P&L and HST math client-side.
         { properties: { sheetId: 300, title: '📒 Transactions', index: 2,
-            gridProperties: { rowCount: 1000, columnCount: 14, frozenRowCount: 11 },
+            gridProperties: { rowCount: 5000, columnCount: 14, frozenRowCount: 11 },
             tabColor: COLORS.teal } },
         { properties: { sheetId: 500, title: '🧾 Invoices', index: 3,
-            gridProperties: { rowCount: 500, columnCount: 17, frozenRowCount: 11 },
+            gridProperties: { rowCount: 5000, columnCount: 17, frozenRowCount: 11 },
             tabColor: COLORS.blue } },
         { properties: { sheetId: 600, title: '📋 HST Returns', index: 4,
             gridProperties: { rowCount: 40, columnCount: 10 },
@@ -176,20 +176,20 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
         // Hours, Rate, Gross, CPP (ee), EI (ee), Fed Tax, ON Tax, Net Pay,
         // YTD Gross, Remittance Due, Status
         { properties: { sheetId: 800, title: '💼 Payroll', index: 6,
-            gridProperties: { rowCount: 500, columnCount: 17, frozenRowCount: 11 },
+            gridProperties: { rowCount: 5000, columnCount: 17, frozenRowCount: 11 },
             tabColor: COLORS.brown } },
         // 📝 Work Log — contemporaneous entries for CRA audit defence.
         // 8 cols B-I: Date, Employee, Business, Task Description, Hours,
         // Rate, Notes, Entry Audit (server-timestamp + "corrected" flag)
         { properties: { sheetId: 900, title: '📝 Work Log', index: 7,
-            gridProperties: { rowCount: 1000, columnCount: 9, frozenRowCount: 11 },
+            gridProperties: { rowCount: 5000, columnCount: 9, frozenRowCount: 11 },
             tabColor: COLORS.brown } },
         // 📑 CRA Remittances — one row per payment to CRA. Backs the year-end
         // package and gives MNP the paper trail they ask for.
         // 9 cols B-J: Date Paid, Type, Period, Amount, Confirmation #, Account,
         // PDF Link, Notes, Linked Txn Ref
         { properties: { sheetId: 1000, title: '📑 CRA Remittances', index: 8,
-            gridProperties: { rowCount: 500, columnCount: 11, frozenRowCount: 11 },
+            gridProperties: { rowCount: 5000, columnCount: 11, frozenRowCount: 11 },
             tabColor: COLORS.teal } },
         // 🏦 Account Balances — bank reconciliation. One row per account per
         // statement period. User enters opening + closing from the bank
@@ -200,7 +200,7 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
         //              Sum Activity (formula) | Expected Closing (formula) |
         //              Actual Closing | Difference (formula) | Match (formula) | Notes
         { properties: { sheetId: 1100, title: '🏦 Account Balances', index: 9,
-            gridProperties: { rowCount: 500, columnCount: 13, frozenRowCount: 11 },
+            gridProperties: { rowCount: 5000, columnCount: 13, frozenRowCount: 11 },
             tabColor: COLORS.green } },
         // 📓 Adjusting Entries — year-end accrual adjustments (AR, AP, prepaids,
         // accruals). Bridges cash-basis books to accrual-ready for the T2.
@@ -463,26 +463,26 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(cellFormat(TXN, 2, 2, 10, 6, { backgroundColor: COLORS.tealTint, numberFormat: FMT_CURRENCY.numberFormat }));
   requests.push(headerRowRequest(TXN, 10, 1, 14, COLORS.teal));
   requests.push({ updateDimensionProperties: { range: { sheetId: TXN, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(TXN, 11, 1000, 1, 14, COLORS.tealTint));
+  requests.push(bandingRequest(TXN, 11, 5000, 1, 14, COLORS.tealTint));
   // Date col B
-  requests.push(cellFormat(TXN, 11, 1, 1000, 2, FMT_DATE));
+  requests.push(cellFormat(TXN, 11, 1, 5000, 2, FMT_DATE));
   // Amount col E — signed currency (negatives shown in parens via FMT_CURRENCY)
-  requests.push(cellFormat(TXN, 11, 4, 1000, 5, FMT_CURRENCY));
+  requests.push(cellFormat(TXN, 11, 4, 5000, 5, FMT_CURRENCY));
   // HST Amount col H
-  requests.push(cellFormat(TXN, 11, 7, 1000, 8, FMT_CURRENCY));
+  requests.push(cellFormat(TXN, 11, 7, 5000, 8, FMT_CURRENCY));
   // Total col N (signed gross — Amount + HST in same direction)
-  requests.push(cellFormat(TXN, 11, 13, 1000, 14, FMT_CURRENCY));
+  requests.push(cellFormat(TXN, 11, 13, 5000, 14, FMT_CURRENCY));
   // HST Flag validation — col G (index 6)
   requests.push({
     setDataValidation: {
-      range: { sheetId: TXN, startRowIndex: 11, endRowIndex: 1000, startColumnIndex: 6, endColumnIndex: 7 },
+      range: { sheetId: TXN, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 6, endColumnIndex: 7 },
       rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: 'Yes' }, { userEnteredValue: 'No' }] }, showCustomUi: true },
     }
   });
   // Match Status validation — col M (index 12)
   requests.push({
     setDataValidation: {
-      range: { sheetId: TXN, startRowIndex: 11, endRowIndex: 1000, startColumnIndex: 12, endColumnIndex: 13 },
+      range: { sheetId: TXN, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 12, endColumnIndex: 13 },
       rule: { condition: { type: 'ONE_OF_LIST', values: [
         { userEnteredValue: 'Matched' },
         { userEnteredValue: 'Unmatched' },
@@ -515,25 +515,25 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(cellFormat(INV, 2, 2, 10, 6, { backgroundColor: COLORS.blueTint }));
   requests.push(headerRowRequest(INV, 10, 1, 17, COLORS.blue));
   requests.push({ updateDimensionProperties: { range: { sheetId: INV, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(INV, 11, 500, 1, 17, COLORS.blueTint));
-  requests.push(cellFormat(INV, 11, 2, 500, 3, FMT_DATE));
-  requests.push(cellFormat(INV, 11, 5, 500, 6, FMT_CURRENCY));
-  requests.push(cellFormat(INV, 11, 6, 500, 7, FMT_CURRENCY));
-  requests.push(cellFormat(INV, 11, 7, 500, 8, FMT_CURRENCY));
-  requests.push(cellFormat(INV, 11, 9, 500, 10, FMT_DATE));
-  requests.push(cellFormat(INV, 11, 11, 500, 12, FMT_DATE));
-  requests.push(cellFormat(INV, 11, 14, 500, 15, FMT_CURRENCY));  // O Deposit Amount
-  requests.push(cellFormat(INV, 11, 15, 500, 16, FMT_DATE));      // P Deposit Date Received
-  requests.push(cellFormat(INV, 11, 16, 500, 17, FMT_CURRENCY));  // Q Balance Due
+  requests.push(bandingRequest(INV, 11, 5000, 1, 17, COLORS.blueTint));
+  requests.push(cellFormat(INV, 11, 2, 5000, 3, FMT_DATE));
+  requests.push(cellFormat(INV, 11, 5, 5000, 6, FMT_CURRENCY));
+  requests.push(cellFormat(INV, 11, 6, 5000, 7, FMT_CURRENCY));
+  requests.push(cellFormat(INV, 11, 7, 5000, 8, FMT_CURRENCY));
+  requests.push(cellFormat(INV, 11, 9, 5000, 10, FMT_DATE));
+  requests.push(cellFormat(INV, 11, 11, 5000, 12, FMT_DATE));
+  requests.push(cellFormat(INV, 11, 14, 5000, 15, FMT_CURRENCY));  // O Deposit Amount
+  requests.push(cellFormat(INV, 11, 15, 5000, 16, FMT_DATE));      // P Deposit Date Received
+  requests.push(cellFormat(INV, 11, 16, 5000, 17, FMT_CURRENCY));  // Q Balance Due
   requests.push({
     setDataValidation: {
-      range: { sheetId: INV, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 8, endColumnIndex: 9 },
+      range: { sheetId: INV, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 8, endColumnIndex: 9 },
       rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: 'Yes' }, { userEnteredValue: 'No' }] }, showCustomUi: true },
     }
   });
   requests.push({
     setDataValidation: {
-      range: { sheetId: INV, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 10, endColumnIndex: 11 },
+      range: { sheetId: INV, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 10, endColumnIndex: 11 },
       rule: { condition: { type: 'ONE_OF_LIST', values: [
         { userEnteredValue: 'Unpaid' },
         { userEnteredValue: 'Awaiting Deposit' },
@@ -631,16 +631,16 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(cellFormat(PAY, 2, 2, 10, 7, { backgroundColor: COLORS.brownTint, numberFormat: FMT_CURRENCY.numberFormat }));
   requests.push(headerRowRequest(PAY, 10, 1, 17, COLORS.brown));
   requests.push({ updateDimensionProperties: { range: { sheetId: PAY, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 40 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(PAY, 11, 500, 1, 17, COLORS.brownTint));
+  requests.push(bandingRequest(PAY, 11, 5000, 1, 17, COLORS.brownTint));
   // Dates: col B (Pay Date), col P (Remittance Due)
-  requests.push(cellFormat(PAY, 11, 1, 500, 2, FMT_DATE));
-  requests.push(cellFormat(PAY, 11, 15, 500, 16, FMT_DATE));
+  requests.push(cellFormat(PAY, 11, 1, 5000, 2, FMT_DATE));
+  requests.push(cellFormat(PAY, 11, 15, 5000, 16, FMT_DATE));
   // Currency: col H (Gross) through col N (YTD Gross) — 7 currency columns
-  requests.push(cellFormat(PAY, 11, 7, 500, 14, FMT_CURRENCY));
+  requests.push(cellFormat(PAY, 11, 7, 5000, 14, FMT_CURRENCY));
   // Status dropdown (col Q, index 16)
   requests.push({
     setDataValidation: {
-      range: { sheetId: PAY, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 16, endColumnIndex: 17 },
+      range: { sheetId: PAY, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 16, endColumnIndex: 17 },
       rule: { condition: { type: 'ONE_OF_LIST', values: [
         { userEnteredValue: 'Pending' }, { userEnteredValue: 'Paid' },
         { userEnteredValue: 'Remitted' }, { userEnteredValue: 'Cancelled' },
@@ -675,12 +675,12 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(cellFormat(WLOG, 2, 2, 10, 8, { backgroundColor: COLORS.brownTint }));
   requests.push(headerRowRequest(WLOG, 10, 1, 9, COLORS.brown));
   requests.push({ updateDimensionProperties: { range: { sheetId: WLOG, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(WLOG, 11, 1000, 1, 9, COLORS.brownTint));
-  requests.push(cellFormat(WLOG, 11, 1, 1000, 2, FMT_DATE));   // B Date
-  requests.push(cellFormat(WLOG, 11, 5, 1000, 6, { numberFormat: { type: 'NUMBER', pattern: '0.00' } })); // F Hours
-  requests.push(cellFormat(WLOG, 11, 6, 1000, 7, FMT_CURRENCY)); // G Rate
+  requests.push(bandingRequest(WLOG, 11, 5000, 1, 9, COLORS.brownTint));
+  requests.push(cellFormat(WLOG, 11, 1, 5000, 2, FMT_DATE));   // B Date
+  requests.push(cellFormat(WLOG, 11, 5, 5000, 6, { numberFormat: { type: 'NUMBER', pattern: '0.00' } })); // F Hours
+  requests.push(cellFormat(WLOG, 11, 6, 5000, 7, FMT_CURRENCY)); // G Rate
   // Entry Audit column (col I, idx 8) — read-only mono font, muted
-  requests.push(cellFormat(WLOG, 11, 8, 1000, 9, {
+  requests.push(cellFormat(WLOG, 11, 8, 5000, 9, {
     textFormat: { fontSize: 8, foregroundColor: COLORS.textMuted },
     backgroundColor: COLORS.grey,
   }));
@@ -704,13 +704,13 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(cellFormat(REM, 2, 2, 10, 6, { backgroundColor: COLORS.tealTint, numberFormat: FMT_CURRENCY.numberFormat }));
   requests.push(headerRowRequest(REM, 10, 1, 11, COLORS.teal));
   requests.push({ updateDimensionProperties: { range: { sheetId: REM, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(REM, 11, 500, 1, 11, COLORS.tealTint));
-  requests.push(cellFormat(REM, 11, 1, 500, 2, FMT_DATE));      // B Date Paid
-  requests.push(cellFormat(REM, 11, 4, 500, 5, FMT_CURRENCY));  // E Amount
+  requests.push(bandingRequest(REM, 11, 5000, 1, 11, COLORS.tealTint));
+  requests.push(cellFormat(REM, 11, 1, 5000, 2, FMT_DATE));      // B Date Paid
+  requests.push(cellFormat(REM, 11, 4, 5000, 5, FMT_CURRENCY));  // E Amount
   // Type dropdown (col C, idx 2)
   requests.push({
     setDataValidation: {
-      range: { sheetId: REM, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 2, endColumnIndex: 3 },
+      range: { sheetId: REM, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 2, endColumnIndex: 3 },
       rule: { condition: { type: 'ONE_OF_LIST', values: [
         { userEnteredValue: 'HST' },
         { userEnteredValue: 'Payroll (PD7A)' },
@@ -742,14 +742,14 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(cellFormat(BAL, 2, 2, 10, 6, { backgroundColor: COLORS.greenTint, numberFormat: FMT_CURRENCY.numberFormat }));
   requests.push(headerRowRequest(BAL, 10, 1, 13, COLORS.green));
   requests.push({ updateDimensionProperties: { range: { sheetId: BAL, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(BAL, 11, 500, 1, 13, COLORS.greenTint));
-  requests.push(cellFormat(BAL, 11, 3, 500, 4, FMT_DATE));      // D Period Start
-  requests.push(cellFormat(BAL, 11, 4, 500, 5, FMT_DATE));      // E Period End
-  requests.push(cellFormat(BAL, 11, 5, 500, 6, FMT_CURRENCY));  // F Opening
-  requests.push(cellFormat(BAL, 11, 6, 500, 7, FMT_CURRENCY));  // G Sum Activity
-  requests.push(cellFormat(BAL, 11, 7, 500, 8, FMT_CURRENCY));  // H Expected Closing
-  requests.push(cellFormat(BAL, 11, 8, 500, 9, FMT_CURRENCY));  // I Actual Closing
-  requests.push(cellFormat(BAL, 11, 9, 500, 10, FMT_CURRENCY)); // J Difference
+  requests.push(bandingRequest(BAL, 11, 5000, 1, 13, COLORS.greenTint));
+  requests.push(cellFormat(BAL, 11, 3, 5000, 4, FMT_DATE));      // D Period Start
+  requests.push(cellFormat(BAL, 11, 4, 5000, 5, FMT_DATE));      // E Period End
+  requests.push(cellFormat(BAL, 11, 5, 5000, 6, FMT_CURRENCY));  // F Opening
+  requests.push(cellFormat(BAL, 11, 6, 5000, 7, FMT_CURRENCY));  // G Sum Activity
+  requests.push(cellFormat(BAL, 11, 7, 5000, 8, FMT_CURRENCY));  // H Expected Closing
+  requests.push(cellFormat(BAL, 11, 8, 5000, 9, FMT_CURRENCY));  // I Actual Closing
+  requests.push(cellFormat(BAL, 11, 9, 5000, 10, FMT_CURRENCY)); // J Difference
   requests.push(colWidth(BAL, 0, 1, 30));    // A gutter
   requests.push(colWidth(BAL, 1, 2, 110));   // B Period (label like "Jan 2026")
   requests.push(colWidth(BAL, 2, 3, 100));   // C Account
@@ -955,13 +955,13 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   ]});
   data.push({ range: "'📊 Dashboard'!D5:D10", values: [
     // Revenue: sum of positive amounts, excluding Internal Transfer
-    ["=SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!E12:E1000,\">0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")"],
+    ["=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")"],
     // HST collected: HST amount on positive (income) rows
-    ["=SUMIFS('📒 Transactions'!H12:H1000,'📒 Transactions'!E12:E1000,\">0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")"],
+    ["=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")"],
     // Expenses: absolute value of negative amounts, excluding Internal Transfer
-    ["=-SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!E12:E1000,\"<0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")"],
+    ["=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")"],
     // ITCs: HST amount on negative (expense) rows
-    ["=SUMIFS('📒 Transactions'!H12:H1000,'📒 Transactions'!E12:E1000,\"<0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")"],
+    ["=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")"],
     ['=D5-D7'],
     ['=D6-D8']
   ]});
@@ -1047,27 +1047,27 @@ async function populateValues(accessToken, spreadsheetId, profile) {
     'Total (incl HST)',
   ]]});
 
-  // Pre-fill the Total formula in N12:N1000 so every existing + future row shows
+  // Pre-fill the Total formula in N12:N so every existing + future row shows
   // the gross signed amount (matches what hit the bank). Empty rows render empty.
   // Using ARRAYFORMULA keeps it as a single cell so users can't accidentally
   // overwrite individual rows. Formula: Amount + HST in same direction as Amount.
   data.push({ range: "'📒 Transactions'!N12", values: [[
-    '=ARRAYFORMULA(IF(E12:E1000="","",E12:E1000+H12:H1000*SIGN(E12:E1000)))'
+    '=ARRAYFORMULA(IF(E12:E="","",E12:E+H12:H*SIGN(E12:E)))'
   ]]});
 
   // INVOICES
   data.push({ range: "'🧾 Invoices'!A1", values: [[`INVOICE LOG  —  All invoices issued  ·  Outstanding tracking  ·  Status by colour`]] });
   data.push({ range: "'🧾 Invoices'!B2", values: [['INVOICE STATS']] });
-  data.push({ range: "'🧾 Invoices'!B3:C3", values: [['Total invoices issued',   '=COUNTA(B12:B500)']] });
-  data.push({ range: "'🧾 Invoices'!B4:C4", values: [['Average invoice value',   '=IFERROR(AVERAGE(F12:F500),0)']] });
-  data.push({ range: "'🧾 Invoices'!B5:C5", values: [['Total invoiced excl HST', '=SUM(F12:F500)']] });
-  data.push({ range: "'🧾 Invoices'!B6:C6", values: [['Total HST on invoices',   '=SUM(G12:G500)']] });
-  data.push({ range: "'🧾 Invoices'!B7:C7", values: [['Total invoiced incl HST', '=SUM(H12:H500)']] });
+  data.push({ range: "'🧾 Invoices'!B3:C3", values: [['Total invoices issued',   '=COUNTA(B12:B)']] });
+  data.push({ range: "'🧾 Invoices'!B4:C4", values: [['Average invoice value',   '=IFERROR(AVERAGE(F12:F),0)']] });
+  data.push({ range: "'🧾 Invoices'!B5:C5", values: [['Total invoiced excl HST', '=SUM(F12:F)']] });
+  data.push({ range: "'🧾 Invoices'!B6:C6", values: [['Total HST on invoices',   '=SUM(G12:G)']] });
+  data.push({ range: "'🧾 Invoices'!B7:C7", values: [['Total invoiced incl HST', '=SUM(H12:H)']] });
   // Collected = full Total on Paid invoices + Deposit Amount on Deposit-Received invoices.
   // Outstanding = everything invoiced minus what's been collected.
   // (Awaiting Deposit + Unpaid contribute their full Total to outstanding.)
-  data.push({ range: "'🧾 Invoices'!B8:C8", values: [['Outstanding — not yet paid', '=SUM(H12:H500)-SUMIF(K12:K500,"Paid",H12:H500)-SUMIF(K12:K500,"Deposit Received",O12:O500)']] });
-  data.push({ range: "'🧾 Invoices'!B9:C9", values: [['Collected — paid + deposits', '=SUMIF(K12:K500,"Paid",H12:H500)+SUMIF(K12:K500,"Deposit Received",O12:O500)']] });
+  data.push({ range: "'🧾 Invoices'!B8:C8", values: [['Outstanding — not yet paid', '=SUM(H12:H)-SUMIF(K12:K,"Paid",H12:H)-SUMIF(K12:K,"Deposit Received",O12:O)']] });
+  data.push({ range: "'🧾 Invoices'!B9:C9", values: [['Collected — paid + deposits', '=SUMIF(K12:K,"Paid",H12:H)+SUMIF(K12:K,"Deposit Received",O12:O)']] });
   data.push({ range: "'🧾 Invoices'!B11:Q11", values: [[
     'Invoice #', 'Date Issued', 'Client', 'Service Description', 'Amount (excl HST)',
     `HST (${taxPct}%)`, 'Total Invoiced', 'HST?', 'Due Date', 'Status', 'Date Paid', 'Notes',
@@ -1086,7 +1086,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   // to today's FY. User can override C3 manually any time to view past FYs.
   data.push({ range: "'📋 HST Returns'!B3", values: [['Fiscal Year Start (auto-detected — type a date here to view a different FY):']] });
   data.push({ range: "'📋 HST Returns'!C3", values: [[
-    "=IFERROR(DATE(YEAR(MAX('📒 Transactions'!B12:B1000))-IF(MONTH(MAX('📒 Transactions'!B12:B1000))<4,1,0),4,1),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))"
+    "=IFERROR(DATE(YEAR(MAX('📒 Transactions'!B12:B))-IF(MONTH(MAX('📒 Transactions'!B12:B))<4,1,0),4,1),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))"
   ]]});
 
   data.push({ range: "'📋 HST Returns'!B4:G4", values: [[
@@ -1099,10 +1099,10 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   // Line 106 = ITCs = sum of HST on negative rows excl Internal Transfer
   // Date windows derive from $C$3 (Fiscal Year Start): Q1 = +0..2 months,
   // Q2 = +3..5, Q3 = +6..8, Q4 = +9..11 (all end-of-month via EOMONTH).
-  const TXN_E = "'📒 Transactions'!E12:E1000";
-  const TXN_F = "'📒 Transactions'!F12:F1000";
-  const TXN_H = "'📒 Transactions'!H12:H1000";
-  const TXN_B = "'📒 Transactions'!B12:B1000";
+  const TXN_E = "'📒 Transactions'!E12:E";
+  const TXN_F = "'📒 Transactions'!F12:F";
+  const TXN_H = "'📒 Transactions'!H12:H";
+  const TXN_B = "'📒 Transactions'!B12:B";
   const excl = `${TXN_F},"<>Internal Transfer"`;
   // q-indexed start/end offsets in months from FY start: Q1 = [0, 2], Q2 = [3, 5], ...
   const qStart = q => (q - 1) * 3;              // months to add to $C$3 for window start
@@ -1152,7 +1152,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   // Income rows pull positive-sign Transactions by category.
   const incomeRows = incomeCats.map(cat => [
     cat,
-    `=SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!F12:F1000,"${cat}",'📒 Transactions'!E12:E1000,">0")`,
+    `=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!F12:F,"${cat}",'📒 Transactions'!E12:E,">0")`,
     '', '', '← from Transactions (cash basis)'
   ]);
   // TOTAL REVENUE uses an all-inclusive SUMIFS so it agrees with Dashboard D5.
@@ -1162,7 +1162,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📅 Year-End'!B5:F11", values: [
     ...incomeRows,
     ['TOTAL REVENUE',
-      "=SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!E12:E1000,\">0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")",
+      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")",
       '', '', '← all positive Transactions (T2 Schedule 1 Line 8000)'],
   ]});
 
@@ -1171,9 +1171,9 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   const expRows = expenseCats.map(([cat, note]) => {
     let formula;
     if (cat === 'Meals & Entertainment (50%)') {
-      formula = `=-SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!F12:F1000,"Meals & Entertainment",'📒 Transactions'!E12:E1000,"<0")*0.5`;
+      formula = `=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!F12:F,"Meals & Entertainment",'📒 Transactions'!E12:E,"<0")*0.5`;
     } else {
-      formula = `=-SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!F12:F1000,"${cat}",'📒 Transactions'!E12:E1000,"<0")`;
+      formula = `=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!F12:F,"${cat}",'📒 Transactions'!E12:E,"<0")`;
     }
     return [cat, formula, '', '', note || ''];
   });
@@ -1193,8 +1193,8 @@ async function populateValues(accessToken, spreadsheetId, profile) {
 
   data.push({ range: "'📅 Year-End'!A46", values: [['  HST RECONCILIATION']] });
   data.push({ range: "'📅 Year-End'!B47:F50", values: [
-    ['HST Collected (annual)', "=SUMIFS('📒 Transactions'!H12:H1000,'📒 Transactions'!E12:E1000,\">0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")",   '', '', 'from Transactions'],
-    ['ITCs Claimed (annual)',  "=SUMIFS('📒 Transactions'!H12:H1000,'📒 Transactions'!E12:E1000,\"<0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")", '', '', 'from Transactions'],
+    ['HST Collected (annual)', "=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")",   '', '', 'from Transactions'],
+    ['ITCs Claimed (annual)',  "=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")", '', '', 'from Transactions'],
     ['Net HST Owing',          '=C47-C48',                      '', '', ''],
     ['', '', '', '', ''],
   ]});
@@ -1219,7 +1219,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   // for our row-based ledger.
   data.push({ range: "'📅 Year-End'!A62", values: [['  PER-CATEGORY BREAKDOWN  (all-time, every category in use, biggest first)']] });
   data.push({ range: "'📅 Year-End'!B63", values: [[
-    "=IFERROR(QUERY('📒 Transactions'!B12:N1000, \"SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'\", 0), \"No transactions yet — import a statement to populate this breakdown.\")"
+    "=IFERROR(QUERY('📒 Transactions'!B12:N, \"SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'\", 0), \"No transactions yet — import a statement to populate this breakdown.\")"
   ]]});
 
   // ─── PAYROLL TAB ───
@@ -1229,16 +1229,16 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'💼 Payroll'!B2", values: [['PAYROLL SUMMARY  (YTD)']] });
   // Summary block — computed from Payroll rows below
   data.push({ range: "'💼 Payroll'!B3:H3", values: [[
-    'Total Gross Wages (YTD)', '=IFERROR(SUM(I12:I500),0)', '', '', '', '', ''
+    'Total Gross Wages (YTD)', '=IFERROR(SUM(I12:I),0)', '', '', '', '', ''
   ]]});
   data.push({ range: "'💼 Payroll'!B4:H4", values: [[
-    'CPP Withheld (YTD)',      '=IFERROR(SUM(J12:J500),0)', '', '', '', '', ''
+    'CPP Withheld (YTD)',      '=IFERROR(SUM(J12:J),0)', '', '', '', '', ''
   ]]});
   data.push({ range: "'💼 Payroll'!B5:H5", values: [[
-    'Fed + ON Tax Withheld (YTD)', '=IFERROR(SUM(L12:L500)+SUM(M12:M500),0)', '', '', '', '', ''
+    'Fed + ON Tax Withheld (YTD)', '=IFERROR(SUM(L12:L)+SUM(M12:M),0)', '', '', '', '', ''
   ]]});
   data.push({ range: "'💼 Payroll'!B6:H6", values: [[
-    'Outstanding Remittance Owed', '=IFERROR(SUMIFS(J12:J500,Q12:Q500,"Paid")+SUMIFS(L12:L500,Q12:Q500,"Paid")+SUMIFS(M12:M500,Q12:Q500,"Paid"),0)', '', '', '', '', ''
+    'Outstanding Remittance Owed', '=IFERROR(SUMIFS(J12:J,Q12:Q,"Paid")+SUMIFS(L12:L,Q12:Q,"Paid")+SUMIFS(M12:M,Q12:Q,"Paid"),0)', '', '', '', '', ''
   ]]});
   data.push({ range: "'💼 Payroll'!B11:Q11", values: [[
     'Pay Date', 'Employee', 'Age', 'Business', 'Work Description',
@@ -1267,25 +1267,25 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   ]]});
   data.push({ range: "'📑 CRA Remittances'!B2", values: [['REMITTANCE TOTALS  (YTD)']] });
   data.push({ range: "'📑 CRA Remittances'!B3:F3", values: [[
-    'HST paid to CRA',                    '=IFERROR(SUMIF(C12:C500,"HST",E12:E500),0)', '', '', ''
+    'HST paid to CRA',                    '=IFERROR(SUMIF(C12:C,"HST",E12:E),0)', '', '', ''
   ]]});
   data.push({ range: "'📑 CRA Remittances'!B4:F4", values: [[
-    'Payroll source deductions paid',     '=IFERROR(SUMIF(C12:C500,"Payroll (PD7A)",E12:E500),0)', '', '', ''
+    'Payroll source deductions paid',     '=IFERROR(SUMIF(C12:C,"Payroll (PD7A)",E12:E),0)', '', '', ''
   ]]});
   data.push({ range: "'📑 CRA Remittances'!B5:F5", values: [[
-    'Corporate tax instalments paid',     '=IFERROR(SUMIF(C12:C500,"Corporate Tax Instalment",E12:E500),0)', '', '', ''
+    'Corporate tax instalments paid',     '=IFERROR(SUMIF(C12:C,"Corporate Tax Instalment",E12:E),0)', '', '', ''
   ]]});
   data.push({ range: "'📑 CRA Remittances'!B6:F6", values: [[
-    'Corporate tax (final) paid',         '=IFERROR(SUMIF(C12:C500,"Corporate Tax Final",E12:E500),0)', '', '', ''
+    'Corporate tax (final) paid',         '=IFERROR(SUMIF(C12:C,"Corporate Tax Final",E12:E),0)', '', '', ''
   ]]});
   data.push({ range: "'📑 CRA Remittances'!B7:F7", values: [[
-    'TOTAL paid to CRA',                  '=IFERROR(SUM(E12:E500),0)', '', '', ''
+    'TOTAL paid to CRA',                  '=IFERROR(SUM(E12:E),0)', '', '', ''
   ]]});
   data.push({ range: "'📑 CRA Remittances'!B8:F8", values: [[
-    'Receipts attached (count)',          '=IFERROR(COUNTIF(H12:H500,"<>"),0)', '', '', ''
+    'Receipts attached (count)',          '=IFERROR(COUNTIF(H12:H,"<>"),0)', '', '', ''
   ]]});
   data.push({ range: "'📑 CRA Remittances'!B9:F9", values: [[
-    'Missing receipts (count)',           '=IFERROR(COUNTA(B12:B500)-COUNTIF(H12:H500,"<>"),0)', '', '', ''
+    'Missing receipts (count)',           '=IFERROR(COUNTA(B12:B)-COUNTIF(H12:H,"<>"),0)', '', '', ''
   ]]});
   data.push({ range: "'📑 CRA Remittances'!B11:J11", values: [[
     'Date Paid', 'Type', 'Period Covered', 'Amount', 'Confirmation #', 'Account',
@@ -1302,16 +1302,16 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   ]]});
   data.push({ range: "'🏦 Account Balances'!B2", values: [['RECONCILIATION SUMMARY']] });
   data.push({ range: "'🏦 Account Balances'!B3:F3", values: [[
-    'Periods reconciled',                 '=COUNTA(B12:B500)', '', '', ''
+    'Periods reconciled',                 '=COUNTA(B12:B)', '', '', ''
   ]]});
   data.push({ range: "'🏦 Account Balances'!B4:F4", values: [[
-    'Periods balanced (✓)',               '=COUNTIF(K12:K500,"✓ Balanced")', '', '', ''
+    'Periods balanced (✓)',               '=COUNTIF(K12:K,"✓ Balanced")', '', '', ''
   ]]});
   data.push({ range: "'🏦 Account Balances'!B5:F5", values: [[
-    'Periods OFF (action needed)',        '=COUNTIF(K12:K500,"⚠*")', '', '', ''
+    'Periods OFF (action needed)',        '=COUNTIF(K12:K,"⚠*")', '', '', ''
   ]]});
   data.push({ range: "'🏦 Account Balances'!B6:F6", values: [[
-    'Total off-by-amount across periods', '=SUMIF(K12:K500,"⚠*",J12:J500)', '', '', ''
+    'Total off-by-amount across periods', '=SUMIF(K12:K,"⚠*",J12:J)', '', '', ''
   ]]});
   data.push({ range: "'🏦 Account Balances'!B7:F7", values: [[
     'How to use this tab',                'Enter period dates + opening + closing balance from each statement. The sheet computes expected closing from your Transactions and flags any difference. A non-zero difference = a missed row, duplicate, wrong sign, or bad amount somewhere.', '', '', ''
@@ -1327,19 +1327,19 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   // Sum Activity = sum of Total (incl HST) col N from Transactions where
   // Account matches and Date is in [Period Start, Period End].
   data.push({ range: "'🏦 Account Balances'!G12", values: [[
-    "=ARRAYFORMULA(IF(C12:C500=\"\",\"\",IFERROR(SUMIFS('📒 Transactions'!N12:N1000,'📒 Transactions'!I12:I1000,C12:C500,'📒 Transactions'!B12:B1000,\">=\"&D12:D500,'📒 Transactions'!B12:B1000,\"<=\"&E12:E500),0)))"
+    "=ARRAYFORMULA(IF(C12:C=\"\",\"\",IFERROR(SUMIFS('📒 Transactions'!N12:N,'📒 Transactions'!I12:I,C12:C,'📒 Transactions'!B12:B,\">=\"&D12:D,'📒 Transactions'!B12:B,\"<=\"&E12:E),0)))"
   ]]});
   // Expected Closing = Opening + Sum Activity
   data.push({ range: "'🏦 Account Balances'!H12", values: [[
-    '=ARRAYFORMULA(IF(C12:C500="","",F12:F500+G12:G500))'
+    '=ARRAYFORMULA(IF(C12:C="","",F12:F+G12:G))'
   ]]});
   // Difference = Expected - Actual (positive means we expected more cash than the bank shows)
   data.push({ range: "'🏦 Account Balances'!J12", values: [[
-    '=ARRAYFORMULA(IF(I12:I500="","",H12:H500-I12:I500))'
+    '=ARRAYFORMULA(IF(I12:I="","",H12:H-I12:I))'
   ]]});
   // Match status — uses ABS to allow tiny rounding differences
   data.push({ range: "'🏦 Account Balances'!K12", values: [[
-    '=ARRAYFORMULA(IF(I12:I500="","",IF(ABS(J12:J500)<0.01,"✓ Balanced","⚠ Off by $"&TEXT(ROUND(J12:J500,2),"0.00"))))'
+    '=ARRAYFORMULA(IF(I12:I="","",IF(ABS(J12:J)<0.01,"✓ Balanced","⚠ Off by $"&TEXT(ROUND(J12:J,2),"0.00"))))'
   ]]});
 
   // ─── ADJUSTING ENTRIES TAB ───
@@ -1450,7 +1450,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📊 T2 Worksheet'!B5:E5", values: [['REVENUE', '', '', '']]});
   data.push({ range: "'📊 T2 Worksheet'!B6:E10", values: [
     ['Sales/services revenue (cash basis)',
-      "=SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!E12:E1000,\">0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")",
+      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")",
       '8089', '← Total positive Transactions excluding Internal Transfer'],
     ['Add: Accrued Revenue (FYE adjustments)',
       "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accrued Revenue\",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Receivable (AR)\",'📓 Adjusting Entries'!F12:F200),0)",
@@ -1463,7 +1463,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📊 T2 Worksheet'!B12:E12", values: [['EXPENSES', '', '', '']]});
   data.push({ range: "'📊 T2 Worksheet'!B13:E25", values: [
     ['Total operating expenses (cash basis)',
-      "=-SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!E12:E1000,\"<0\",'📒 Transactions'!F12:F1000,\"<>Internal Transfer\")",
+      "=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")",
       'multiple', '← Total negative Transactions excluding Internal Transfer'],
     ['Add: Accrued Expenses + AP (FYE adjustments)',
       "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accrued Expense\",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Payable (AP)\",'📓 Adjusting Entries'!F12:F200),0)",
@@ -1490,7 +1490,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📊 T2 Worksheet'!B30:E37", values: [
     ['Net Income per Books (from above)', '=C19', '', '← Starting point'],
     ['Add back: 50% of Meals & Entertainment (non-deductible)',
-      "=ROUND(-SUMIFS('📒 Transactions'!E12:E1000,'📒 Transactions'!F12:F1000,\"Meals & Entertainment\",'📒 Transactions'!E12:E1000,\"<0\")*0.5,2)",
+      "=ROUND(-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!F12:F,\"Meals & Entertainment\",'📒 Transactions'!E12:E,\"<0\")*0.5,2)",
       '101', '← CRA only allows 50% of meals'],
     ['Add back: Amortization per books',  0, '104', '← Tradebooks doesn\'t book amortization separately; usually $0'],
     ['Less: CCA per Schedule 8',          '=-C16', '', '← CCA is deducted on tax side instead of book amortization'],
@@ -1515,7 +1515,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📊 T2 Worksheet'!B49:E55", values: [
     ['ASSETS', '', '', ''],
     ['Cash on hand (per latest reconciled bank balances)',
-      "=IFERROR(SUMIFS('🏦 Account Balances'!I12:I500,'🏦 Account Balances'!K12:K500,\"✓ Balanced\"),0)",
+      "=IFERROR(SUMIFS('🏦 Account Balances'!I12:I,'🏦 Account Balances'!K12:K,\"✓ Balanced\"),0)",
       '1001', '← From Account Balances tab'],
     ['Accounts Receivable (AR adjustments at FYE)',
       "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Receivable (AR)\",'📓 Adjusting Entries'!H12:H200),0)",

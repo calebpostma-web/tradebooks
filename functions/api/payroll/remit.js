@@ -48,7 +48,7 @@ export async function onRequestPost({ request, env }) {
   if (!remitDate) return json({ ok: false, error: 'remitDate is required' }, 400);
 
   // Read Payroll tab and verify each row is Paid with a deduction total.
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q500`);
+  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
   if (!result.ok) return json({ ok: false, error: 'Failed to read Payroll: ' + result.error });
 
   const pickedRows = [];

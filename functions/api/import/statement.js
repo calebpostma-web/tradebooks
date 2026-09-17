@@ -199,7 +199,7 @@ export async function onRequestPost({ request, env }) {
 async function loadOpenInvoices(env, userId) {
   // Read out to col Q so the deposit columns are included. Sheets returns ragged
   // rows (trailing empty cells stripped), so destructure with defaults.
-  const result = await readRange(env, userId, `'${INVOICES_TAB}'!B12:Q500`);
+  const result = await readRange(env, userId, `'${INVOICES_TAB}'!B12:Q`);
   if (!result.ok) return [];
   const invoices = [];
   for (const row of result.values) {

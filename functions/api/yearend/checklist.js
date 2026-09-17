@@ -65,10 +65,10 @@ export async function onRequest({ request, env }) {
   // For tabs that don't exist we synthesize a "no data" result rather than
   // hitting the API with a known-bad range.
   const [txnRows, invRows, remRows, payRows, statementFiles, receiptFiles] = await Promise.all([
-    tabTxn ? safeReadRange(env, userId, `'${tabTxn}'!B12:M1000`) : missingTabResult(TAB_TXN),
-    tabInv ? safeReadRange(env, userId, `'${tabInv}'!B12:Q500`)  : missingTabResult(TAB_INV),
-    tabRem ? safeReadRange(env, userId, `'${tabRem}'!B12:J500`)  : missingTabResult(TAB_REM),
-    tabPay ? safeReadRange(env, userId, `'${tabPay}'!B12:Q500`)  : missingTabResult(TAB_PAY),
+    tabTxn ? safeReadRange(env, userId, `'${tabTxn}'!B12:M`) : missingTabResult(TAB_TXN),
+    tabInv ? safeReadRange(env, userId, `'${tabInv}'!B12:Q`)  : missingTabResult(TAB_INV),
+    tabRem ? safeReadRange(env, userId, `'${tabRem}'!B12:J`)  : missingTabResult(TAB_REM),
+    tabPay ? safeReadRange(env, userId, `'${tabPay}'!B12:Q`)  : missingTabResult(TAB_PAY),
     listStatementFiles(tok.accessToken, fy),
     listReceiptFiles(tok.accessToken, fy),
   ]);

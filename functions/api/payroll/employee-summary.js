@@ -45,7 +45,7 @@ export async function onRequestGet({ request, env }) {
   const yearEnd = Date.parse(`${year}-12-31T23:59:59Z`);
 
   // Work Log entries for this employee in this year
-  const wlResult = await readRange(env, userId, `'${WORK_LOG_TAB}'!B12:I1000`);
+  const wlResult = await readRange(env, userId, `'${WORK_LOG_TAB}'!B12:I`);
   const wlEntries = [];
   if (wlResult.ok) {
     for (const row of wlResult.values) {
@@ -63,7 +63,7 @@ export async function onRequestGet({ request, env }) {
   }
 
   // Payroll rows for this employee in this year
-  const payResult = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q500`);
+  const payResult = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
   const payRuns = [];
   if (payResult.ok) {
     for (const row of payResult.values) {

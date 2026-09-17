@@ -8,7 +8,7 @@ import { getGoogleAccessToken, getUserSheetId } from './_google.js';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /**
- * Read values from a range. e.g. range = "'📒 Transactions'!B12:M500"
+ * Read values from a range. e.g. range = "'📒 Transactions'!B12:M"
  */
 export async function readRange(env, userId, range) {
     const sheetId = await getUserSheetId(env, userId);
@@ -113,7 +113,7 @@ export async function batchUpdate(env, userId, data) {
  * Find the next empty row in a column (for dedup + insertion).
  */
 export async function findNextEmptyRow(env, userId, tab, column = 'B', startRow = 12) {
-    const range = `'${tab}'!${column}${startRow}:${column}500`;
+    const range = `'${tab}'!${column}${startRow}:${column}`;
     const result = await readRange(env, userId, range);
     if (!result.ok) return { ok: false, error: result.error };
 
@@ -128,7 +128,7 @@ export async function findNextEmptyRow(env, userId, tab, column = 'B', startRow 
  * Read existing refs from a column (for dedup).
  */
 export async function readExistingRefs(env, userId, tab, refColLetter, startRow = 12) {
-    const range = `'${tab}'!${refColLetter}${startRow}:${refColLetter}500`;
+    const range = `'${tab}'!${refColLetter}${startRow}:${refColLetter}`;
     const result = await readRange(env, userId, range);
     if (!result.ok) return new Set();
     return new Set(

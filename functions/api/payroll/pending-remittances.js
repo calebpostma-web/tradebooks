@@ -49,7 +49,7 @@ export async function onRequestGet({ request, env }) {
 // ── Pending remittance groups ───────────────────────────────────────
 
 async function loadPendingGroups(env, userId) {
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q500`);
+  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
   if (!result.ok) return [];
 
   // Group by remittance due date
@@ -110,7 +110,7 @@ async function loadPendingGroups(env, userId) {
 // ── Recent remittances (from 📒 Transactions) ────────────────────────
 
 async function loadRecentRemittances(env, userId) {
-  const result = await readRange(env, userId, `'${TXN_TAB}'!B12:M1000`);
+  const result = await readRange(env, userId, `'${TXN_TAB}'!B12:M`);
   if (!result.ok) return [];
 
   const items = [];

@@ -55,7 +55,7 @@ export async function onRequestPost({ request, env }) {
   }
 
   // Read out to col Q so we get the current status + deposit fields.
-  const invResult = await readRange(env, userId, `'${INVOICES_TAB}'!B12:Q500`);
+  const invResult = await readRange(env, userId, `'${INVOICES_TAB}'!B12:Q`);
   if (!invResult.ok) return json({ ok: false, error: 'Failed to read Invoices: ' + invResult.error });
 
   let invoiceRow = null;

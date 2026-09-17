@@ -67,7 +67,7 @@ export async function onRequestGet({ request, env }) {
   };
 
   // Read all Payroll rows for the year
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q500`);
+  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
   if (!result.ok) return json({ ok: false, error: 'Failed to read Payroll: ' + result.error });
 
   // Group rows by employee name

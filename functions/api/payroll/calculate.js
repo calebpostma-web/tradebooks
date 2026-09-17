@@ -121,7 +121,7 @@ async function loadEmployee(env, userId, employeeId) {
  * Work Log layout B-I: Date | Employee | Business | Task | Hours | Rate | Notes | Entry Audit
  */
 async function loadWorkLogInRange(env, userId, employeeName, startIso, endIso) {
-  const result = await readRange(env, userId, `'${WORK_LOG_TAB}'!B12:I1000`);
+  const result = await readRange(env, userId, `'${WORK_LOG_TAB}'!B12:I`);
   if (!result.ok) return [];
   const startT = Date.parse(startIso);
   const endT = Date.parse(endIso);
@@ -156,7 +156,7 @@ async function loadWorkLogInRange(env, userId, employeeName, startIso, endIso) {
  */
 async function loadYtdState(env, userId, employeeName, payDateIso) {
   const ytd = { gross: 0, cppBase: 0, cpp2: 0, fedTax: 0, onTax: 0 };
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q500`);
+  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
   if (!result.ok) return ytd;
 
   const payT = Date.parse(payDateIso);

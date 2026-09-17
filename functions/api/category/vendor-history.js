@@ -39,7 +39,7 @@ export async function onRequest({ request, env }) {
 
   // Read columns C (Party/Vendor) and F (Category) — these are at indices 1 and 4
   // when reading from B12:F. We only need vendor + category.
-  const r = await readRange(env, userId, `'${txnTitle}'!C12:F1000`);
+  const r = await readRange(env, userId, `'${txnTitle}'!C12:F`);
   if (!r.ok) return json({ ok: false, error: 'Failed to read Transactions: ' + r.error });
 
   // Group by normalized vendor → tally categories. Pick the most frequent

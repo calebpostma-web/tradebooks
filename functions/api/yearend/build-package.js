@@ -116,7 +116,7 @@ export async function onRequestPost({ request, env }) {
       // tab yet (legacy sheets). Skip the read in that case — no remittances
       // to enumerate.
       const remRead = tabRem
-        ? await readRange(env, userId, `'${tabRem}'!B12:J500`)
+        ? await readRange(env, userId, `'${tabRem}'!B12:J`)
         : { ok: true, values: [] };
       if (remRead.ok) {
         for (const row of (remRead.values || [])) {

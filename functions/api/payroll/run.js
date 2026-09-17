@@ -194,7 +194,7 @@ async function loadEmployee(env, userId, employeeId) {
 }
 
 async function loadWorkLogInRange(env, userId, employeeName, startIso, endIso) {
-  const result = await readRange(env, userId, `'${WORK_LOG_TAB}'!B12:I1000`);
+  const result = await readRange(env, userId, `'${WORK_LOG_TAB}'!B12:I`);
   if (!result.ok) return [];
   const startT = Date.parse(startIso);
   const endT = Date.parse(endIso);
@@ -216,7 +216,7 @@ async function loadWorkLogInRange(env, userId, employeeName, startIso, endIso) {
 
 async function loadYtdState(env, userId, employeeName, payDateIso) {
   const ytd = { gross: 0, cppBase: 0, cpp2: 0, fedTax: 0, onTax: 0 };
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q500`);
+  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
   if (!result.ok) return ytd;
   const payT = Date.parse(payDateIso);
   const payYear = new Date(payDateIso).getUTCFullYear();
@@ -245,7 +245,7 @@ async function loadYtdState(env, userId, employeeName, payDateIso) {
 }
 
 async function findExistingPayrollRow(env, userId, employeeName, payDateIso) {
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q500`);
+  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
   if (!result.ok) return null;
   for (let i = 0; i < result.values.length; i++) {
     const row = result.values[i];

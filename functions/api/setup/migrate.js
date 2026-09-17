@@ -511,11 +511,20 @@ async function applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, 
   const hstTab = Object.values(sheetsByTitle).find(s => /hst returns/i.test(s.title));
   if (!hstTab) return;  // No HST Returns tab — likely a partial sheet
 
-  // We can't easily detect "is the formula already updated" without reading C3.
-  // To stay idempotent + cheap on dry-run, just always rewrite both C3 and the
-  // label. A re-run is harmless because the values are the same.
+  // The formula references the Transactions tab — resolve its actual title
+  // (handles legacy emoji prefixes).
+  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
+  const txnTitle = txnTab ? txnTab.title : '📒 Transactions';
+  const formula = hstFyStartFormula(txnTitle);
+
+  // Idempotence: skip when C3 already holds exactly this formula. (A user who
+  // typed a date into C3 to view a past FY will be reset to auto-detect on the
+  // next update — same behaviour as before, now just not on every run.)
+  const current = await readCellFormula(env, userId, `'${hstTab.title}'!C3`);
+  if (current === formula) return;
+
   if (dryRun) {
-    changes.push(`Update '${hstTab.title}' C3 to auto-detect Fiscal Year from your latest transaction (was hardcoded to today's FY, which broke when importing prior-year data).`);
+    changes.push(`Update '${hstTab.title}' C3 to auto-detect Fiscal Year from your latest transaction (and show the current FY when the ledger is empty).`);
     return;
   }
 
@@ -523,11 +532,6 @@ async function applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, 
     [['Fiscal Year Start (auto-detected — type a date here to view a different FY):']]);
   if (!labelRes.ok) errors.push(`Failed to update HST FY label: ${labelRes.error}`);
 
-  // The formula references the Transactions tab — resolve its actual title
-  // (handles legacy emoji prefixes).
-  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
-  const txnTitle = txnTab ? txnTab.title : '📒 Transactions';
-  const formula = `=IFERROR(DATE(YEAR(MAX('${txnTitle}'!B12:B))-IF(MONTH(MAX('${txnTitle}'!B12:B))<4,1,0),4,1),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))`;
   const formulaRes = await writeRange(env, userId, `'${hstTab.title}'!C3`, [[formula]]);
   if (!formulaRes.ok) errors.push(`Failed to update HST FY formula: ${formulaRes.error}`);
 
@@ -700,9 +704,15 @@ async function applyYearEndPerCategoryBreakdown(env, userId, sheetsByTitle, chan
   const yeTab = Object.values(sheetsByTitle).find(s => /year.?end/i.test(s.title));
   if (!yeTab) return;  // No Year-End tab — partial sheet
 
-  // Need to make sure the grid is large enough for the QUERY rows.
-  // We don't have a clean "is the breakdown already there" check without
-  // reading A62, so re-running is harmless (overwrites with same content).
+  // Resolve Transactions tab name for legacy compat.
+  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
+  const txnTitle = txnTab ? txnTab.title : '📒 Transactions';
+  const formula = `=IFERROR(QUERY('${txnTitle}'!B12:N, "SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'", 0), "No transactions yet — import a statement to populate this breakdown.")`;
+
+  // Idempotence: skip when B63 already holds exactly this formula.
+  const current = await readCellFormula(env, userId, `'${yeTab.title}'!B63`);
+  if (current === formula) return;
+
   if (dryRun) {
     changes.push(`Add per-category breakdown to '${yeTab.title}' — auto-populated table showing every category in use with row count + total. Mirrors the column-totals layout you used before.`);
     return;
@@ -722,16 +732,11 @@ async function applyYearEndPerCategoryBreakdown(env, userId, sheetsByTitle, chan
     if (!expandRes.ok) errors.push(`Could not expand '${yeTab.title}' to 200 rows: ${expandRes.error}`);
   }
 
-  // Step 2: write the section header + QUERY formula. Resolve Transactions
-  // tab name for legacy compat.
-  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
-  const txnTitle = txnTab ? txnTab.title : '📒 Transactions';
-
+  // Step 2: write the section header + QUERY formula.
   const headerRes = await writeRange(env, userId, `'${yeTab.title}'!A62`,
     [['  PER-CATEGORY BREAKDOWN  (all-time, every category in use, biggest first)']]);
   if (!headerRes.ok) errors.push(`Failed to write breakdown header: ${headerRes.error}`);
 
-  const formula = `=IFERROR(QUERY('${txnTitle}'!B12:N, "SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'", 0), "No transactions yet — import a statement to populate this breakdown.")`;
   const formulaRes = await writeRange(env, userId, `'${yeTab.title}'!B63`, [[formula]]);
   if (!formulaRes.ok) errors.push(`Failed to write breakdown formula: ${formulaRes.error}`);
 
@@ -1313,6 +1318,31 @@ async function applyOpenEndedRanges(env, userId, sheetsByTitle, changes, errors,
     if (!res.ok) { errors.push(`Row-limit migration: could not rewrite formulas: ${res.error}`); return; }
     changes.push(`Removed row limits from ${writes.length} formula(s) — totals now include every row.`);
   }
+}
+
+// ── Read one cell exactly as entered (formula text if it is a formula) ──
+// Used by migrations that rewrite a single cell so they can skip when the
+// cell already holds the target formula — otherwise the "update available"
+// banner never clears.
+async function readCellFormula(env, userId, range) {
+  const sheetId = await getUserSheetId(env, userId);
+  const tok = await getGoogleAccessToken(env, userId);
+  if (!sheetId || !tok.ok) return null;
+  const resp = await fetch(
+    `${SHEETS_API}/${sheetId}/values/${encodeURIComponent(range)}?valueRenderOption=FORMULA`,
+    { headers: { 'Authorization': `Bearer ${tok.accessToken}` } }
+  );
+  const data = await resp.json();
+  if (data.error) return null;
+  return (data.values && data.values[0] && data.values[0][0] != null) ? String(data.values[0][0]) : '';
+}
+
+// Fiscal-year-start formula for HST Returns C3. FY runs Apr 1 – Mar 31.
+// Uses the latest transaction date; on an EMPTY ledger falls back to today
+// (MAX of an empty range is 0 → year 1899, which rendered as "Apr 1, 3799").
+function hstFyStartFormula(txnTitle) {
+  const dates = `'${txnTitle}'!B12:B`;
+  return `=IFERROR(IF(COUNT(${dates})=0,DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1),DATE(YEAR(MAX(${dates}))-IF(MONTH(MAX(${dates}))<4,1,0),4,1)),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))`;
 }
 
 // ── Helpers ──

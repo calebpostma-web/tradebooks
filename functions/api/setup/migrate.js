@@ -18,7 +18,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 import { getGoogleAccessToken, getUserSheetId } from '../../_google.js';
-import { getSpreadsheetMetadata, spreadsheetsBatchUpdate, writeRange } from '../../_sheets.js';
+import { getSpreadsheetMetadata, spreadsheetsBatchUpdate, writeRange, batchUpdate } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -73,6 +73,7 @@ async function runMigrations(request, env, dryRunDefault) {
   const sheetsByTitle = Object.fromEntries(meta.sheets.map(s => [s.title, s]));
   const changes = [];
   const errors = [];
+  const details = [];  // per-formula list for dry-run review (Migration 10)
 
   // ── Migration 1: ensure 📑 CRA Remittances tab exists ──
   await applyCraRemittancesTab(env, userId, sheetsByTitle, changes, errors, dryRun);
@@ -101,11 +102,16 @@ async function runMigrations(request, env, dryRunDefault) {
   // ── Migration 9: 📊 T2 Worksheet (consolidated T2-prep view) ──
   await applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dryRun);
 
+  // ── Migration 10: remove row 500/1000 limits (formulas, grid, formats) ──
+  // Runs LAST so it also catches formulas written by migrations 1–9.
+  await applyOpenEndedRanges(env, userId, sheetsByTitle, changes, errors, dryRun, details);
+
   return json({
     ok: true,
     dryRun,
     changes,
     errors,
+    details,
     upToDate: changes.length === 0 && errors.length === 0,
   });
 }
@@ -139,7 +145,7 @@ async function applyCraRemittancesTab(env, userId, sheetsByTitle, changes, error
         sheetId,
         title: TITLE,
         index: Object.keys(sheetsByTitle).length,
-        gridProperties: { rowCount: 500, columnCount: 11, frozenRowCount: 11 },
+        gridProperties: { rowCount: 5000, columnCount: 11, frozenRowCount: 11 },
         tabColor: COLORS.teal,
       },
     },
@@ -219,7 +225,7 @@ async function applyCraRemittancesTab(env, userId, sheetsByTitle, changes, error
     // Banding for data rows (alt row colour)
     { addBanding: {
         bandedRange: {
-          range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 1, endColumnIndex: 11 },
+          range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 1, endColumnIndex: 11 },
           rowProperties: {
             firstBandColor: COLORS.white,
             secondBandColor: COLORS.tealTint,
@@ -228,19 +234,19 @@ async function applyCraRemittancesTab(env, userId, sheetsByTitle, changes, error
     }},
     // Date format on col B (Date Paid)
     { repeatCell: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 1, endColumnIndex: 2 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 1, endColumnIndex: 2 },
         cell: { userEnteredFormat: { numberFormat: FMT_DATE.numberFormat }},
         fields: 'userEnteredFormat.numberFormat',
     }},
     // Currency format on col E (Amount)
     { repeatCell: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 4, endColumnIndex: 5 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 4, endColumnIndex: 5 },
         cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }},
         fields: 'userEnteredFormat.numberFormat',
     }},
     // Type dropdown on col C
     { setDataValidation: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 2, endColumnIndex: 3 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 2, endColumnIndex: 3 },
         rule: { condition: { type: 'ONE_OF_LIST', values: [
           { userEnteredValue: 'HST' },
           { userEnteredValue: 'Payroll (PD7A)' },
@@ -271,13 +277,13 @@ async function applyCraRemittancesTab(env, userId, sheetsByTitle, changes, error
   const valueWrites = [
     [`'${TITLE}'!A1`, [[`CRA REMITTANCES LOG  —  HST · Payroll source deductions · Corp tax`]]],
     [`'${TITLE}'!B2`, [['REMITTANCE TOTALS  (YTD)']]],
-    [`'${TITLE}'!B3:F3`, [['HST paid to CRA',                    '=IFERROR(SUMIF(C12:C500,"HST",E12:E500),0)', '', '', '']]],
-    [`'${TITLE}'!B4:F4`, [['Payroll source deductions paid',     '=IFERROR(SUMIF(C12:C500,"Payroll (PD7A)",E12:E500),0)', '', '', '']]],
-    [`'${TITLE}'!B5:F5`, [['Corporate tax instalments paid',     '=IFERROR(SUMIF(C12:C500,"Corporate Tax Instalment",E12:E500),0)', '', '', '']]],
-    [`'${TITLE}'!B6:F6`, [['Corporate tax (final) paid',         '=IFERROR(SUMIF(C12:C500,"Corporate Tax Final",E12:E500),0)', '', '', '']]],
-    [`'${TITLE}'!B7:F7`, [['TOTAL paid to CRA',                  '=IFERROR(SUM(E12:E500),0)', '', '', '']]],
-    [`'${TITLE}'!B8:F8`, [['Receipts attached (count)',          '=IFERROR(COUNTIF(H12:H500,"<>"),0)', '', '', '']]],
-    [`'${TITLE}'!B9:F9`, [['Missing receipts (count)',           '=IFERROR(COUNTA(B12:B500)-COUNTIF(H12:H500,"<>"),0)', '', '', '']]],
+    [`'${TITLE}'!B3:F3`, [['HST paid to CRA',                    '=IFERROR(SUMIF(C12:C,"HST",E12:E),0)', '', '', '']]],
+    [`'${TITLE}'!B4:F4`, [['Payroll source deductions paid',     '=IFERROR(SUMIF(C12:C,"Payroll (PD7A)",E12:E),0)', '', '', '']]],
+    [`'${TITLE}'!B5:F5`, [['Corporate tax instalments paid',     '=IFERROR(SUMIF(C12:C,"Corporate Tax Instalment",E12:E),0)', '', '', '']]],
+    [`'${TITLE}'!B6:F6`, [['Corporate tax (final) paid',         '=IFERROR(SUMIF(C12:C,"Corporate Tax Final",E12:E),0)', '', '', '']]],
+    [`'${TITLE}'!B7:F7`, [['TOTAL paid to CRA',                  '=IFERROR(SUM(E12:E),0)', '', '', '']]],
+    [`'${TITLE}'!B8:F8`, [['Receipts attached (count)',          '=IFERROR(COUNTIF(H12:H,"<>"),0)', '', '', '']]],
+    [`'${TITLE}'!B9:F9`, [['Missing receipts (count)',           '=IFERROR(COUNTA(B12:B)-COUNTIF(H12:H,"<>"),0)', '', '', '']]],
     [`'${TITLE}'!B11:J11`, [[
       'Date Paid', 'Type', 'Period Covered', 'Amount', 'Confirmation #', 'Account',
       'PDF Receipt (Drive)', 'Notes', 'Linked Txn Ref',
@@ -318,7 +324,7 @@ async function applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, e
   // ── Step 1: expand the grid to 17 columns ──
   const expandReq = {
     updateSheetProperties: {
-      properties: { sheetId, gridProperties: { columnCount: 17, rowCount: 500, frozenRowCount: 11 }},
+      properties: { sheetId, gridProperties: { columnCount: 17, rowCount: 5000, frozenRowCount: 11 }},
       fields: 'gridProperties.columnCount,gridProperties.rowCount,gridProperties.frozenRowCount',
     },
   };
@@ -335,19 +341,19 @@ async function applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, e
   const styling = [
     // Currency format on O (Deposit Amount)
     { repeatCell: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 14, endColumnIndex: 15 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 14, endColumnIndex: 15 },
         cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }},
         fields: 'userEnteredFormat.numberFormat',
     }},
     // Date format on P (Deposit Date Received)
     { repeatCell: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 15, endColumnIndex: 16 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 15, endColumnIndex: 16 },
         cell: { userEnteredFormat: { numberFormat: FMT_DATE.numberFormat }},
         fields: 'userEnteredFormat.numberFormat',
     }},
     // Currency format on Q (Balance Due)
     { repeatCell: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 16, endColumnIndex: 17 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 16, endColumnIndex: 17 },
         cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }},
         fields: 'userEnteredFormat.numberFormat',
     }},
@@ -366,7 +372,7 @@ async function applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, e
     // Status dropdown rebuild — extend with new statuses. Re-applying overwrites
     // the existing rule; we add the full list (idempotent).
     { setDataValidation: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 10, endColumnIndex: 11 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 10, endColumnIndex: 11 },
         rule: { condition: { type: 'ONE_OF_LIST', values: [
           { userEnteredValue: 'Unpaid' },
           { userEnteredValue: 'Awaiting Deposit' },
@@ -396,11 +402,11 @@ async function applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, e
   // ── Step 4: refresh the stats formulas in B8:C9 to use the deposit-aware versions ──
   // Old: SUMIF on Status='Unpaid'. New: deposit-aware totals.
   const statsRes1 = await writeRange(env, userId, `'${TITLE}'!B8:C8`,
-    [['Outstanding — not yet paid', '=SUM(H12:H500)-SUMIF(K12:K500,"Paid",H12:H500)-SUMIF(K12:K500,"Deposit Received",O12:O500)']]);
+    [['Outstanding — not yet paid', '=SUM(H12:H)-SUMIF(K12:K,"Paid",H12:H)-SUMIF(K12:K,"Deposit Received",O12:O)']]);
   if (!statsRes1.ok) errors.push(`Failed to update outstanding formula: ${statsRes1.error}`);
 
   const statsRes2 = await writeRange(env, userId, `'${TITLE}'!B9:C9`,
-    [['Collected — paid + deposits', '=SUMIF(K12:K500,"Paid",H12:H500)+SUMIF(K12:K500,"Deposit Received",O12:O500)']]);
+    [['Collected — paid + deposits', '=SUMIF(K12:K,"Paid",H12:H)+SUMIF(K12:K,"Deposit Received",O12:O)']]);
   if (!statsRes2.ok) errors.push(`Failed to update collected formula: ${statsRes2.error}`);
 
   changes.push(`Added deposit columns O/P/Q to '${TITLE}' tab and updated outstanding/collected formulas to be deposit-aware.`);
@@ -442,7 +448,7 @@ async function applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes,
   // ── Step 1: expand the grid to 14 columns ──
   const expandReq = {
     updateSheetProperties: {
-      properties: { sheetId, gridProperties: { columnCount: 14, rowCount: txnTab.gridProperties?.rowCount || 1000, frozenRowCount: 11 }},
+      properties: { sheetId, gridProperties: { columnCount: 14, rowCount: txnTab.gridProperties?.rowCount || 5000, frozenRowCount: 11 }},
       fields: 'gridProperties.columnCount,gridProperties.rowCount,gridProperties.frozenRowCount',
     },
   };
@@ -456,7 +462,7 @@ async function applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes,
   const styling = [
     // Currency format on N (Total)
     { repeatCell: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 1000, startColumnIndex: 13, endColumnIndex: 14 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 13, endColumnIndex: 14 },
         cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }},
         fields: 'userEnteredFormat.numberFormat',
     }},
@@ -486,7 +492,7 @@ async function applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes,
   // ── Step 4: write the ARRAYFORMULA in N12 — populates all rows automatically ──
   const formulaRes = await writeRange(
     env, userId, `'${txnTab.title}'!N12`,
-    [['=ARRAYFORMULA(IF(E12:E1000="","",E12:E1000+H12:H1000*SIGN(E12:E1000)))']]
+    [['=ARRAYFORMULA(IF(E12:E="","",E12:E+H12:H*SIGN(E12:E)))']]
   );
   if (!formulaRes.ok) errors.push(`Failed to write Total formula: ${formulaRes.error}`);
 
@@ -521,7 +527,7 @@ async function applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, 
   // (handles legacy emoji prefixes).
   const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
   const txnTitle = txnTab ? txnTab.title : '📒 Transactions';
-  const formula = `=IFERROR(DATE(YEAR(MAX('${txnTitle}'!B12:B1000))-IF(MONTH(MAX('${txnTitle}'!B12:B1000))<4,1,0),4,1),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))`;
+  const formula = `=IFERROR(DATE(YEAR(MAX('${txnTitle}'!B12:B))-IF(MONTH(MAX('${txnTitle}'!B12:B))<4,1,0),4,1),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))`;
   const formulaRes = await writeRange(env, userId, `'${hstTab.title}'!C3`, [[formula]]);
   if (!formulaRes.ok) errors.push(`Failed to update HST FY formula: ${formulaRes.error}`);
 
@@ -556,7 +562,7 @@ async function applyAccountBalancesTab(env, userId, sheetsByTitle, changes, erro
       properties: {
         sheetId, title: TITLE,
         index: Object.keys(sheetsByTitle).length,
-        gridProperties: { rowCount: 500, columnCount: 13, frozenRowCount: 11 },
+        gridProperties: { rowCount: 5000, columnCount: 13, frozenRowCount: 11 },
         tabColor: COLORS.teal,  // close enough to green; using existing palette
       },
     },
@@ -619,19 +625,19 @@ async function applyAccountBalancesTab(env, userId, sheetsByTitle, changes, erro
     }},
     { addBanding: {
         bandedRange: {
-          range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 1, endColumnIndex: 13 },
+          range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 1, endColumnIndex: 13 },
           rowProperties: { firstBandColor: COLORS.white, secondBandColor: COLORS.tealTint },
         },
     }},
     // Date columns D + E
     { repeatCell: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 3, endColumnIndex: 5 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 3, endColumnIndex: 5 },
         cell: { userEnteredFormat: { numberFormat: FMT_DATE.numberFormat }},
         fields: 'userEnteredFormat.numberFormat',
     }},
     // Currency columns F-J
     { repeatCell: {
-        range: { sheetId, startRowIndex: 11, endRowIndex: 500, startColumnIndex: 5, endColumnIndex: 10 },
+        range: { sheetId, startRowIndex: 11, endRowIndex: 5000, startColumnIndex: 5, endColumnIndex: 10 },
         cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat }},
         fields: 'userEnteredFormat.numberFormat',
     }},
@@ -658,10 +664,10 @@ async function applyAccountBalancesTab(env, userId, sheetsByTitle, changes, erro
   const writes = [
     [`'${TITLE}'!A1`, [['BANK RECONCILIATION  —  Opening + activity = expected closing  ·  Compare to actual to catch errors']]],
     [`'${TITLE}'!B2`, [['RECONCILIATION SUMMARY']]],
-    [`'${TITLE}'!B3:F3`, [['Periods reconciled', '=COUNTA(B12:B500)', '', '', '']]],
-    [`'${TITLE}'!B4:F4`, [['Periods balanced (✓)', '=COUNTIF(K12:K500,"✓ Balanced")', '', '', '']]],
-    [`'${TITLE}'!B5:F5`, [['Periods OFF (action needed)', '=COUNTIF(K12:K500,"⚠*")', '', '', '']]],
-    [`'${TITLE}'!B6:F6`, [['Total off-by-amount across periods', '=SUMIF(K12:K500,"⚠*",J12:J500)', '', '', '']]],
+    [`'${TITLE}'!B3:F3`, [['Periods reconciled', '=COUNTA(B12:B)', '', '', '']]],
+    [`'${TITLE}'!B4:F4`, [['Periods balanced (✓)', '=COUNTIF(K12:K,"✓ Balanced")', '', '', '']]],
+    [`'${TITLE}'!B5:F5`, [['Periods OFF (action needed)', '=COUNTIF(K12:K,"⚠*")', '', '', '']]],
+    [`'${TITLE}'!B6:F6`, [['Total off-by-amount across periods', '=SUMIF(K12:K,"⚠*",J12:J)', '', '', '']]],
     [`'${TITLE}'!B7:F7`, [['How to use this tab', 'Enter period dates + opening + closing balance from each statement. The sheet computes expected closing from your Transactions and flags any difference. A non-zero difference = a missed row, duplicate, wrong sign, or bad amount somewhere.', '', '', '']]],
     [`'${TITLE}'!B11:L11`, [[
       'Period', 'Account', 'Period Start', 'Period End', 'Opening Balance',
@@ -669,11 +675,11 @@ async function applyAccountBalancesTab(env, userId, sheetsByTitle, changes, erro
       'Difference (auto)', 'Match (auto)', 'Notes',
     ]]],
     [`'${TITLE}'!G12`, [[
-      `=ARRAYFORMULA(IF(C12:C500="","",IFERROR(SUMIFS('${txnTitle}'!N12:N1000,'${txnTitle}'!I12:I1000,C12:C500,'${txnTitle}'!B12:B1000,">="&D12:D500,'${txnTitle}'!B12:B1000,"<="&E12:E500),0)))`
+      `=ARRAYFORMULA(IF(C12:C="","",IFERROR(SUMIFS('${txnTitle}'!N12:N,'${txnTitle}'!I12:I,C12:C,'${txnTitle}'!B12:B,">="&D12:D,'${txnTitle}'!B12:B,"<="&E12:E),0)))`
     ]]],
-    [`'${TITLE}'!H12`, [['=ARRAYFORMULA(IF(C12:C500="","",F12:F500+G12:G500))']]],
-    [`'${TITLE}'!J12`, [['=ARRAYFORMULA(IF(I12:I500="","",H12:H500-I12:I500))']]],
-    [`'${TITLE}'!K12`, [['=ARRAYFORMULA(IF(I12:I500="","",IF(ABS(J12:J500)<0.01,"✓ Balanced","⚠ Off by $"&TEXT(ROUND(J12:J500,2),"0.00"))))']]],
+    [`'${TITLE}'!H12`, [['=ARRAYFORMULA(IF(C12:C="","",F12:F+G12:G))']]],
+    [`'${TITLE}'!J12`, [['=ARRAYFORMULA(IF(I12:I="","",H12:H-I12:I))']]],
+    [`'${TITLE}'!K12`, [['=ARRAYFORMULA(IF(I12:I="","",IF(ABS(J12:J)<0.01,"✓ Balanced","⚠ Off by $"&TEXT(ROUND(J12:J,2),"0.00"))))']]],
   ];
   for (const [range, values] of writes) {
     const res = await writeRange(env, userId, range, values);
@@ -725,7 +731,7 @@ async function applyYearEndPerCategoryBreakdown(env, userId, sheetsByTitle, chan
     [['  PER-CATEGORY BREAKDOWN  (all-time, every category in use, biggest first)']]);
   if (!headerRes.ok) errors.push(`Failed to write breakdown header: ${headerRes.error}`);
 
-  const formula = `=IFERROR(QUERY('${txnTitle}'!B12:N1000, "SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'", 0), "No transactions yet — import a statement to populate this breakdown.")`;
+  const formula = `=IFERROR(QUERY('${txnTitle}'!B12:N, "SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'", 0), "No transactions yet — import a statement to populate this breakdown.")`;
   const formulaRes = await writeRange(env, userId, `'${yeTab.title}'!B63`, [[formula]]);
   if (!formulaRes.ok) errors.push(`Failed to write breakdown formula: ${formulaRes.error}`);
 
@@ -1092,7 +1098,7 @@ async function applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dry
     [`'${TITLE}'!B5:E5`, [['REVENUE', '', '', '']]],
     [`'${TITLE}'!B6:E10`, [
       ['Sales/services revenue (cash basis)',
-        `=SUMIFS('${txnTitle}'!E12:E1000,'${txnTitle}'!E12:E1000,">0",'${txnTitle}'!F12:F1000,"<>Internal Transfer")`,
+        `=SUMIFS('${txnTitle}'!E12:E,'${txnTitle}'!E12:E,">0",'${txnTitle}'!F12:F,"<>Internal Transfer")`,
         '8089', '← Total positive Transactions excluding Internal Transfer'],
       ['Add: Accrued Revenue (FYE adjustments)',
         `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Accrued Revenue",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,"Accounts Receivable (AR)",'📓 Adjusting Entries'!F12:F200),0)`,
@@ -1103,7 +1109,7 @@ async function applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dry
     [`'${TITLE}'!B12:E12`, [['EXPENSES', '', '', '']]],
     [`'${TITLE}'!B13:E25`, [
       ['Total operating expenses (cash basis)',
-        `=-SUMIFS('${txnTitle}'!E12:E1000,'${txnTitle}'!E12:E1000,"<0",'${txnTitle}'!F12:F1000,"<>Internal Transfer")`,
+        `=-SUMIFS('${txnTitle}'!E12:E,'${txnTitle}'!E12:E,"<0",'${txnTitle}'!F12:F,"<>Internal Transfer")`,
         'multiple', '← Total negative Transactions excluding Internal Transfer'],
       ['Add: Accrued Expenses + AP (FYE adjustments)',
         `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Accrued Expense",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,"Accounts Payable (AP)",'📓 Adjusting Entries'!F12:F200),0)`,
@@ -1125,7 +1131,7 @@ async function applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dry
     [`'${TITLE}'!B30:E37`, [
       ['Net Income per Books (from above)', '=C19', '', '← Starting point'],
       ['Add back: 50% of Meals & Entertainment (non-deductible)',
-        `=ROUND(-SUMIFS('${txnTitle}'!E12:E1000,'${txnTitle}'!F12:F1000,"Meals & Entertainment",'${txnTitle}'!E12:E1000,"<0")*0.5,2)`,
+        `=ROUND(-SUMIFS('${txnTitle}'!E12:E,'${txnTitle}'!F12:F,"Meals & Entertainment",'${txnTitle}'!E12:E,"<0")*0.5,2)`,
         '101', '← CRA only allows 50% of meals'],
       ['Add back: Amortization per books', 0, '104', '← Tradebooks doesn\'t book amortization separately; usually $0'],
       ['Less: CCA per Schedule 8', '=-C16', '', '← CCA is deducted on tax side instead of book amortization'],
@@ -1150,7 +1156,7 @@ async function applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dry
     [`'${TITLE}'!B49:E55`, [
       ['ASSETS', '', '', ''],
       ['Cash on hand (per latest reconciled bank balances)',
-        `=IFERROR(SUMIFS('🏦 Account Balances'!I12:I500,'🏦 Account Balances'!K12:K500,"✓ Balanced"),0)`,
+        `=IFERROR(SUMIFS('🏦 Account Balances'!I12:I,'🏦 Account Balances'!K12:K,"✓ Balanced"),0)`,
         '1001', '← From Account Balances tab'],
       ['Accounts Receivable (AR adjustments at FYE)',
         `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Accounts Receivable (AR)",'📓 Adjusting Entries'!H12:H200),0)`,
@@ -1186,6 +1192,127 @@ async function applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dry
   }
 
   changes.push(`Added '${TITLE}' tab — consolidated T2-prep view that MNP reviews instead of preparing.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 10: remove the row 500 / 1000 limits
+// ════════════════════════════════════════════════════════════════════
+// Older sheets have formulas like SUMIFS('📒 Transactions'!E12:E1000, ...)
+// and data tabs built with 500 or 1000 rows. Past that row, totals silently
+// miss data (Dashboard, HST Returns, Year-End, T2) and new rows lose their
+// currency/date formats, dropdowns and banding.
+//
+// What this does, per sheet:
+//   1. Reads every formula on every tab AS IT IS in the live sheet (no
+//      assumptions about which earlier migrations ran) and rewrites only
+//      ranges shaped X12:Y500 or X12:Y1000 to open-ended X12:Y.
+//      Other bounds (e.g. Fixed Assets B12:B200) are left alone.
+//   2. Grows data tabs (Transactions, Invoices, Payroll, Work Log,
+//      CRA Remittances, Account Balances) to 5000 rows.
+//   3. Copies formats + dropdown validation from the old last row into the
+//      new rows (never touches existing rows, so user formatting survives),
+//      and stretches banding to the new bottom.
+//
+// Idempotent: after one run no formula matches the pattern and every data
+// tab is >= 5000 rows, so a re-run finds nothing to do.
+const OPEN_RANGE_TARGET_ROWS = 5000;
+const OPEN_RANGE_DATA_TABS = [/transactions/i, /invoices/i, /payroll/i, /work log/i, /cra remittances/i, /account balances/i];
+const BOUNDED_RANGE_RE = /\b([A-Z]{1,2})12:([A-Z]{1,2})(500|1000)\b/g;
+
+function colLetter(idx) {
+  let n = idx + 1, out = '';
+  while (n > 0) { const r = (n - 1) % 26; out = String.fromCharCode(65 + r) + out; n = Math.floor((n - 1) / 26); }
+  return out;
+}
+const quoteTab = t => `'${String(t).replace(/'/g, "''")}'`;
+
+async function applyOpenEndedRanges(env, userId, sheetsByTitle, changes, errors, dryRun, details) {
+  const sheetId = await getUserSheetId(env, userId);
+  const tok = await getGoogleAccessToken(env, userId);
+  if (!sheetId || !tok.ok) { errors.push('Row-limit migration: could not access sheet.'); return; }
+  const auth = { 'Authorization': `Bearer ${tok.accessToken}` };
+  const tabs = Object.values(sheetsByTitle);
+
+  // ── 1. Formulas ──
+  const qs = tabs.map(t => `ranges=${encodeURIComponent(quoteTab(t.title))}`).join('&');
+  const getRes = await fetch(`${SHEETS_API}/${sheetId}/values:batchGet?${qs}&valueRenderOption=FORMULA`, { headers: auth });
+  const got = await getRes.json();
+  if (got.error) { errors.push(`Row-limit migration: could not read formulas: ${got.error.message}`); return; }
+
+  const writes = [];
+  const perTab = {};
+  (got.valueRanges || []).forEach((vr, i) => {
+    const title = tabs[i].title;
+    (vr.values || []).forEach((row, r) => {
+      row.forEach((cell, c) => {
+        if (typeof cell !== 'string' || cell[0] !== '=') return;
+        BOUNDED_RANGE_RE.lastIndex = 0;
+        if (!BOUNDED_RANGE_RE.test(cell)) return;
+        const updated = cell.replace(BOUNDED_RANGE_RE, '$1' + '12:' + '$2');
+        const a1 = `${colLetter(c)}${r + 1}`;
+        writes.push({ range: `${quoteTab(title)}!${a1}`, values: [[updated]] });
+        perTab[title] = (perTab[title] || 0) + 1;
+        details.push({ tab: title, cell: a1, before: cell, after: updated });
+      });
+    });
+  });
+
+  // ── 2 + 3. Grid size, formats, validation, banding ──
+  const dataTabs = tabs.filter(t => OPEN_RANGE_DATA_TABS.some(re => re.test(t.title)));
+  const growTabs = dataTabs.filter(t => (t.gridProperties?.rowCount || 0) < OPEN_RANGE_TARGET_ROWS);
+
+  if (!writes.length && !growTabs.length) return;  // already up to date
+
+  if (dryRun) {
+    if (writes.length) {
+      const list = Object.entries(perTab).map(([t, n]) => `${t} (${n})`).join(', ');
+      changes.push(`Remove row limits from ${writes.length} formula(s) so totals include every row — ${list}.`);
+    }
+    if (growTabs.length) {
+      changes.push(`Grow ${growTabs.map(t => t.title).join(', ')} to ${OPEN_RANGE_TARGET_ROWS} rows (formats and dropdowns carried down).`);
+    }
+    return;
+  }
+
+  if (growTabs.length) {
+    const bandRes = await fetch(`${SHEETS_API}/${sheetId}?fields=${encodeURIComponent('sheets(properties(sheetId),bandedRanges)')}`, { headers: auth });
+    const bandData = await bandRes.json();
+    const bandsBySheet = {};
+    (bandData.sheets || []).forEach(s => { bandsBySheet[s.properties.sheetId] = s.bandedRanges || []; });
+
+    const reqs = [];
+    for (const t of growTabs) {
+      const oldRows = t.gridProperties?.rowCount || 0;
+      const cols = t.gridProperties?.columnCount || 26;
+      reqs.push({ updateSheetProperties: {
+        properties: { sheetId: t.sheetId, gridProperties: { rowCount: OPEN_RANGE_TARGET_ROWS } },
+        fields: 'gridProperties.rowCount',
+      }});
+      if (oldRows > 11) {
+        const source = { sheetId: t.sheetId, startRowIndex: oldRows - 1, endRowIndex: oldRows, startColumnIndex: 0, endColumnIndex: cols };
+        const destination = { sheetId: t.sheetId, startRowIndex: oldRows, endRowIndex: OPEN_RANGE_TARGET_ROWS, startColumnIndex: 0, endColumnIndex: cols };
+        reqs.push({ copyPaste: { source, destination, pasteType: 'PASTE_FORMAT' } });
+        reqs.push({ copyPaste: { source, destination, pasteType: 'PASTE_DATA_VALIDATION' } });
+      }
+      for (const b of (bandsBySheet[t.sheetId] || [])) {
+        if (b.range && b.range.endRowIndex >= oldRows - 1 && b.range.endRowIndex < OPEN_RANGE_TARGET_ROWS) {
+          reqs.push({ updateBanding: {
+            bandedRange: { bandedRangeId: b.bandedRangeId, range: { ...b.range, endRowIndex: OPEN_RANGE_TARGET_ROWS } },
+            fields: 'range',
+          }});
+        }
+      }
+    }
+    const res = await spreadsheetsBatchUpdate(env, userId, reqs);
+    if (!res.ok) { errors.push(`Row-limit migration: could not grow tabs: ${res.error}`); return; }
+    changes.push(`Grew ${growTabs.map(t => t.title).join(', ')} to ${OPEN_RANGE_TARGET_ROWS} rows.`);
+  }
+
+  if (writes.length) {
+    const res = await batchUpdate(env, userId, writes);
+    if (!res.ok) { errors.push(`Row-limit migration: could not rewrite formulas: ${res.error}`); return; }
+    changes.push(`Removed row limits from ${writes.length} formula(s) — totals now include every row.`);
+  }
 }
 
 // ── Helpers ──

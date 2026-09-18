@@ -393,6 +393,8 @@ function bandingRequest(sheetId, startRow, endRow, startCol, endCol, tintColor) 
 }
 
 const FMT_CURRENCY = { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00;("$"#,##0.00)' } };
+// Transactions!P — see the Type column comment in the data section.
+const TYPE_FORMULA = `=ARRAYFORMULA(IF(F12:F="","",IF((F12:F="Internal Transfer")+ISNUMBER(MATCH(F12:F,'⚙️ Config'!$B$101:$B$110,0))>0,"Transfer","P&L")))`;
 const FMT_DATE     = { numberFormat: { type: 'DATE', pattern: 'mmm d, yyyy' } };
 const FMT_PERCENT  = { numberFormat: { type: 'PERCENT', pattern: '0.0%' } };
 const FMT_EDITABLE = { backgroundColor: COLORS.yellow, textFormat: { foregroundColor: { red: 0.15, green: 0.35, blue: 0.65 } } };
@@ -474,14 +476,14 @@ async function applyStyling(accessToken, spreadsheetId) {
   // Single signed ledger: + for money in, − for money out. Replaces Income + Expenses.
   // Columns (0-indexed): A=gutter, B=Date, C=Party, D=Description, E=Amount,
   // F=Category, G=HST Flag, H=HST Amount, I=Account, J=Source, K=Ref,
-  // L=Related Invoice, M=Match Status, N=Total (incl HST) — formula, O=Receipt (Drive link)
-  requests.push(...bannerRequest(TXN, 0, 0, 15, COLORS.teal));
+  // L=Related Invoice, M=Match Status, N=Total (incl HST) — formula, O=Receipt (Drive link), P=Type — formula
+  requests.push(...bannerRequest(TXN, 0, 0, 16, COLORS.teal));
   requests.push(...sectionRequest(TXN, 1, 1, 6, COLORS.teal));
   requests.push(cellFormat(TXN, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
   requests.push(cellFormat(TXN, 2, 2, 10, 6, { backgroundColor: COLORS.tealTint, numberFormat: FMT_CURRENCY.numberFormat }));
-  requests.push(headerRowRequest(TXN, 10, 1, 15, COLORS.teal));
+  requests.push(headerRowRequest(TXN, 10, 1, 16, COLORS.teal));
   requests.push({ updateDimensionProperties: { range: { sheetId: TXN, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(TXN, 11, 5000, 1, 15, COLORS.tealTint));
+  requests.push(bandingRequest(TXN, 11, 5000, 1, 16, COLORS.tealTint));
   // Date col B
   requests.push(cellFormat(TXN, 11, 1, 5000, 2, FMT_DATE));
   // Amount col E — signed currency (negatives shown in parens via FMT_CURRENCY)
@@ -525,6 +527,7 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(TXN, 12, 13, 100));// M Match Status
   requests.push(colWidth(TXN, 13, 14, 110));// N Total (incl HST) — formula
   requests.push(colWidth(TXN, 14, 15, 90)); // O Receipt (Drive link)
+  requests.push(colWidth(TXN, 15, 16, 70)); // P Type — formula
 
   // ─── INVOICES ───
   // 14 cols: A gutter, B Invoice #, C Date, D Client, E Description, F Amount excl HST,
@@ -976,13 +979,13 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   ]});
   data.push({ range: "'📊 Dashboard'!D5:D10", values: [
     // Revenue: sum of positive amounts, excluding Internal Transfer
-    ["=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")"],
+    ["=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")"],
     // HST collected: HST amount on positive (income) rows
-    ["=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")"],
+    ["=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")"],
     // Expenses: absolute value of negative amounts, excluding Internal Transfer
-    ["=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")"],
+    ["=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!P12:P,\"<>Transfer\")"],
     // ITCs: HST amount on negative (expense) rows
-    ["=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")"],
+    ["=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!P12:P,\"<>Transfer\")"],
     ['=D5-D7'],
     ['=D6-D8']
   ]});
@@ -1062,11 +1065,16 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📒 Transactions'!B5:F5", values: [['Total Expenses (excl HST)', "='📊 Dashboard'!D7", '', '', '']]});
   data.push({ range: "'📒 Transactions'!B6:F6", values: [['Total HST Paid (ITCs)',     "='📊 Dashboard'!D8", '', '', '']]});
   data.push({ range: "'📒 Transactions'!B7:F7", values: [['NET INCOME before tax',     "='📊 Dashboard'!D9", '', '', '']]});
-  data.push({ range: "'📒 Transactions'!B11:O11", values: [[
+  data.push({ range: "'📒 Transactions'!B11:P11", values: [[
     'Date', 'Party (Client/Vendor)', 'Description', 'Amount (signed, excl HST)', 'Category',
     'HST?', `HST (${taxPct}%)`, 'Account', 'Source', 'Source Ref', 'Related Invoice #', 'Match Status',
-    'Total (incl HST)', 'Receipt',
+    'Total (incl HST)', 'Receipt', 'Type',
   ]]});
+  // Type (P): "Transfer" for Internal Transfer and for any of the user's own
+  // pocket names (⚙️ Config TRANSFER COLUMNS, B101:B110); "P&L" otherwise.
+  // Every P&L / HST formula excludes on this column, so a user can keep
+  // "Andrea Loan" or "CRA remittance" as the visible category.
+  data.push({ range: "'📒 Transactions'!P12", values: [[TYPE_FORMULA]] });
 
   // Pre-fill the Total formula in N12:N so every existing + future row shows
   // the gross signed amount (matches what hit the bank). Empty rows render empty.
@@ -1124,7 +1132,8 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   const TXN_F = "'📒 Transactions'!F12:F";
   const TXN_H = "'📒 Transactions'!H12:H";
   const TXN_B = "'📒 Transactions'!B12:B";
-  const excl = `${TXN_F},"<>Internal Transfer"`;
+  const TXN_P = "'📒 Transactions'!P12:P";
+  const excl = `${TXN_P},"<>Transfer"`;
   // q-indexed start/end offsets in months from FY start: Q1 = [0, 2], Q2 = [3, 5], ...
   const qStart = q => (q - 1) * 3;              // months to add to $C$3 for window start
   const qEndOffset = q => (q - 1) * 3 + 2;      // months to feed into EOMONTH for window end
@@ -1183,7 +1192,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📅 Year-End'!B5:F11", values: [
     ...incomeRows,
     ['TOTAL REVENUE',
-      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")",
+      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")",
       '', '', '← all positive Transactions (T2 Schedule 1 Line 8000)'],
   ]});
 
@@ -1214,8 +1223,8 @@ async function populateValues(accessToken, spreadsheetId, profile) {
 
   data.push({ range: "'📅 Year-End'!A46", values: [['  HST RECONCILIATION']] });
   data.push({ range: "'📅 Year-End'!B47:F50", values: [
-    ['HST Collected (annual)', "=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")",   '', '', 'from Transactions'],
-    ['ITCs Claimed (annual)',  "=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")", '', '', 'from Transactions'],
+    ['HST Collected (annual)', "=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")",   '', '', 'from Transactions'],
+    ['ITCs Claimed (annual)',  "=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!P12:P,\"<>Transfer\")", '', '', 'from Transactions'],
     ['Net HST Owing',          '=C47-C48',                      '', '', ''],
     ['', '', '', '', ''],
   ]});
@@ -1240,7 +1249,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   // for our row-based ledger.
   data.push({ range: "'📅 Year-End'!A62", values: [['  PER-CATEGORY BREAKDOWN  (all-time, every category in use, biggest first)']] });
   data.push({ range: "'📅 Year-End'!B63", values: [[
-    "=IFERROR(QUERY('📒 Transactions'!B12:N, \"SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'\", 0), \"No transactions yet — import a statement to populate this breakdown.\")"
+    "=IFERROR(QUERY('📒 Transactions'!B12:P, \"SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND P <> 'Transfer' GROUP BY F ORDER BY SUM(N) DESC LABEL F 'Category', COUNT(F) '# of rows', SUM(N) 'Total (incl HST)'\", 0), \"No transactions yet — import a statement to populate this breakdown.\")"
   ]]});
 
   // ─── PAYROLL TAB ───
@@ -1471,7 +1480,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📊 T2 Worksheet'!B5:E5", values: [['REVENUE', '', '', '']]});
   data.push({ range: "'📊 T2 Worksheet'!B6:E10", values: [
     ['Sales/services revenue (cash basis)',
-      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")",
+      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")",
       '8089', '← Total positive Transactions excluding Internal Transfer'],
     ['Add: Accrued Revenue (FYE adjustments)',
       "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accrued Revenue\",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Receivable (AR)\",'📓 Adjusting Entries'!F12:F200),0)",
@@ -1484,7 +1493,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📊 T2 Worksheet'!B12:E12", values: [['EXPENSES', '', '', '']]});
   data.push({ range: "'📊 T2 Worksheet'!B13:E25", values: [
     ['Total operating expenses (cash basis)',
-      "=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!F12:F,\"<>Internal Transfer\")",
+      "=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!P12:P,\"<>Transfer\")",
       'multiple', '← Total negative Transactions excluding Internal Transfer'],
     ['Add: Accrued Expenses + AP (FYE adjustments)',
       "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accrued Expense\",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Payable (AP)\",'📓 Adjusting Entries'!F12:F200),0)",

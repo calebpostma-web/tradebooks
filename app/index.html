@@ -2869,6 +2869,10 @@ function getExpCats() {
   return merged;
 }
 
+function getPocketCats() {
+  return [...new Set((USER_CONFIG.pocketCats || []).map(c => String(c).trim()).filter(Boolean))];
+}
+
 function getIncomeCats() {
   const custom = (USER_CONFIG.customIncomeCats || []).filter(Boolean);
   if (!custom.length) return DEFAULT_INCOME_CATS;
@@ -2935,6 +2939,7 @@ let USER_CONFIG = {
   combinedRate: 0.122,
   customExpenseCats: [],
   customIncomeCats: [],
+  pocketCats: [],   // money moved between own pockets, by the user's names (AMEX Payment, Andrea Loan…)
   // Invoice customization — persisted in localStorage (cross-device sync TBD)
   invoicePhone: '',
   invoiceWebsite: '',
@@ -3453,8 +3458,8 @@ function calcHST() {
   // HST on customer invoice payments. That bug made the HST return show
   // 0 collected even when invoices had been paid.
   impTxns.forEach(tx => {
-    if (NO_HST.has(tx.category)) {
-      // Wages, insurance, bank charges, transfers — exempt from HST in both directions
+    if (NO_HST.has(tx.category) || getPocketCats().includes(tx.category)) {
+      // Wages, insurance, bank charges, transfers/pockets — exempt from HST in both directions
       tx.hst = 0;
       tx.net = tx.amount;
     } else {
@@ -3534,6 +3539,7 @@ IMPORTANT CREDIT CARD CONTEXT:
   return `You are a Canadian ${C.businessType === 'incorporated' ? 'corporate' : 'small business'} bookkeeper. ${bankContext}
 
 EXPENSE CATEGORIES (use these for DEBIT rows — money out): ${EXP_CATS.join(', ')}
+${getPocketCats().length ? `POCKETS (transfers between the business's own accounts — NOT income or expenses; prefer these over "Internal Transfer" when one clearly fits): ${getPocketCats().join(', ')}` : ''}
 
 INCOME CATEGORIES (use these for CREDIT rows — money in): ${INCOME_CATS.join(', ')}
 
@@ -4242,9 +4248,12 @@ function expenseCategoryOptions(selectedCat){
     .filter(c => !EXP_CATS.includes(c))
     .map(c => `<option value="${esc(c)}"${c===selectedCat?' selected':''}>${esc(c)}</option>`)
     .join('');
+  const pockets = getPocketCats();
+  const pocketOpts = pockets.map(c => `<option value="${esc(c)}"${c===selectedCat?' selected':''}>${esc(c)}</option>`).join('');
   return `
     <optgroup label="Expenses (money out)">${expOpts}</optgroup>
     <optgroup label="Income (money in)">${incOpts}</optgroup>
+    ${pockets.length ? `<optgroup label="Pockets (transfers — not P&amp;L)">${pocketOpts}</optgroup>` : ''}
     <option disabled>──────────</option>
     <option value="${ADD_CATEGORY_SENTINEL}" style="color:var(--green);font-weight:500">+ Add new category…</option>
   `;
@@ -5148,7 +5157,7 @@ function rcptChangeCat(cat){
 let rcptGridExpanded=false;
 function rcptCatGrid(selected){
   const mine=(USER_CONFIG.customExpenseCats||[]).filter(Boolean);
-  const rest=getExpCats().filter(c=>!mine.includes(c));
+  const rest=[...getExpCats().filter(c=>!mine.includes(c)), ...getPocketCats()];
   const showAll=rcptGridExpanded || !mine.length || (selected && rest.includes(selected));
   const btn=c=>`<button type="button" class="cat-btn${c===selected?' sel':''}" onclick="rcptPickCat(this,'${esc(c).replace(/'/g,"\\'")}')">${esc(c)}</button>`;
   return `<div class="cat-grid" id="rcptCatGrid">${mine.map(btn).join('')}${showAll?rest.map(btn).join(''):`<button type="button" class="cat-btn more" onclick="rcptGridExpanded=true;rcptShowResult()">More categories ▾</button>`}</div>`;
@@ -8651,6 +8660,11 @@ function renderSettings(){
       <label>Custom Income Categories (comma-separated)</label>
       <input type="text" id="set_customIncomeCats" value="${(C.customIncomeCats||[]).join(', ')}" style="font-size:.88rem" placeholder="Sales Revenue, Installation Revenue">
     </div>
+    <div class="field">
+      <label>Pockets — money moved between your own accounts (comma-separated)</label>
+      <input type="text" id="set_pocketCats" value="${(C.pocketCats||[]).join(', ')}" style="font-size:.88rem" placeholder="AMEX Payment, CRA remittance, Shareholder loan">
+    </div>
+    <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">Card payments, CRA remittances, shareholder loans and owner draws are not income or expenses. Name them the way you think of them; they stay out of the P&amp;L and HST and get their own columns on the Accountant tabs.</div>
     <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">These will appear in all category dropdowns alongside the standard categories. The AI will learn to use them when categorizing your transactions.</div>
 
     <hr class="divider">
@@ -8948,6 +8962,7 @@ async function saveSettings(){
     clients: (document.getElementById('set_clients')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
     customExpenseCats: (document.getElementById('set_customExpenseCats')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
     customIncomeCats: (document.getElementById('set_customIncomeCats')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
+    pocketCats: (document.getElementById('set_pocketCats')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
     sheetId: document.getElementById('set_sheetId')?.value || '',
     structure: document.getElementById('set_structure')?.value || '',
     activities: document.getElementById('set_activities')?.value || '',

@@ -57,8 +57,8 @@ export async function onRequestPut(context) {
         user_id, business_name, trading_name, owner_name, email, city, province,
         hst_number, business_type, fiscal_year_end, primary_bank, credit_card,
         invoice_start, home_office_percent, clients, employees, structure,
-        activities, sheet_id, script_url, custom_expense_cats, custom_income_cats, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        activities, sheet_id, script_url, custom_expense_cats, custom_income_cats, pocket_cats, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(user_id) DO UPDATE SET
         business_name = excluded.business_name,
         trading_name = excluded.trading_name,
@@ -79,6 +79,7 @@ export async function onRequestPut(context) {
         activities = excluded.activities,
         custom_expense_cats = excluded.custom_expense_cats,
         custom_income_cats = excluded.custom_income_cats,
+        pocket_cats = excluded.pocket_cats,
         -- DEFENSIVE: don't blow away sheet_id / script_url if the payload
         -- doesn't carry them. Otherwise an empty form field (or a save
         -- before the profile finishes hydrating client-side) silently
@@ -112,7 +113,8 @@ export async function onRequestPut(context) {
       profile.sheetId || '',
       profile.scriptUrl || '',
       JSON.stringify(cleanCats(profile.customExpenseCats)),
-      JSON.stringify(cleanCats(profile.customIncomeCats))
+      JSON.stringify(cleanCats(profile.customIncomeCats)),
+      JSON.stringify(cleanCats(profile.pocketCats))
     ).run();
 
     return json({ ok: true, message: 'Profile saved' });
@@ -144,6 +146,7 @@ function rowToProfile(row) {
     scriptUrl: row.script_url || '',
     customExpenseCats: safeJSON(row.custom_expense_cats, []),
     customIncomeCats: safeJSON(row.custom_income_cats, []),
+    pocketCats: safeJSON(row.pocket_cats, []),
   };
 }
 

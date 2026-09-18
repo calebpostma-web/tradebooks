@@ -55,6 +55,16 @@ export async function onRequestPost({ request, env }) {
   const bank = body.bank || 'AMEX';
   const source = body.source || 'Import';
 
+  // The user's own pocket names (Settings → Pockets) are transfer categories
+  // too: kept verbatim in the Category column, excluded from P&L by the
+  // sheet's Type column. Legacy names still collapse to "Internal Transfer".
+  let pockets = new Set();
+  try {
+    const prow = await env.DB.prepare('SELECT pocket_cats FROM profiles WHERE user_id = ?').bind(userId).first();
+    (JSON.parse(prow?.pocket_cats || '[]') || []).forEach(p => { if (p) pockets.add(String(p).trim().toLowerCase()); });
+  } catch (e) { /* no pockets configured */ }
+  const isTransfer = c => TRANSFER_CATS.has(c) || pockets.has(String(c || '').trim().toLowerCase());
+
   if (!rows.length) return json({ ok: false, error: 'No rows' }, 400);
 
   // One read of the ledger (B:O) serves both dedup (Source Ref, col K) and
@@ -146,11 +156,11 @@ export async function onRequestPost({ request, env }) {
     // Checks tab flag the ones that never show up. Cash never gets a statement.
     const fromReceipt = source === 'Receipt Scanner';
 
-    if (TRANSFER_CATS.has(cat)) {
+    if (isTransfer(cat)) {
       // Internal transfers keep their bank-direction sign (BMO->AMEX is -, AMEX
       // receiving the same is +). The matching pair offsets in P&L because both
-      // sides are excluded by the Internal Transfer filter.
-      finalCategory = 'Internal Transfer';
+      // sides are excluded by the Type column. A pocket name stays as typed.
+      finalCategory = TRANSFER_CATS.has(cat) ? 'Internal Transfer' : cat;
       // signedAmount already = signedNet from bank
     } else if (signedNet > 0) {
       // Money in. Try to propose an invoice match regardless of which specific
@@ -178,14 +188,14 @@ export async function onRequestPost({ request, env }) {
     }
     // Else: expense, signedAmount already negative from signedNet
 
-    if (fromReceipt && !TRANSFER_CATS.has(cat)) {
+    if (fromReceipt && !isTransfer(cat)) {
       matchStatus = /^cash$/i.test(bank) ? 'N/A' : 'Awaiting statement';
     }
 
     // ── 1b-4: merge receipt and statement rows instead of writing both ──
     // Same account, same total (±2¢), dates within MATCH_DAYS. Vendor text is
     // deliberately ignored — the AI and the bank never spell it the same way.
-    if (signedNet < 0 && !TRANSFER_CATS.has(cat)) {
+    if (signedNet < 0 && !isTransfer(cat)) {
       const total = rawAmount + hstAmount;
       if (fromReceipt) {
         // Same receipt scanned twice with the AI spelling the vendor differently

@@ -40,6 +40,13 @@ const DEFAULT_INC_CATS = [
 // Transfer-column config block in ⚙️ Config. Header at A100, rows 101–110:
 //   B = column name shown in the view, C = text to match in the payee (regex, case-insensitive)
 const TRANSFER_CFG = { headerCell: 'A100', range: 'B101:C110', firstRow: 101 };
+// A usable party regex from a pocket name: "Canadian Revenue Agency Tax" → "CANADIAN|REVENUE|AGENCY|CRA"
+function defaultRegexFor(name) {
+  const words = String(name).toUpperCase().split(/[^A-Z0-9]+/).filter(w => w.length > 2 && !/^(THE|AND|FOR|TAX|PAYMENT|LOAN)$/.test(w));
+  const extra = /REVENUE|CRA|CANADA/.test(name.toUpperCase()) ? ['CRA', 'CANADA'] : [];
+  return [...new Set([...words, ...extra])].join('|') || String(name).toUpperCase();
+}
+
 const DEFAULT_TRANSFERS = [
   ['Credit card payment', 'AMEX|VISA|MASTERCARD|CARD PAYMENT'],
   ['CRA payments',        'CRA|CANADA|RECEIVER GENERAL'],
@@ -55,7 +62,7 @@ const COLORS = {
 const FMT_CURRENCY = { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00;("$"#,##0.00)' } };
 const FMT_DATE     = { numberFormat: { type: 'DATE', pattern: 'mmm d, yyyy' } };
 
-const LAYOUT_VERSION = 3;   // bump when row-6 formulas change so existing tabs get rebuilt
+const LAYOUT_VERSION = 4;   // v4: pocket categories (Type column P) + refund-safe transfer match   // bump when row-6 formulas change so existing tabs get rebuilt
 const HELPER_COUNT = 8;   // Date, Party, Total(incl HST), Category, Amount(excl), HST, SourceRef, Receipt link
 const FIRST_DATA_ROW = 6;
 
@@ -76,8 +83,35 @@ function cleanList(list, fallback) {
 }
 
 // ── Read (or seed) the transfer-column config from ⚙️ Config ──
-async function loadTransferColumns(env, userId, cfgTab, dryRun, changes, errors) {
+async function loadTransferColumns(env, userId, cfgTab, dryRun, changes, errors, pocketCats = []) {
   const cfgTitle = cfgTab.title;
+  // Settings → Pockets wins over whatever is in the Config block: write the
+  // names there (Transactions!P reads them) and keep any regex already typed.
+  if (pocketCats.length) {
+    const existing = await readRange(env, userId, `${q(cfgTitle)}!${TRANSFER_CFG.range}`);
+    const regexByName = {};
+    (existing.ok ? existing.values : []).forEach(r => { if (r && r[0]) regexByName[String(r[0]).trim()] = String(r[1] || '').trim(); });
+    const wanted = pocketCats.slice(0, 10).map(n => [n, regexByName[n] || defaultRegexFor(n)]);
+    const same = wanted.every((w, i) => (existing.ok && existing.values && existing.values[i] && String(existing.values[i][0] || '').trim() === w[0]))
+      && (existing.ok ? existing.values.filter(r => r && r[0]).length : 0) === wanted.length;
+    if (!same && !dryRun) {
+      const needRows = TRANSFER_CFG.firstRow + 10;
+      if ((cfgTab.gridProperties?.rowCount || 0) < needRows) {
+        const grow = await spreadsheetsBatchUpdate(env, userId, [{ updateSheetProperties: { properties: { sheetId: cfgTab.sheetId, gridProperties: { rowCount: needRows } }, fields: 'gridProperties.rowCount' } }]);
+        if (!grow.ok) errors.push(`Could not grow '${cfgTitle}' for TRANSFER COLUMNS: ${grow.error}`);
+      }
+      const rows = Array.from({ length: 10 }, (_, i) => wanted[i] || ['', '']);
+      const res = await batchUpdate(env, userId, [
+        { range: `${q(cfgTitle)}!${TRANSFER_CFG.headerCell}`, values: [['  TRANSFER COLUMNS (pockets) — set in Settings → Pockets; regex only matters for old "Internal Transfer" rows']] },
+        { range: `${q(cfgTitle)}!${TRANSFER_CFG.range}`, values: rows },
+      ]);
+      if (!res.ok) errors.push(`Could not write pockets to '${cfgTitle}': ${res.error}`);
+      else changes.push(`Pockets written to '${cfgTitle}': ${pocketCats.join(', ')}.`);
+    } else if (!same && dryRun) {
+      changes.push(`Write your pockets (${pocketCats.join(', ')}) into '${cfgTitle}' TRANSFER COLUMNS.`);
+    }
+    return wanted;
+  }
   const hdr = await readRange(env, userId, `${q(cfgTitle)}!${TRANSFER_CFG.headerCell}`);
   const present = hdr.ok && hdr.values && hdr.values[0] && String(hdr.values[0][0] || '').includes('TRANSFER COLUMNS');
   if (!present) {
@@ -149,7 +183,7 @@ function buildAccountTab({ title, sheetId, account, sign, txnTitle, revCats, exp
     else if (expCats.includes(h))         { f = guard(`IF((${rng(hCat)}="${esc(h)}")*(${rng(hAmt)}<0),-${rng(hAmt)},"")`); }
     else {
       const t = transfers.find(x => x[0] === h);
-      f = guard(`IF((${rng(hCat)}="Internal Transfer")*REGEXMATCH(UPPER(${rng(hParty)}),"${esc(t ? t[1] : h)}"),ABS(${rng(hAmt)})+ABS(${rng(hHst)}),"")`);
+      f = guard(`IF(((${rng(hCat)}="${esc(h)}")+((${rng(hCat)}="Internal Transfer")*REGEXMATCH(UPPER(${rng(hParty)}),"${esc(t ? t[1] : h)}")))>0,ABS(${rng(hAmt)})+ABS(${rng(hHst)}),"")`);
     }
     row6.push(f); row4.push(tot);
   });
@@ -193,9 +227,9 @@ function buildHstReport({ title, sheetId, txnTitle, hstTitle }) {
       ['To',   `=IF(C3="Full year",EDATE(C4,12)-1,EDATE(C5,3)-1)`],
     ]},
     { range: `${q(title)}!B8:C11`, values: [
-      ['Sales',            `=SUMIFS(${T}!E12:E,${T}!E12:E,">0",${T}!F12:F,"<>Internal Transfer",${T}!B12:B,">="&C5,${T}!B12:B,"<="&C6)`],
-      ['HST Collected',    `=SUMIFS(${T}!H12:H,${T}!E12:E,">0",${T}!F12:F,"<>Internal Transfer",${T}!B12:B,">="&C5,${T}!B12:B,"<="&C6)`],
-      ['HST Paid',         `=SUMIFS(${T}!H12:H,${T}!E12:E,"<0",${T}!F12:F,"<>Internal Transfer",${T}!B12:B,">="&C5,${T}!B12:B,"<="&C6)`],
+      ['Sales',            `=SUMIFS(${T}!E12:E,${T}!E12:E,">0",${T}!P12:P,"<>Transfer",${T}!B12:B,">="&C5,${T}!B12:B,"<="&C6)`],
+      ['HST Collected',    `=SUMIFS(${T}!H12:H,${T}!E12:E,">0",${T}!P12:P,"<>Transfer",${T}!B12:B,">="&C5,${T}!B12:B,"<="&C6)`],
+      ['HST Paid',         `=SUMIFS(${T}!H12:H,${T}!E12:E,"<0",${T}!P12:P,"<>Transfer",${T}!B12:B,">="&C5,${T}!B12:B,"<="&C6)`],
       ['(Refund)/Payable', `=C9-C10`],
     ]},
   ];
@@ -224,7 +258,7 @@ export async function ensureAccountantTabs(env, userId, { sheetsByTitle, profile
   const card = String(profile?.creditCard || 'AMEX').trim();
   const revCats = cleanList(profile?.customIncomeCats, DEFAULT_INC_CATS);
   const expCats = cleanList(profile?.customExpenseCats, DEFAULT_EXP_CATS).filter(c => !/internal transfer|owner draw|skip/i.test(c));
-  const transfers = await loadTransferColumns(env, userId, cfgTab, dryRun, changes, errors);
+  const transfers = await loadTransferColumns(env, userId, cfgTab, dryRun, changes, errors, cleanList(profile?.pocketCats, []));
   const headers = buildHeaders(revCats, expCats, transfers);
 
   const usedIds = new Set(Object.values(sheetsByTitle).map(s => s.sheetId));

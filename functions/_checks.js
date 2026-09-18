@@ -23,7 +23,7 @@
 import { readRange, batchUpdate, spreadsheetsBatchUpdate } from './_sheets.js';
 
 export const CHECKS_TITLE = '⚠️ Checks';
-const LAYOUT_VERSION = 2;
+const LAYOUT_VERSION = 3;   // v3: transfers recognised via Type column P (pocket categories)
 const GST_RATE = 0.05;      // federal part, for Status-card GST-only sales
 
 const COLORS = {
@@ -55,14 +55,14 @@ const RULES = [
 function buildChecksTab({ title, sheetId, txnTitle, txnSheetId, cfgTitle, hstTitle, balTitle, bank, card }) {
   const T = q(txnTitle);
   const B = `${T}!B12:B`, C = `${T}!C12:C`, D = `${T}!D12:D`, E = `${T}!E12:E`,
-        F = `${T}!F12:F`, G = `${T}!G12:G`, H = `${T}!H12:H`, I = `${T}!I12:I`;
+        F = `${T}!F12:F`, G = `${T}!G12:G`, H = `${T}!H12:H`, I = `${T}!I12:I`, P = `${T}!P12:P`;
   const rate = `${q(cfgTitle)}!$C$10`;
   const fyStart = `${q(hstTitle)}!$C$3`;
   const label = k => RULES.find(r => r[0] === k)[1];
 
   // Per-row expressions (all arrays over the Transactions rows)
   const hasRow   = `((LEN(${B})+LEN(${C})+LEN(${E}))>0)`;
-  const notXfer  = `(${F}<>"Internal Transfer")`;
+  const notXfer  = `(${P}<>"Transfer")`;
   const status   = `REGEXMATCH(UPPER(${C}&" "&${D}),"STATUS")`;
   const expHST   = `ROUND(ABS(IFERROR(${E}*1,0))*${rate},2)`;
   const gstOnly  = `ROUND(ABS(IFERROR(${E}*1,0))*${GST_RATE},2)`;

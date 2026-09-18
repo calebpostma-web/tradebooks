@@ -220,6 +220,7 @@ async function loadProfile(env, userId) {
     scriptUrl: row.script_url || '',
     customExpenseCats: safeJSON(row.custom_expense_cats, []),
     customIncomeCats: safeJSON(row.custom_income_cats, []),
+    pocketCats: safeJSON(row.pocket_cats, []),
   };
 }
 

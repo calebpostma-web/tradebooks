@@ -8712,6 +8712,19 @@ function renderSettings(){
     <div id="schemaMigrateStatus" style="font-size:.82rem;color:var(--ink3);margin-top:.5rem;line-height:1.55"></div>
 
     <hr class="divider">
+    <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Import ledger rows</div>
+    <div style="font-size:.78rem;color:var(--ink3);margin-bottom:.75rem;line-height:1.55">
+      Bring in transactions already categorized somewhere else (a bookkeeper's spreadsheet, an old system). Tab-separated file with the Transactions column headings:
+      <span style="font-family:var(--mono);font-size:.7rem">Date, Party, Description, Amount, Category, HST?, HST, Account, Source, Source Ref, Related Invoice #, Match Status, Receipt</span>.
+      Rows whose Source Ref is already in the ledger are skipped, so re-running the same file never duplicates.
+    </div>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+      <input type="file" id="ledgerImportFile" accept=".tsv,.txt,.csv,text/tab-separated-values,text/plain" style="font-size:.82rem">
+      <button class="btn btn-outline btn-sm" onclick="importLedgerRows()" id="ledgerImportBtn">📥 Import rows</button>
+    </div>
+    <div id="ledgerImportStatus" style="font-size:.82rem;color:var(--ink3);margin-top:.5rem;line-height:1.55"></div>
+
+    <hr class="divider">
     <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.75rem">Account</div>
     <div style="display:flex;gap:.75rem">
       <button class="btn btn-outline btn-sm" onclick="doLogout()">🔓 Log Out</button>
@@ -8884,6 +8897,71 @@ async function schemaBannerApply(){
 // ── Sheet schema migration ──────────────────────────────────────────
 // Calls /api/setup/migrate which adds missing tabs / columns to the
 // existing Google Sheet. Idempotent — safe to run any time.
+// ── Settings → Import ledger rows (TSV with the Transactions headings) ──
+function parseLedgerTSV(text){
+  const lines = text.replace(/\r/g,'').split('\n').filter(l => l.trim());
+  if(lines.length < 2) return { error: 'File has no data rows.' };
+  const head = lines[0].split('\t').map(h => h.trim().toLowerCase());
+  const col = name => head.indexOf(name.toLowerCase());
+  const iDate=col('Date'), iParty=col('Party'), iDesc=col('Description'), iAmt=col('Amount'), iCat=col('Category'),
+        iHst=col('HST'), iAcct=col('Account'), iRef=col('Source Ref'), iMs=col('Match Status'), iRcpt=col('Receipt');
+  if([iDate,iParty,iAmt,iCat,iAcct].some(i => i < 0)) return { error: 'Missing one of: Date, Party, Amount, Category, Account in the header row.' };
+  const rows = [];
+  for(let n=1;n<lines.length;n++){
+    const c = lines[n].split('\t');
+    const amount = parseFloat(String(c[iAmt]||'').replace(/[^0-9.\-]/g,''));
+    if(!c[iDate] || isNaN(amount)) continue;
+    let cat = (c[iCat]||'').trim(); if(/^uncategori[sz]ed$/i.test(cat)) cat = '';
+    rows.push({
+      date: c[iDate].trim(), vendor: (c[iParty]||'').trim(), description: (c[iDesc]||'').trim(),
+      amount, net: amount, category: cat, hst: Math.abs(parseFloat(c[iHst]) || 0),
+      account: (c[iAcct]||'').trim(), ref: (c[iRef]||'').trim(),
+      matchStatus: (c[iMs]||'').trim() || 'N/A', receiptUrl: (c[iRcpt]||'').trim(), _line: n+1,
+    });
+  }
+  return { rows };
+}
+
+async function importLedgerRows(){
+  const file = document.getElementById('ledgerImportFile')?.files?.[0];
+  const btn = document.getElementById('ledgerImportBtn');
+  const status = document.getElementById('ledgerImportStatus');
+  const token = localStorage.getItem(AUTH_KEY);
+  if(!file){ toast('Choose a file first'); return; }
+  if(!token || !USER_CONFIG.sheetId){ toast('Sign in and connect your Google Sheet first'); return; }
+  const parsed = parseLedgerTSV(await file.text());
+  if(parsed.error){ status.innerHTML = `<span style="color:var(--red)">❌ ${esc(parsed.error)}</span>`; return; }
+  const byAcct = {};
+  parsed.rows.forEach(r => { (byAcct[r.account] = byAcct[r.account] || []).push(r); });
+  const accts = Object.keys(byAcct);
+  if(!confirm(`Import ${parsed.rows.length} rows into your Transactions ledger?\n\n${accts.map(a => `${a}: ${byAcct[a].length} rows`).join('\n')}\n\nRows already there (same Source Ref) are skipped.`)) return;
+
+  btn.disabled = true; btn.textContent = '⏳ Importing…';
+  const CHUNK = 150;
+  let written = 0, dupes = 0, skipped = 0; const errors = [];
+  for(const acct of accts){
+    const list = byAcct[acct];
+    for(let i=0;i<list.length;i+=CHUNK){
+      const chunk = list.slice(i, i+CHUNK);
+      status.textContent = `${acct}: rows ${i+1}–${Math.min(i+CHUNK, list.length)} of ${list.length}…`;
+      try{
+        const resp = await fetch('/api/import/statement', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
+          body: JSON.stringify({ bank: acct, source: 'Excel import', bulk: true, rows: chunk }) });
+        const d = await resp.json();
+        if(!d.ok){ errors.push(`${acct} rows ${i+1}–${i+chunk.length}: ${d.error || 'unknown error'}`); continue; }
+        written += d.written || 0; dupes += d.duplicatesBlocked || 0; skipped += d.skipped || 0;
+      }catch(e){ errors.push(`${acct} rows ${i+1}–${i+chunk.length}: ${e.message}`); }
+    }
+  }
+  btn.disabled = false; btn.textContent = '📥 Import rows';
+  let msg = `✅ <strong>${written} rows added</strong>`;
+  if(dupes) msg += ` · ${dupes} already in the ledger (skipped)`;
+  if(skipped) msg += ` · ${skipped} skipped (SKIP category)`;
+  if(errors.length) msg += `<div style="color:var(--red);margin-top:.4rem">${errors.map(esc).join('<br>')}</div>`;
+  msg += `<div style="margin-top:.4rem">Now run <strong>Update sheet to latest schema</strong> above so the Accountant tabs pick up any new categories, then open the ⚠️ Checks tab.</div>`;
+  status.innerHTML = msg;
+}
+
 async function migrateSheetSchema(){
   const btn = document.getElementById('migrateBtn');
   const status = document.getElementById('schemaMigrateStatus');

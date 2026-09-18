@@ -65,6 +65,11 @@ export async function onRequestPost({ request, env }) {
   } catch (e) { /* no pockets configured */ }
   const isTransfer = c => TRANSFER_CATS.has(c) || pockets.has(String(c || '').trim().toLowerCase());
 
+  // Bulk ledger import (Settings → Import ledger rows): rows arrive already
+  // categorized with their own Source Ref (e.g. XLS-Q1-BMO-r7) and status.
+  // No invoice proposals, no receipt matching — write them as given.
+  const bulk = source === 'Excel import' || body.bulk === true;
+
   if (!rows.length) return json({ ok: false, error: 'No rows' }, 400);
 
   // One read of the ledger (B:O) serves both dedup (Source Ref, col K) and
@@ -116,7 +121,7 @@ export async function onRequestPost({ request, env }) {
     }
 
     // Ref for dedup — batch counter so N same-vendor-same-amount on same day all survive
-    const base = generateRef(bank, row.date, row.amount || row.net, row.vendor);
+    const base = String(row.ref || '').trim() || generateRef(bank, row.date, row.amount || row.net, row.vendor);
     const baseLC = base.toLowerCase();
     batchCounter[baseLC] = (batchCounter[baseLC] || 0) + 1;
     const ref = batchCounter[baseLC] > 1 ? `${base}-${batchCounter[baseLC]}` : base;
@@ -162,6 +167,8 @@ export async function onRequestPost({ request, env }) {
       // sides are excluded by the Type column. A pocket name stays as typed.
       finalCategory = TRANSFER_CATS.has(cat) ? 'Internal Transfer' : cat;
       // signedAmount already = signedNet from bank
+    } else if (bulk) {
+      matchStatus = String(row.matchStatus || 'N/A').trim() || 'N/A';
     } else if (signedNet > 0) {
       // Money in. Try to propose an invoice match regardless of which specific
       // income category the user picked (custom categories like "Customer
@@ -195,7 +202,7 @@ export async function onRequestPost({ request, env }) {
     // ── 1b-4: merge receipt and statement rows instead of writing both ──
     // Same account, same total (±2¢), dates within MATCH_DAYS. Vendor text is
     // deliberately ignored — the AI and the bank never spell it the same way.
-    if (signedNet < 0 && !isTransfer(cat)) {
+    if (!bulk && signedNet < 0 && !isTransfer(cat)) {
       const total = rawAmount + hstAmount;
       if (fromReceipt) {
         // Same receipt scanned twice with the AI spelling the vendor differently

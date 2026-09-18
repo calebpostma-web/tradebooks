@@ -474,14 +474,14 @@ async function applyStyling(accessToken, spreadsheetId) {
   // Single signed ledger: + for money in, − for money out. Replaces Income + Expenses.
   // Columns (0-indexed): A=gutter, B=Date, C=Party, D=Description, E=Amount,
   // F=Category, G=HST Flag, H=HST Amount, I=Account, J=Source, K=Ref,
-  // L=Related Invoice, M=Match Status, N=Total (incl HST) — formula
-  requests.push(...bannerRequest(TXN, 0, 0, 14, COLORS.teal));
+  // L=Related Invoice, M=Match Status, N=Total (incl HST) — formula, O=Receipt (Drive link)
+  requests.push(...bannerRequest(TXN, 0, 0, 15, COLORS.teal));
   requests.push(...sectionRequest(TXN, 1, 1, 6, COLORS.teal));
   requests.push(cellFormat(TXN, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
   requests.push(cellFormat(TXN, 2, 2, 10, 6, { backgroundColor: COLORS.tealTint, numberFormat: FMT_CURRENCY.numberFormat }));
-  requests.push(headerRowRequest(TXN, 10, 1, 14, COLORS.teal));
+  requests.push(headerRowRequest(TXN, 10, 1, 15, COLORS.teal));
   requests.push({ updateDimensionProperties: { range: { sheetId: TXN, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(TXN, 11, 5000, 1, 14, COLORS.tealTint));
+  requests.push(bandingRequest(TXN, 11, 5000, 1, 15, COLORS.tealTint));
   // Date col B
   requests.push(cellFormat(TXN, 11, 1, 5000, 2, FMT_DATE));
   // Amount col E — signed currency (negatives shown in parens via FMT_CURRENCY)
@@ -505,6 +505,8 @@ async function applyStyling(accessToken, spreadsheetId) {
         { userEnteredValue: 'Matched' },
         { userEnteredValue: 'Unmatched' },
         { userEnteredValue: 'N/A' },
+        { userEnteredValue: 'Awaiting statement' },
+        { userEnteredValue: 'Receipt ✓' },
       ]}, showCustomUi: true },
     }
   });
@@ -522,6 +524,7 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(TXN, 11, 12, 100));// L Related Invoice
   requests.push(colWidth(TXN, 12, 13, 100));// M Match Status
   requests.push(colWidth(TXN, 13, 14, 110));// N Total (incl HST) — formula
+  requests.push(colWidth(TXN, 14, 15, 90)); // O Receipt (Drive link)
 
   // ─── INVOICES ───
   // 14 cols: A gutter, B Invoice #, C Date, D Client, E Description, F Amount excl HST,
@@ -1059,10 +1062,10 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📒 Transactions'!B5:F5", values: [['Total Expenses (excl HST)', "='📊 Dashboard'!D7", '', '', '']]});
   data.push({ range: "'📒 Transactions'!B6:F6", values: [['Total HST Paid (ITCs)',     "='📊 Dashboard'!D8", '', '', '']]});
   data.push({ range: "'📒 Transactions'!B7:F7", values: [['NET INCOME before tax',     "='📊 Dashboard'!D9", '', '', '']]});
-  data.push({ range: "'📒 Transactions'!B11:N11", values: [[
+  data.push({ range: "'📒 Transactions'!B11:O11", values: [[
     'Date', 'Party (Client/Vendor)', 'Description', 'Amount (signed, excl HST)', 'Category',
     'HST?', `HST (${taxPct}%)`, 'Account', 'Source', 'Source Ref', 'Related Invoice #', 'Match Status',
-    'Total (incl HST)',
+    'Total (incl HST)', 'Receipt',
   ]]});
 
   // Pre-fill the Total formula in N12:N so every existing + future row shows

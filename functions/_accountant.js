@@ -55,8 +55,8 @@ const COLORS = {
 const FMT_CURRENCY = { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00;("$"#,##0.00)' } };
 const FMT_DATE     = { numberFormat: { type: 'DATE', pattern: 'mmm d, yyyy' } };
 
-const LAYOUT_VERSION = 2;   // bump when row-6 formulas change so existing tabs get rebuilt
-const HELPER_COUNT = 7;   // Date, Party, Total(incl HST), Category, Amount(excl), HST, SourceRef
+const LAYOUT_VERSION = 3;   // bump when row-6 formulas change so existing tabs get rebuilt
+const HELPER_COUNT = 8;   // Date, Party, Total(incl HST), Category, Amount(excl), HST, SourceRef, Receipt link
 const FIRST_DATA_ROW = 6;
 
 export function colLetter(idx) {              // 0 → A, 25 → Z, 26 → AA
@@ -118,7 +118,7 @@ function buildAccountTab({ title, sheetId, account, sign, txnTitle, revCats, exp
   const nVisible = headers.length;                  // headers start at column B (index 1)
   const helperStart = 1 + nVisible + 1;             // one blank column, then helpers
   const H = i => colLetter(helperStart + i);        // helper column letters
-  const [hDate, hParty, hTotal, hCat, hAmt, hHst, hRef] = [0, 1, 2, 3, 4, 5, 6].map(H);
+  const [hDate, hParty, hTotal, hCat, hAmt, hHst, hRef, hRcpt] = [0, 1, 2, 3, 4, 5, 6, 7].map(H);
   const rng = c => `${c}${FIRST_DATA_ROW}:${c}`;
   const T = q(txnTitle);
   const values = [];
@@ -126,10 +126,10 @@ function buildAccountTab({ title, sheetId, account, sign, txnTitle, revCats, exp
   values.push({ range: `${q(title)}!A1`, values: [[`ACCOUNTANT VIEW — ${account}  ·  Built automatically from ${txnTitle}  ·  Do not type here — edit the ledger instead  ·  v${LAYOUT_VERSION}`]] });
   values.push({ range: `${q(title)}!B3`, values: [headers] });
 
-  // Helper block: one FILTER, sorted by date, spills 7 columns
-  values.push({ range: `${q(title)}!${hDate}5`, values: [['Date', 'Party', 'Total incl HST', 'Category', 'Amount excl HST', 'HST', 'Source Ref']] });
+  // Helper block: one FILTER, sorted by date, spills 8 columns
+  values.push({ range: `${q(title)}!${hDate}5`, values: [['Date', 'Party', 'Total incl HST', 'Category', 'Amount excl HST', 'HST', 'Source Ref', 'Receipt link']] });
   values.push({ range: `${q(title)}!${hDate}${FIRST_DATA_ROW}`, values: [[
-    `=IFERROR(SORT(FILTER({${T}!B12:B,${T}!C12:C,${T}!N12:N,${T}!F12:F,${T}!E12:E,${T}!H12:H,${T}!K12:K},${T}!I12:I="${esc(account)}",${T}!B12:B<>""),1,TRUE),"")`
+    `=IFERROR(SORT(FILTER({${T}!B12:B,${T}!C12:C,${T}!N12:N,${T}!F12:F,${T}!E12:E,${T}!H12:H,${T}!K12:K,${T}!O12:O},${T}!I12:I="${esc(account)}",${T}!B12:B<>""),1,TRUE),"")`
   ]] });
 
   const guard = expr => `=ARRAYFORMULA(IF(LEN(${rng(hDate)})=0,"",${expr}))`;
@@ -141,7 +141,7 @@ function buildAccountTab({ title, sheetId, account, sign, txnTitle, revCats, exp
     if (i === 0)      { f = guard(rng(hDate)); tot = ''; }
     else if (i === 1) { f = guard(rng(hParty)); tot = ''; }
     else if (i === 2) { f = guard(`${sign}*(${rng(hAmt)}+${rng(hHst)}*SIGN(${rng(hAmt)}))`); }
-    else if (i === 3) { f = guard(`IF(REGEXMATCH(TO_TEXT(${rng(hRef)}),"http"),"✓","")`); tot = `=COUNTIF(${rng(col)},"✓")`; }
+    else if (i === 3) { f = guard(`IF(LEN(${rng(hRcpt)})>0,HYPERLINK(${rng(hRcpt)},"📎 view"),"")`); tot = `=COUNTIF(${rng(col)},"📎*")`; }
     else if (h === 'HST on sales')        { f = guard(`IF(${rng(hAmt)}>0,${rng(hHst)},"")`); }
     else if (h === 'HST paid on expenses'){ f = guard(`IF(${rng(hAmt)}<0,${rng(hHst)},"")`); }
     else if (h === '(no category)')       { f = guard(`IF((${rng(hCat)}="")*(${rng(hAmt)}<>""),ABS(${rng(hAmt)}),"")`); }

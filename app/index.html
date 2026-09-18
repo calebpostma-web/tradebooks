@@ -251,6 +251,8 @@ body.scan-mode #rcptSheetsStatus{font-size:.95rem;margin-top:.75rem}
 .cat-grid .cat-btn{border:1.5px solid var(--rule);background:var(--white);border-radius:var(--radius);padding:.85rem .6rem;font-size:.92rem;line-height:1.25;text-align:center;cursor:pointer;font-family:var(--sans);color:var(--ink)}
 .cat-grid .cat-btn.sel{border-color:var(--green);background:var(--greenlt,#e8f3ec);font-weight:600;box-shadow:0 0 0 2px var(--green) inset}
 .cat-grid .cat-btn.more{grid-column:1/-1;border-style:dashed;color:var(--ink3)}
+body:not(.scan-mode) .acct-grid{max-width:360px}
+body:not(.scan-mode) .acct-grid .cat-btn{padding:.5rem .6rem;font-size:.85rem}
 @media(max-width:600px){
   .page-title{font-size:1.4rem}
   .tab{padding:.75rem .7rem;font-size:.75rem}
@@ -5130,8 +5132,26 @@ function rcptShowResult(){
         ${expenseCategoryOptions(r.category)}
       </select>`}
     </div>
+    <div style="margin-top:1rem">
+      <label style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:.4rem">Paid with</label>
+      ${rcptAccountPicker()}
+    </div>
     ${r.notes?`<div style="margin-top:.75rem;font-size:.82rem;color:var(--ink3);line-height:1.5">${esc(r.notes)}</div>`:''}`;
   document.getElementById('rcptExportWrap').classList.remove('hidden');
+}
+
+// Which account the receipt was paid from → Transactions "Account" column.
+// Card is the default (that's the common case); statement import later merges it.
+function rcptAccounts(){
+  return [...new Set([USER_CONFIG.creditCard||'AMEX', USER_CONFIG.primaryBank||'BMO', 'Cash'].filter(Boolean))];
+}
+function rcptAccountPicker(){
+  if(!rcptResult.account) rcptResult.account = rcptAccounts()[0];
+  return `<div class="cat-grid acct-grid" id="rcptAcctGrid" style="grid-template-columns:repeat(${rcptAccounts().length},1fr);margin-top:0">${rcptAccounts().map(a=>`<button type="button" class="cat-btn${a===rcptResult.account?' sel':''}" onclick="rcptPickAccount(this,'${esc(a).replace(/'/g,"\\'")}')">${esc(a)}</button>`).join('')}</div>`;
+}
+function rcptPickAccount(el,acct){
+  rcptResult.account=acct;
+  document.querySelectorAll('#rcptAcctGrid .cat-btn').forEach(b=>b.classList.toggle('sel',b===el));
 }
 
 async function rcptSendToSheets(){
@@ -5157,10 +5177,11 @@ async function rcptSendToSheets(){
   btn.textContent = '⏳ Sending…';
   status.textContent = 'Sending to Google Sheets…';
  
-  // Two-call sequence: (1) upload image to Drive (best-effort), (2) write ledger row.
-  // No receipt→ledger clickthrough in Phase 1 — Drive URL lives in console/response only.
+  // Two-call sequence: (1) upload image to Drive (best-effort), (2) write ledger row
+  // with Account = the card/bank she tapped and the Drive link in column O.
+  const account = r.account || rcptAccounts()[0];
   const statementPayload = {
-    bank: 'Receipt',
+    bank: account,
     source: 'Receipt Scanner',
     rows: [{
       date: r.date || '',
@@ -5170,6 +5191,7 @@ async function rcptSendToSheets(){
       category: cat,
       hst: parseFloat(r.hst) || 0,
       net: -(parseFloat(r.net) || 0),
+      receiptUrl: '',
     }],
   };
 
@@ -5190,7 +5212,7 @@ async function rcptSendToSheets(){
           }),
         });
         const upData = await upResp.json();
-        if (upData.ok) driveUrl = upData.driveUrl;
+        if (upData.ok) { driveUrl = upData.driveUrl; statementPayload.rows[0].receiptUrl = driveUrl || ''; }
         else console.warn('Receipt image upload failed:', upData.error);
       } catch (e) {
         console.warn('Receipt image upload threw:', e);

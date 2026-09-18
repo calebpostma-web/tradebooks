@@ -67,6 +67,7 @@ export async function onRequestPost({ request, env }) {
   const batchCounter = {};
   const proposedMatches = [];
   const duplicateDetails = [];
+  const receiptUrls = [];   // parallel to txnRows → column O (Receipt link)
   let skipped = 0, duplicates = 0;
 
   for (const row of rows) {
@@ -105,6 +106,11 @@ export async function onRequestPost({ request, env }) {
     let finalCategory = cat;
     let matchStatus = 'N/A';
     let relatedInvoice = '';
+    const receiptUrl = String(row.receiptUrl || '').trim();
+    // Receipt Scanner rows: the card statement hasn't arrived yet. 'Awaiting
+    // statement' lets the later import find and merge them (1b-4) and the
+    // Checks tab flag the ones that never show up. Cash never gets a statement.
+    const fromReceipt = source === 'Receipt Scanner';
 
     if (TRANSFER_CATS.has(cat)) {
       // Internal transfers keep their bank-direction sign (BMO->AMEX is -, AMEX
@@ -138,6 +144,10 @@ export async function onRequestPost({ request, env }) {
     }
     // Else: expense, signedAmount already negative from signedNet
 
+    if (fromReceipt && !TRANSFER_CATS.has(cat)) {
+      matchStatus = /^cash$/i.test(bank) ? 'N/A' : 'Awaiting statement';
+    }
+
     // Row layout (B-M): Date | Party | Description | Amount | Category | HST? | HST | Account | Source | Ref | Related Invoice | Match Status
     txnRows.push([
       row.date || '',
@@ -153,6 +163,7 @@ export async function onRequestPost({ request, env }) {
       relatedInvoice,
       matchStatus,
     ]);
+    receiptUrls.push(receiptUrl);
   }
 
   let firstAppendedRow = null;
@@ -162,6 +173,14 @@ export async function onRequestPost({ request, env }) {
 
     const match = /!B(\d+):M(\d+)/.exec(appendResult.updates.updatedRange);
     if (match) firstAppendedRow = parseInt(match[1]);
+
+    // Column O = link to the receipt photo in Drive. Written separately because
+    // N is an ARRAYFORMULA and must never be touched by an append.
+    if (firstAppendedRow != null && receiptUrls.some(Boolean)) {
+      const oRange = `'${TXN_TAB}'!O${firstAppendedRow}:O${firstAppendedRow + receiptUrls.length - 1}`;
+      const oRes = await writeRange(env, userId, oRange, receiptUrls.map(u => [u]));
+      if (!oRes.ok) console.warn('Receipt link column write failed:', oRes.error);
+    }
   }
 
   // Resolve batch indexes to real sheet rows for the proposed-match payload.

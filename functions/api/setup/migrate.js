@@ -18,7 +18,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 import { getGoogleAccessToken, getUserSheetId } from '../../_google.js';
-import { getSpreadsheetMetadata, spreadsheetsBatchUpdate, writeRange, batchUpdate } from '../../_sheets.js';
+import { getSpreadsheetMetadata, spreadsheetsBatchUpdate, writeRange, readRange, batchUpdate } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
 import { ensureAccountantTabs } from '../../_accountant.js';
 import { ensureChecksTab } from '../../_checks.js';
@@ -85,6 +85,10 @@ async function runMigrations(request, env, dryRunDefault) {
 
   // ── Migration 3: ensure Transactions tab has Total (incl HST) column N ──
   await applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes, errors, dryRun);
+
+  // ── Migration 13: Transactions column O — Receipt (Drive link) ──
+  // Runs here (before 10) so the row-limit pass also covers the new column.
+  await applyReceiptLinkColumn(env, userId, sheetsByTitle, changes, errors, dryRun);
 
   // ── Migration 4: HST Returns C3 — smart FY start (data-driven default) ──
   await applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, errors, dryRun);
@@ -430,6 +434,67 @@ async function applyInvoiceDepositColumns(env, userId, sheetsByTitle, changes, e
   if (!statsRes2.ok) errors.push(`Failed to update collected formula: ${statsRes2.error}`);
 
   changes.push(`Added deposit columns O/P/Q to '${TITLE}' tab and updated outstanding/collected formulas to be deposit-aware.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 13: Transactions tab — Receipt column O (link to the photo in Drive)
+// ════════════════════════════════════════════════════════════════════
+// The Receipt Scanner writes the Drive URL here (Source Ref K stays the dedup
+// key). Accountant tabs turn it into a clickable 📎. Idempotent on the O11 header.
+async function applyReceiptLinkColumn(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
+  if (!txnTab) return;
+  const sheetId = txnTab.sheetId;
+  const t = txnTab.title;
+
+  const hdr = await readRange(env, userId, `'${t}'!O11`);
+  if (hdr.ok && String(hdr.values?.[0]?.[0] || '').trim() === 'Receipt') return;
+
+  if (dryRun) {
+    changes.push(`Add a 'Receipt' column (O) to '${t}' — scanned receipts get a link to the photo in Drive.`);
+    return;
+  }
+
+  const reqs = [];
+  if ((txnTab.gridProperties?.columnCount || 0) < 15) {
+    reqs.push({ updateSheetProperties: {
+      properties: { sheetId, gridProperties: { columnCount: 15, rowCount: txnTab.gridProperties?.rowCount || 5000, frozenRowCount: 11 } },
+      fields: 'gridProperties.columnCount,gridProperties.rowCount,gridProperties.frozenRowCount',
+    }});
+  }
+  reqs.push({ repeatCell: {
+    range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 14, endColumnIndex: 15 },
+    cell: { userEnteredFormat: {
+      backgroundColor: COLORS.teal,
+      textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 },
+      horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP',
+    }},
+    fields: 'userEnteredFormat',
+  }});
+  reqs.push(colWidthReq(sheetId, 14, 15, 90));
+  // Match Status dropdown gains the two receipt states
+  reqs.push({ setDataValidation: {
+    range: { sheetId, startRowIndex: 11, endRowIndex: txnTab.gridProperties?.rowCount || 5000, startColumnIndex: 12, endColumnIndex: 13 },
+    rule: { condition: { type: 'ONE_OF_LIST', values: ['Matched', 'Unmatched', 'N/A', 'Awaiting statement', 'Receipt ✓'].map(v => ({ userEnteredValue: v })) }, showCustomUi: true },
+  }});
+  const res = await spreadsheetsBatchUpdate(env, userId, reqs);
+  if (!res.ok) { errors.push(`Could not add Receipt column to '${t}': ${res.error}`); return; }
+
+  // Banding: extend the ledger's banded range to cover O
+  try {
+    const sid = await getUserSheetId(env, userId);
+    const tok = await getGoogleAccessToken(env, userId);
+    if (tok.ok) {
+      const bd = await fetch(`${SHEETS_API}/${sid}?fields=${encodeURIComponent('sheets(properties(sheetId),bandedRanges)')}`, { headers: { Authorization: `Bearer ${tok.accessToken}` } }).then(r => r.json());
+      const bands = (bd.sheets || []).find(x => x.properties?.sheetId === sheetId)?.bandedRanges || [];
+      const bandReqs = bands.filter(b => (b.range?.endColumnIndex || 0) === 14).map(b => ({ updateBanding: { bandedRange: { bandedRangeId: b.bandedRangeId, range: { ...b.range, endColumnIndex: 15 } }, fields: 'range' } }));
+      if (bandReqs.length) await spreadsheetsBatchUpdate(env, userId, bandReqs);
+    }
+  } catch (e) { /* cosmetic — don't fail the migration over banding */ }
+
+  const w = await writeRange(env, userId, `'${t}'!O11`, [['Receipt']]);
+  if (!w.ok) { errors.push(`Failed to write Receipt header: ${w.error}`); return; }
+  changes.push(`Added 'Receipt' column (O) to '${t}'.`);
 }
 
 // ════════════════════════════════════════════════════════════════════

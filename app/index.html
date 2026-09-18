@@ -5235,7 +5235,7 @@ async function rcptSendToSheets(){
 
   try {
     // Step 1: upload the receipt image to Drive (best-effort — don't block ledger write)
-    let driveUrl = null;
+    let driveUrl = null, driveErr = null;
     if (rcptB64) {
       try {
         const upResp = await fetch('/api/receipt/upload', {
@@ -5251,9 +5251,9 @@ async function rcptSendToSheets(){
         });
         const upData = await upResp.json();
         if (upData.ok) { driveUrl = upData.driveUrl; statementPayload.rows[0].receiptUrl = driveUrl || ''; }
-        else console.warn('Receipt image upload failed:', upData.error);
+        else { driveErr = upData.error || ('HTTP ' + upResp.status); console.warn('Receipt image upload failed:', driveErr); }
       } catch (e) {
-        console.warn('Receipt image upload threw:', e);
+        driveErr = e.message; console.warn('Receipt image upload threw:', e);
       }
     }
 
@@ -5268,6 +5268,7 @@ async function rcptSendToSheets(){
     });
     const d = await resp.json();
     if (driveUrl) d.receiptDriveUrl = driveUrl; // existing success-branch code reads this
+    if (driveErr) d.receiptDriveError = driveErr;
  
     if(d.ok) {
       btn.textContent = '✓ Sent!';
@@ -5291,7 +5292,7 @@ async function rcptSendToSheets(){
       if (d.receiptDriveUrl) {
         msg += ` <a href="${d.receiptDriveUrl}" target="_blank" style="color:var(--green);text-decoration:underline">📁 View in Drive</a>`;
       } else if (d.receiptDriveError) {
-        msg += `<div style="font-size:.78rem;color:var(--ink3);margin-top:.3rem">⚠️ Receipt image backup failed — save manually with the button above.</div>`;
+        msg += `<div style="font-size:.78rem;color:var(--red);margin-top:.3rem">⚠️ Photo was NOT saved to Drive: ${esc(String(d.receiptDriveError))}</div>`;
       }
  
       status.innerHTML = msg;

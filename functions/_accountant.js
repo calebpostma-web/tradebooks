@@ -55,6 +55,7 @@ const COLORS = {
 const FMT_CURRENCY = { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00;("$"#,##0.00)' } };
 const FMT_DATE     = { numberFormat: { type: 'DATE', pattern: 'mmm d, yyyy' } };
 
+const LAYOUT_VERSION = 2;   // bump when row-6 formulas change so existing tabs get rebuilt
 const HELPER_COUNT = 7;   // Date, Party, Total(incl HST), Category, Amount(excl), HST, SourceRef
 const FIRST_DATA_ROW = 6;
 
@@ -122,7 +123,7 @@ function buildAccountTab({ title, sheetId, account, sign, txnTitle, revCats, exp
   const T = q(txnTitle);
   const values = [];
 
-  values.push({ range: `${q(title)}!A1`, values: [[`ACCOUNTANT VIEW — ${account}  ·  Built automatically from ${txnTitle}  ·  Do not type here — edit the ledger instead`]] });
+  values.push({ range: `${q(title)}!A1`, values: [[`ACCOUNTANT VIEW — ${account}  ·  Built automatically from ${txnTitle}  ·  Do not type here — edit the ledger instead  ·  v${LAYOUT_VERSION}`]] });
   values.push({ range: `${q(title)}!B3`, values: [headers] });
 
   // Helper block: one FILTER, sorted by date, spills 7 columns
@@ -239,11 +240,13 @@ export async function ensureAccountantTabs(env, userId, { sheetsByTitle, profile
     if (existing) {
       const hdr = await readRange(env, userId, `${q(spec.title)}!B3:${colLetter(headers.length)}3`);
       const current = (hdr.ok && hdr.values && hdr.values[0]) ? hdr.values[0].map(v => String(v)) : [];
-      if (current.length === headers.length && current.every((v, i) => v === headers[i])) continue;   // up to date
+      const banner = await readRange(env, userId, `${q(spec.title)}!A1`);
+      const sameVersion = banner.ok && banner.values && banner.values[0] && String(banner.values[0][0] || '').endsWith(`v${LAYOUT_VERSION}`);
+      if (sameVersion && current.length === headers.length && current.every((v, i) => v === headers[i])) continue;   // up to date
     }
     if (dryRun) {
       changes.push(existing
-        ? `Rebuild '${spec.title}' — your category list changed, so its columns need refreshing.`
+        ? `Rebuild '${spec.title}' — your category list changed or the layout was updated.`
         : `Add '${spec.title}' — your bookkeeping layout (one column per category), built automatically from the ledger.`);
       continue;
     }

@@ -3585,6 +3585,9 @@ Provide specific, actionable advice with dollar amounts where possible. Referenc
 // ════════════════════════════════════════════════════════════════════
 
 const CLAUDE_PROXY = '/claude-proxy';
+// One place to change the model. Dated IDs get retired (claude-sonnet-4-20250514 died
+// silently and every AI feature failed) — use the undated alias.
+const CLAUDE_MODEL = 'claude-sonnet-5';
 
 async function callClaude(prompt, maxTokens = 1000) {
   const token = localStorage.getItem(AUTH_KEY);
@@ -3595,7 +3598,7 @@ async function callClaude(prompt, maxTokens = 1000) {
       ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_MODEL,
       max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }]
     })
@@ -3614,7 +3617,7 @@ async function callClaudeWithImage(prompt, b64, mediaType) {
       ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_MODEL,
       max_tokens: 1000,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } },
@@ -3636,7 +3639,7 @@ async function callClaudeWithPDF(prompt, b64, maxTokens = 4096) {
       ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_MODEL,
       max_tokens: maxTokens,
       beta: 'pdfs-2024-09-25',
       messages: [{ role: 'user', content: [

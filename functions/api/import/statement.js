@@ -188,6 +188,17 @@ export async function onRequestPost({ request, env }) {
     if (signedNet < 0 && !TRANSFER_CATS.has(cat)) {
       const total = rawAmount + hstAmount;
       if (fromReceipt) {
+        // Same receipt scanned twice with the AI spelling the vendor differently
+        // ("barBURRITO" vs "barBURRITO Chatham Grand") → different ref → slipped
+        // past dedup. Same account + same total + same day + shared vendor stem
+        // = the same piece of paper.
+        const twin = findReceiptTwin(ledgerRows, { account: bank, total, date: row.date, vendor: row.vendor });
+        if (twin) {
+          duplicates++;
+          duplicateDetails.push({ date: row.date, vendor: row.vendor, amount: row.amount });
+          if (receiptUrl && !twin.receipt) { cell('O', twin.row, receiptUrl); twin.receipt = receiptUrl; }
+          continue;
+        }
         // Receipt arriving after the statement: attach to the statement row.
         const hit = findLedgerMatch(ledgerRows, claimed, { account: bank, total, date: row.date, wantReceiptRow: false });
         if (hit) {
@@ -417,6 +428,24 @@ function findLedgerMatch(ledgerRows, claimed, { account, total, date, wantReceip
     if (!best || days < best.days) best = { ...r, days };
   }
   return best;
+}
+
+// Another scan of the same receipt already in the ledger (any status).
+function findReceiptTwin(ledgerRows, { account, total, date, vendor }) {
+  const d = parseDate(date);
+  if (!d || !(total > 0)) return null;
+  const acct = String(account || '').toLowerCase();
+  const stem = String(vendor || '').replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 6);
+  for (const r of ledgerRows) {
+    if (r.source !== 'Receipt Scanner' || r.amount >= 0 || !r.date) continue;
+    if (r.account.toLowerCase() !== acct) continue;
+    if (Math.abs((Math.abs(r.amount) + r.hst) - total) > 0.02) continue;
+    if (Math.abs((r.date - d) / 86400000) > 0.5) continue;
+    const rStem = r.party.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 6);
+    if (stem && rStem && stem !== rStem) continue;
+    return r;
+  }
+  return null;
 }
 
 function parseDate(s) {

@@ -10,7 +10,7 @@
 //   via /api/import/confirm-match.
 // ════════════════════════════════════════════════════════════════════
 
-import { appendRows, writeRange, readRange, readExistingRefs, generateRef } from '../../_sheets.js';
+import { appendRows, writeRange, readRange, batchUpdate, generateRef } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
 
 const TXN_TAB = '📒 Transactions';
@@ -57,8 +57,36 @@ export async function onRequestPost({ request, env }) {
 
   if (!rows.length) return json({ ok: false, error: 'No rows' }, 400);
 
-  // Dedup: read existing refs from the Ref column (K) of Transactions.
-  const existingRefs = await readExistingRefs(env, userId, TXN_TAB, 'K');
+  // One read of the ledger (B:O) serves both dedup (Source Ref, col K) and
+  // receipt ↔ statement matching (1b-4). Values come back FORMATTED, so money
+  // is "($41.04)" and dates are "Aug 31, 2026" — parsed below.
+  const ledger = await readRange(env, userId, `'${TXN_TAB}'!B12:O`);
+  if (!ledger.ok) return json({ ok: false, error: 'Could not read Transactions: ' + ledger.error }, 500);
+  const existingRefs = new Set();
+  const ledgerRows = [];
+  ledger.values.forEach((v, i) => {
+    const ref = String(v[9] || '').trim();
+    if (ref) existingRefs.add(ref.toLowerCase());
+    const amount = parseMoney(v[3]);
+    if (!v[0] || amount == null) return;
+    ledgerRows.push({
+      row: 12 + i,
+      date: parseDate(v[0]),
+      party: String(v[1] || ''),
+      amount,
+      hst: Math.abs(parseMoney(v[6]) || 0),
+      category: String(v[4] || '').trim(),
+      account: String(v[7] || '').trim(),
+      source: String(v[8] || '').trim(),
+      ref, refLC: ref.toLowerCase(),
+      status: String(v[11] || '').trim(),
+      receipt: String(v[13] || '').trim(),
+    });
+  });
+  const claimed = new Set();     // ledger rows already matched in this batch
+  const updates = [];            // in-place cell writes (values:batchUpdate)
+  const merged = [];             // { date, vendor, amount, row, how }
+  const cell = (col, row, val) => updates.push({ range: `'${TXN_TAB}'!${col}${row}`, values: [[val]] });
 
   // Load open invoices up-front so we can propose matches without per-row reads.
   const openInvoices = await loadOpenInvoices(env, userId);
@@ -87,6 +115,12 @@ export async function onRequestPost({ request, env }) {
     if (existingRefs.has(refLC)) {
       duplicates++;
       duplicateDetails.push({ date: row.date, vendor: row.vendor, amount: row.amount });
+      // Rescanned receipt: still attach the photo if the existing row has none.
+      const rcptUrl = String(row.receiptUrl || '').trim();
+      if (rcptUrl) {
+        const existing = ledgerRows.find(r => r.refLC === refLC && !r.receipt);
+        if (existing) { cell('O', existing.row, rcptUrl); existing.receipt = rcptUrl; }
+      }
       continue;
     }
     existingRefs.add(refLC);
@@ -148,6 +182,35 @@ export async function onRequestPost({ request, env }) {
       matchStatus = /^cash$/i.test(bank) ? 'N/A' : 'Awaiting statement';
     }
 
+    // ── 1b-4: merge receipt and statement rows instead of writing both ──
+    // Same account, same total (±2¢), dates within MATCH_DAYS. Vendor text is
+    // deliberately ignored — the AI and the bank never spell it the same way.
+    if (signedNet < 0 && !TRANSFER_CATS.has(cat)) {
+      const total = rawAmount + hstAmount;
+      if (fromReceipt) {
+        // Receipt arriving after the statement: attach to the statement row.
+        const hit = findLedgerMatch(ledgerRows, claimed, { account: bank, total, date: row.date, wantReceiptRow: false });
+        if (hit) {
+          claimed.add(hit.row);
+          if (finalCategory) cell('F', hit.row, finalCategory);   // she saw the receipt — her category wins
+          cell('M', hit.row, 'Receipt ✓');
+          if (receiptUrl) cell('O', hit.row, receiptUrl);
+          merged.push({ date: row.date, vendor: row.vendor, amount: total, row: hit.row, how: 'receipt→statement', party: hit.party });
+          continue;
+        }
+      } else {
+        // Statement arriving after the receipt: claim the receipt row.
+        const hit = findLedgerMatch(ledgerRows, claimed, { account: bank, total, date: row.date, wantReceiptRow: true });
+        if (hit) {
+          claimed.add(hit.row);
+          cell('K', hit.row, ref);            // statement ref becomes the dedup key
+          cell('M', hit.row, 'Receipt ✓');
+          merged.push({ date: row.date, vendor: row.vendor, amount: total, row: hit.row, how: 'statement→receipt', party: hit.party });
+          continue;
+        }
+      }
+    }
+
     // Row layout (B-M): Date | Party | Description | Amount | Category | HST? | HST | Account | Source | Ref | Related Invoice | Match Status
     txnRows.push([
       row.date || '',
@@ -183,6 +246,11 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
+  if (updates.length) {
+    const upd = await batchUpdate(env, userId, updates);
+    if (!upd.ok) return json({ ok: false, error: 'Ledger update failed: ' + upd.error, written: txnRows.length });
+  }
+
   // Resolve batch indexes to real sheet rows for the proposed-match payload.
   const resolvedMatches = (firstAppendedRow != null)
     ? proposedMatches.map(m => ({ ...m, txnRow: firstAppendedRow + m.batchIndex, batchIndex: undefined }))
@@ -195,6 +263,8 @@ export async function onRequestPost({ request, env }) {
     duplicates,
     duplicatesBlocked: duplicates,
     duplicateDetails,
+    merged: merged.length,
+    mergedDetails: merged,
     total: rows.length,
     proposedMatches: resolvedMatches,
   });
@@ -312,6 +382,41 @@ function findInvoiceMatch(openInvoices, depositDateStr, depositTotal, depositNet
 
 function approxEqual(a, b, tolerance = 0.01) {
   return Math.abs(a - b) < tolerance;
+}
+
+const MATCH_DAYS = 5;
+
+// "($41.04)" → -41.04 ; "$1,234.50" → 1234.5 ; "" → null
+function parseMoney(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return v;
+  const str = String(v).trim();
+  const neg = /^\(.*\)$/.test(str) || /^-/.test(str);
+  const n = parseFloat(str.replace(/[^0-9.]/g, ''));
+  if (isNaN(n)) return null;
+  return neg ? -n : n;
+}
+
+// Find the ledger row a receipt/statement line should merge into.
+// wantReceiptRow=true  → looking for a scanned receipt still "Awaiting statement"
+// wantReceiptRow=false → looking for a statement row that has no receipt yet
+function findLedgerMatch(ledgerRows, claimed, { account, total, date, wantReceiptRow }) {
+  const d = parseDate(date);
+  if (!d || !(total > 0)) return null;
+  const acct = String(account || '').toLowerCase();
+  let best = null;
+  for (const r of ledgerRows) {
+    if (claimed.has(r.row) || !r.date || r.amount >= 0) continue;
+    if (r.account.toLowerCase() !== acct) continue;
+    const isOpenReceipt = r.source === 'Receipt Scanner' && r.status === 'Awaiting statement';
+    if (wantReceiptRow) { if (!isOpenReceipt) continue; }
+    else { if (r.source === 'Receipt Scanner' || r.status === 'Receipt ✓' || r.receipt) continue; }
+    if (Math.abs((Math.abs(r.amount) + r.hst) - total) > 0.02) continue;
+    const days = Math.abs((r.date - d) / 86400000);
+    if (days > MATCH_DAYS) continue;
+    if (!best || days < best.days) best = { ...r, days };
+  }
+  return best;
 }
 
 function parseDate(s) {

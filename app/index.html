@@ -4401,6 +4401,11 @@ async function sendToSheets(){
       if(totalSkipped > 0){
         msg += ` <span style="color:var(--ink3);font-size:.85rem">${totalSkipped} skipped — owner draws and non-business items don't count.</span>`;
       }
+      if(d.merged > 0){
+        msg += `<div style="background:var(--greenlt);border:1px solid #b9dcc6;border-radius:var(--radius);padding:.7rem .9rem;margin-top:.75rem;font-size:.82rem;color:var(--green);line-height:1.6"><strong>📎 ${d.merged} matched to scanned receipt${d.merged>1?'s':''}</strong> — marked Receipt ✓ instead of adding a second row.`;
+        (d.mergedDetails||[]).forEach(m => { msg += `<div style="font-size:.78rem;padding:.15rem 0">${esc(m.date||'')} · $${Math.abs(m.amount||0).toFixed(2)} · ${esc(m.party||m.vendor||'')}</div>`; });
+        msg += `</div>`;
+      }
 
       // Duplicate detection results from backend
       if(d.duplicatesBlocked > 0){
@@ -5279,6 +5284,10 @@ async function rcptSendToSheets(){
         btn.textContent = '⚠️ Already exists';
         btn.style.background = 'var(--amber)';
         msg = `<div style="background:var(--amberlt);border:1px solid #e6c97a;border-radius:var(--radius);padding:.6rem .85rem;font-size:.82rem;color:var(--amber);line-height:1.5"><strong>⚠️ This receipt is already in your books.</strong><br>A matching transaction ($${fmtMoney(Math.abs(parseFloat(r.total)||0))} on ${r.date||'unknown date'}) was found in your Google Sheet. It was not added again.</div>`;
+      } else if(d.merged > 0){
+        const m = (d.mergedDetails||[])[0] || {};
+        btn.style.background = 'var(--green)';
+        msg = `✅ <strong>Matched to the ${esc(r.account||'')} statement entry${m.party?` "${esc(m.party)}"`:''}</strong> — receipt attached, no new row added.`;
       } else if(matchedTxn){
         btn.style.background = 'var(--green)';
         msg = `✅ Added to Transactions. <strong>Matches statement entry: ${esc(matchedTxn.vendor)} on ${matchedTxn.date}</strong> — receipt verified.`;

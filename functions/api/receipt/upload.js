@@ -33,11 +33,13 @@ export async function onRequestPost({ request, env }) {
   const year = String(new Date().getFullYear());
 
   // Find or create parent folder, then year subfolder
-  const parentId = await findOrCreateFolder(tok.accessToken, PARENT_FOLDER, null);
-    if (!parentId) return json({ ok: false, error: 'Could not create receipts folder' }, 500);
+  const parent = await findOrCreateFolder(tok.accessToken, PARENT_FOLDER, null);
+    if (!parent.id) return json({ ok: false, error: 'Drive: ' + parent.error, needsReauth: /insufficient|scope|403/i.test(parent.error) }, 500);
+  const parentId = parent.id;
 
-  const yearFolderId = await findOrCreateFolder(tok.accessToken, year, parentId);
-    if (!yearFolderId) return json({ ok: false, error: 'Could not create year folder' }, 500);
+  const yearFolder = await findOrCreateFolder(tok.accessToken, year, parentId);
+    if (!yearFolder.id) return json({ ok: false, error: 'Drive: ' + yearFolder.error }, 500);
+  const yearFolderId = yearFolder.id;
 
   // Decode base64 image (accept either "data:image/jpeg;base64,..." or plain base64)
   const base64Data = body.image.includes(',') ? body.image.split(',').pop() : body.image;
@@ -96,7 +98,8 @@ async function findOrCreateFolder(accessToken, name, parentId) {
     { headers: { 'Authorization': `Bearer ${accessToken}` } }
       );
     const searchData = await searchResp.json();
-    if (searchData.files && searchData.files.length) return searchData.files[0].id;
+    if (searchData.error) return { id: null, error: `${searchData.error.message} (${searchResp.status})` };
+    if (searchData.files && searchData.files.length) return { id: searchData.files[0].id };
 
   const metadata = { name, mimeType: 'application/vnd.google-apps.folder' };
     if (parentId) metadata.parents = [parentId];
@@ -110,5 +113,6 @@ async function findOrCreateFolder(accessToken, name, parentId) {
         body: JSON.stringify(metadata),
   });
     const createData = await createResp.json();
-    return createData.id || null;
+    if (createData.error) return { id: null, error: `${createData.error.message} (${createResp.status})` };
+    return createData.id ? { id: createData.id } : { id: null, error: 'folder create returned no id' };
 }

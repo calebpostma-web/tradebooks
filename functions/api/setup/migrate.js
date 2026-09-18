@@ -21,6 +21,7 @@ import { getGoogleAccessToken, getUserSheetId } from '../../_google.js';
 import { getSpreadsheetMetadata, spreadsheetsBatchUpdate, writeRange, batchUpdate } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
 import { ensureAccountantTabs } from '../../_accountant.js';
+import { ensureChecksTab } from '../../_checks.js';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -118,8 +119,11 @@ async function runMigrations(request, env, dryRunDefault) {
       customIncomeCats: safeJSON(prow?.custom_income_cats, []),
     };
     await ensureAccountantTabs(env, userId, { sheetsByTitle, profile, dryRun, changes, errors });
+
+    // ── Migration 12: ⚠️ Checks tab ──
+    await ensureChecksTab(env, userId, { sheetsByTitle, profile, dryRun, changes, errors });
   } catch (e) {
-    errors.push(`Accountant View: ${e.message}`);
+    errors.push(`Accountant View / Checks: ${e.message}`);
   }
 
   return json({

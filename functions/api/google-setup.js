@@ -2,6 +2,7 @@ import { authenticateRequest } from '../_shared.js';
 import { saveGoogleRefreshToken } from '../_google.js';
 import { getSpreadsheetMetadata } from '../_sheets.js';
 import { ensureAccountantTabs } from '../_accountant.js';
+import { ensureChecksTab } from '../_checks.js';
 
 // functions/api/google-setup.js
 // Handles Google OAuth token exchange and automatic sheet + script creation
@@ -280,6 +281,7 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
         const sheetsByTitle = Object.fromEntries(meta.sheets.map(s => [s.title, s]));
         const changes = [], errs = [];
         await ensureAccountantTabs(env, userId, { sheetsByTitle, profile, dryRun: false, changes, errors: errs });
+        await ensureChecksTab(env, userId, { sheetsByTitle, profile, dryRun: false, changes, errors: errs });
         errs.forEach(e => setupErrors.push(`Accountant View: ${e}`));
       }
     } catch (e) {

@@ -1,5 +1,7 @@
 import { authenticateRequest } from '../_shared.js';
 import { saveGoogleRefreshToken } from '../_google.js';
+import { getSpreadsheetMetadata } from '../_sheets.js';
+import { ensureAccountantTabs } from '../_accountant.js';
 
 // functions/api/google-setup.js
 // Handles Google OAuth token exchange and automatic sheet + script creation
@@ -269,6 +271,20 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
         .bind(spreadsheetId, userId)
         .run();
     } catch (e) { /* non-blocking */ }
+
+    // Accountant View tabs (bank / card layouts + HST report). Built through
+    // the shared module so new sheets and migrated sheets get the same thing.
+    try {
+      const meta = await getSpreadsheetMetadata(env, userId);
+      if (meta.ok) {
+        const sheetsByTitle = Object.fromEntries(meta.sheets.map(s => [s.title, s]));
+        const changes = [], errs = [];
+        await ensureAccountantTabs(env, userId, { sheetsByTitle, profile, dryRun: false, changes, errors: errs });
+        errs.forEach(e => setupErrors.push(`Accountant View: ${e}`));
+      }
+    } catch (e) {
+      setupErrors.push(`Accountant View threw: ${e.message}`);
+    }
   }
 
   return new Response(JSON.stringify({

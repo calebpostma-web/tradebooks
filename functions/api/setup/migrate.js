@@ -20,6 +20,7 @@
 import { getGoogleAccessToken, getUserSheetId } from '../../_google.js';
 import { getSpreadsheetMetadata, spreadsheetsBatchUpdate, writeRange, batchUpdate } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
+import { ensureAccountantTabs } from '../../_accountant.js';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -103,8 +104,23 @@ async function runMigrations(request, env, dryRunDefault) {
   await applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dryRun);
 
   // ── Migration 10: remove row 500/1000 limits (formulas, grid, formats) ──
-  // Runs LAST so it also catches formulas written by migrations 1–9.
+  // Runs after 1–9 so it also catches formulas written by them.
   await applyOpenEndedRanges(env, userId, sheetsByTitle, changes, errors, dryRun, details);
+
+  // ── Migration 11: Accountant View tabs (bank / card layouts + HST report) ──
+  // Needs the user's category names; reads them from the profile row.
+  try {
+    const prow = await env.DB.prepare('SELECT primary_bank, credit_card, custom_expense_cats, custom_income_cats FROM profiles WHERE user_id = ?').bind(userId).first();
+    const profile = {
+      primaryBank: prow?.primary_bank || 'BMO',
+      creditCard: prow?.credit_card || 'AMEX',
+      customExpenseCats: safeJSON(prow?.custom_expense_cats, []),
+      customIncomeCats: safeJSON(prow?.custom_income_cats, []),
+    };
+    await ensureAccountantTabs(env, userId, { sheetsByTitle, profile, dryRun, changes, errors });
+  } catch (e) {
+    errors.push(`Accountant View: ${e.message}`);
+  }
 
   return json({
     ok: true,
@@ -1346,6 +1362,10 @@ function hstFyStartFormula(txnTitle) {
 }
 
 // ── Helpers ──
+
+function safeJSON(str, fallback) {
+  try { const v = JSON.parse(str); return v == null ? fallback : v; } catch { return fallback; }
+}
 
 function colWidthReq(sheetId, startIdx, endIdx, pixelSize) {
   return {

@@ -95,12 +95,12 @@ function buildChecksTab({ title, sheetId, txnTitle, txnSheetId, cfgTitle, hstTit
   const S = 2000;
   const values = [
     { range: `${q(title)}!A1`, values: [[`CHECKS  ·  what needs a look, straight from the ledger  ·  click "open" to jump to the row  ·  v${LAYOUT_VERSION}`]] },
-    { range: `${q(title)}!B3:C3`, values: [['Problems found', `=IF(ISNUMBER(B14),COUNTA(B14:B),0)`]] },
+    { range: `${q(title)}!B3:C3`, values: [['Problems found', `=COUNT(B14:B${S - 5})`]] },   // numeric Row cells in the list region only
     { range: `${q(title)}!B4:C11`, values: RULES.map(([, lbl]) => [lbl, `=COUNTIF($I$14:$I,"*${esc(lbl)}*")`]) },
     { range: `${q(title)}!E6:F6`, values: [['Check engine', statusCell]] },
     { range: `${q(title)}!E3:F4`, values: [
       ['Bank periods off (🏦 Account Balances)', `=IFERROR(COUNTIF(${q(balTitle)}!K12:K,"⚠*"),0)`],
-      ['Status-card GST-only sales (info)', `=IF(ISNUMBER(B${S + 2}),COUNTA(B${S + 2}:B),0)`],
+      ['Status-card GST-only sales (info)', `=COUNT(B${S + 2}:B)`],
     ]},
     { range: `${q(title)}!B13:J13`, values: [['Row', 'Date', 'Name', 'Amount', 'Category', 'HST', 'Account', 'Problem(s)', 'Open']] },
     { range: `${q(title)}!B14`, values: [[listFormula]] },

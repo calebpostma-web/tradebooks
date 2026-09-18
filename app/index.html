@@ -233,6 +233,24 @@ select.cat-sel{font-size:.75rem;padding:.2rem .4rem;border:1px solid var(--rule)
   .t2-line{flex-wrap:wrap;gap:.4rem}
   .t2-input{width:100%}
 }
+/* ── /scan mode: phone-only receipt flow (?mode=scan) ── */
+body.scan-mode header,body.scan-mode .tabs,body.scan-mode #tracker-receipt,body.scan-mode #panel-receipt .page-header,body.scan-mode #rcptTipBanner,body.scan-mode #rcptDownloadBtn,body.scan-mode #rcptAnalyzeWrap,body.scan-mode #rcptFname{display:none!important}
+body.scan-mode #panel-receipt .page{padding:1rem 1rem 3rem;max-width:520px;margin:0 auto}
+body.scan-mode #panel-receipt .page>div[style*="grid-template-columns"]{display:block!important}
+body.scan-mode #rcptZone{padding:2.5rem 1rem;border:2px solid var(--green);background:var(--white)}
+body.scan-mode #rcptZone .receipt-icon{font-size:3.2rem}
+body.scan-mode #rcptZone .upload-title{font-size:1.25rem!important;font-weight:500}
+body.scan-mode #rcptZone .upload-hint{display:none}
+body.scan-mode #rcptZone.loaded{padding:.75rem}
+body.scan-mode #rcptZone.loaded .receipt-icon,body.scan-mode #rcptZone.loaded .upload-title{display:none}
+body.scan-mode #rcptResultCard{margin-top:1rem}
+body.scan-mode .btn-row{flex-direction:column}
+body.scan-mode .btn-row .btn{width:100%;padding:1rem;font-size:1.05rem}
+body.scan-mode #rcptSheetsStatus{font-size:.95rem;margin-top:.75rem}
+.cat-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.5rem}
+.cat-grid .cat-btn{border:1.5px solid var(--rule);background:var(--white);border-radius:var(--radius);padding:.85rem .6rem;font-size:.92rem;line-height:1.25;text-align:center;cursor:pointer;font-family:var(--sans);color:var(--ink)}
+.cat-grid .cat-btn.sel{border-color:var(--green);background:var(--greenlt,#e8f3ec);font-weight:600;box-shadow:0 0 0 2px var(--green) inset}
+.cat-grid .cat-btn.more{grid-column:1/-1;border-style:dashed;color:var(--ink3)}
 @media(max-width:600px){
   .page-title{font-size:1.4rem}
   .tab{padding:.75rem .7rem;font-size:.75rem}
@@ -1114,7 +1132,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
       <div id="rcptExportWrap" class="hidden">
         <div class="btn-row">
           <button class="btn btn-green" id="rcptSheetsBtn" onclick="rcptSendToSheets()">📊 Send to Google Sheets</button>
-          <button class="btn btn-outline" onclick="downloadReceiptImage()" title="Download receipt image to your device">📥 Save Receipt Image</button>
+          <button class="btn btn-outline" id="rcptDownloadBtn" onclick="downloadReceiptImage()" title="Download receipt image to your device">📥 Save Receipt Image</button>
           <button class="btn btn-outline" onclick="rcptClear()">Clear / Scan another</button>
         </div>
         <div id="rcptSheetsStatus" style="font-size:.82rem;color:var(--ink3);margin-top:.5rem"></div>
@@ -3065,12 +3083,20 @@ function applyProvinceConfig(config) {
 // ════════════════════════════════════════════════════════════════════
 
 const AUTH_KEY = 'tradebooks_session';
+// /scan → /app/?mode=scan (Cloudflare _redirects). Flag is parked in sessionStorage so
+// it survives the Google sign-in redirect, which lands back on /app/ without the query.
+const SCAN_MODE = (() => {
+  try {
+    if (new URLSearchParams(location.search).get('mode') === 'scan') sessionStorage.setItem('tb_scan_mode','1');
+    return sessionStorage.getItem('tb_scan_mode') === '1';
+  } catch(e) { return false; }
+})();
 const PROFILE_KEY = 'tradebooks_profile';
 const API_BASE = '/api'; // Cloudflare Worker endpoints
 
 // Check for existing session on page load
 function initAuth() {
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   const savedProfile = localStorage.getItem(PROFILE_KEY);
 
   if (token && savedProfile) {
@@ -3091,7 +3117,7 @@ function initAuth() {
       applyConfig();
       showApp();
     }).catch(() => {
-      sessionStorage.removeItem(AUTH_KEY);
+      localStorage.removeItem(AUTH_KEY);
       showLogin();
     });
   } else {
@@ -3120,7 +3146,7 @@ async function doLogin(email, password) {
   const data = await r.json();
   if (!data.ok) throw new Error(data.error || 'Login failed');
 
-  sessionStorage.setItem(AUTH_KEY, data.token);
+  localStorage.setItem(AUTH_KEY, data.token);
 
   if (data.profile) {
     USER_CONFIG = applyProvinceConfig(data.profile);
@@ -3142,14 +3168,14 @@ async function doSignup(name, email, password) {
   const data = await r.json();
   if (!data.ok) throw new Error(data.error || 'Registration failed');
 
-  sessionStorage.setItem(AUTH_KEY, data.token);
+  localStorage.setItem(AUTH_KEY, data.token);
   USER_CONFIG.ownerName = name;
   USER_CONFIG.email = email;
   showOnboarding();
 }
 
 async function saveProfile(profile) {
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if (!token) throw new Error('Not logged in');
 
   const r = await fetch(`${API_BASE}/profile`, {
@@ -3168,7 +3194,7 @@ async function saveProfile(profile) {
 }
 
 function doLogout() {
-  sessionStorage.removeItem(AUTH_KEY);
+  localStorage.removeItem(AUTH_KEY);
   localStorage.removeItem(PROFILE_KEY);
   USER_CONFIG = {};
   showLogin();
@@ -3184,6 +3210,7 @@ function showSignup()     { setScreen('signup'); }
 function showOnboarding() { setScreen('onboarding'); }
 function showApp()        {
   setScreen('app');
+  if (SCAN_MODE) { rcptScanModeInit(); return; }
   // Fire-and-forget schema check — banner will appear if migrations are pending.
   // Defined later in the file; guard for definition order.
   if (typeof checkPendingSchemaMigrations === 'function') {
@@ -3558,7 +3585,7 @@ Provide specific, actionable advice with dollar amounts where possible. Referenc
 const CLAUDE_PROXY = '/claude-proxy';
 
 async function callClaude(prompt, maxTokens = 1000) {
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   const r = await fetch(CLAUDE_PROXY, {
     method: 'POST',
     headers: {
@@ -3577,7 +3604,7 @@ async function callClaude(prompt, maxTokens = 1000) {
 }
 
 async function callClaudeWithImage(prompt, b64, mediaType) {
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   const r = await fetch(CLAUDE_PROXY, {
     method: 'POST',
     headers: {
@@ -3599,7 +3626,7 @@ async function callClaudeWithImage(prompt, b64, mediaType) {
 }
 
 async function callClaudeWithPDF(prompt, b64, maxTokens = 4096) {
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   const r = await fetch(CLAUDE_PROXY, {
     method: 'POST',
     headers: {
@@ -3951,7 +3978,7 @@ let vendorHistoryMap = null;
 
 async function loadVendorHistoryIfNeeded(){
   if(vendorHistoryMap !== null) return;
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ vendorHistoryMap = {}; return; }
   try {
     const r = await fetch('/api/category/vendor-history', { headers: { 'Authorization': 'Bearer ' + token }});
@@ -4286,7 +4313,7 @@ async function impRerun(){document.getElementById('impProgWrap').classList.remov
 async function sendToSheets(){
   const btn = document.getElementById('sendSheetsBtn');
   const status = document.getElementById('sendSheetsStatus');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
 
   if(!token){
     toast('Please sign in first');
@@ -4444,7 +4471,7 @@ async function sendToSheets(){
 // `txnDate` is the bank-statement date — passed through so the server can
 // back-fill Deposit Date Received (col P) or Date Paid (col L) accordingly.
 async function confirmInvoiceMatch(txnRow, invNum, cardIdx, leg, txnDate){
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   const card = document.getElementById(`match-${cardIdx}`);
   if(!token){ toast('Please sign in first'); return; }
   if(card) card.style.opacity = '0.5';
@@ -4859,7 +4886,7 @@ function invPrint(){
 async function invSendToSheets(){
   const btn = document.getElementById('invSheetsBtn');
   const status = document.getElementById('invSheetsStatus');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   const hst = document.getElementById('invHST').checked;
   const client = document.getElementById('invClient').value.trim();
   const dateVal = document.getElementById('invDate').value;
@@ -4983,6 +5010,14 @@ function rcptDragLeave(){document.getElementById('rcptZone').classList.remove('d
 function rcptDrop(e){e.preventDefault();rcptDragLeave();const f=e.dataTransfer.files[0];if(f)rcptLoad(f)}
 function rcptChosen(e){const f=e.target.files[0];if(f)rcptLoad(f)}
 
+function rcptScanModeInit(){
+  document.body.classList.add('scan-mode');
+  showTab('receipt');
+  const inp=document.getElementById('rcptInput');
+  if(inp){ inp.setAttribute('accept','image/*'); inp.setAttribute('capture','environment'); }
+  const t=document.querySelector('#rcptZone .upload-title'); if(t) t.textContent='📷 Tap to take a photo of the receipt';
+}
+
 function rcptLoad(file){
   rcptMediaType=file.type||'image/jpeg';
   const isPDF=file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf');
@@ -4999,6 +5034,7 @@ function rcptLoad(file){
     }
     prev.classList.remove('hidden');
     document.getElementById('rcptAnalyzeWrap').classList.remove('hidden');
+    if(SCAN_MODE){ rcptAnalyze(); }
     document.getElementById('rcptZone').classList.add('loaded');
     // Show filename
     const fname=document.getElementById('rcptFname');
@@ -5061,6 +5097,21 @@ function rcptChangeCat(cat){
   rcptResult.category = cat;
 }
 
+// Scan mode: the user's own categories as big tap targets, AI guess pre-selected.
+// Default categories hide behind "More" unless the AI guess is one of them.
+let rcptGridExpanded=false;
+function rcptCatGrid(selected){
+  const mine=(USER_CONFIG.customExpenseCats||[]).filter(Boolean);
+  const rest=getExpCats().filter(c=>!mine.includes(c));
+  const showAll=rcptGridExpanded || !mine.length || (selected && rest.includes(selected));
+  const btn=c=>`<button type="button" class="cat-btn${c===selected?' sel':''}" onclick="rcptPickCat(this,'${esc(c).replace(/'/g,"\\'")}')">${esc(c)}</button>`;
+  return `<div class="cat-grid" id="rcptCatGrid">${mine.map(btn).join('')}${showAll?rest.map(btn).join(''):`<button type="button" class="cat-btn more" onclick="rcptGridExpanded=true;rcptShowResult()">More categories ▾</button>`}</div>`;
+}
+function rcptPickCat(el,cat){
+  rcptResult.category=cat;
+  document.querySelectorAll('#rcptCatGrid .cat-btn').forEach(b=>b.classList.toggle('sel',b===el));
+}
+
 function rcptShowResult(){
   document.getElementById('rcptBadge').style.display='inline-block';
   const r=rcptResult;
@@ -5075,9 +5126,9 @@ function rcptShowResult(){
     </div>
     <div style="margin-top:1rem">
       <label style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:.4rem">Category</label>
-      <select class="field" style="width:auto;padding:.5rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem" id="rcptCatSel" onchange="rcptChangeCat(this.value)">
+      ${SCAN_MODE ? rcptCatGrid(r.category) : `<select class="field" style="width:auto;padding:.5rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--sans);font-size:.88rem" id="rcptCatSel" onchange="rcptChangeCat(this.value)">
         ${expenseCategoryOptions(r.category)}
-      </select>
+      </select>`}
     </div>
     ${r.notes?`<div style="margin-top:.75rem;font-size:.82rem;color:var(--ink3);line-height:1.5">${esc(r.notes)}</div>`:''}`;
   document.getElementById('rcptExportWrap').classList.remove('hidden');
@@ -5087,7 +5138,7 @@ async function rcptSendToSheets(){
   const r = rcptResult;
   const btn = document.getElementById('rcptSheetsBtn');
   const status = document.getElementById('rcptSheetsStatus');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   const cat = document.getElementById('rcptCatSel')?.value || r.category || 'Other';
  
   if(!token){
@@ -5218,6 +5269,7 @@ function findMatchingTransaction(receipt) {
 }
 function rcptClear(){
   rcptB64='';rcptMediaType='';rcptResult={};
+  rcptGridExpanded=false;
   document.getElementById('rcptPreview').classList.add('hidden');
   document.getElementById('rcptPreview').src='';
   document.getElementById('rcptAnalyzeWrap').classList.add('hidden');
@@ -6119,7 +6171,7 @@ function remClear(){
 async function remLogPayment(){
   const btn = document.getElementById('rem_logBtn');
   const status = document.getElementById('rem_status');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
   if(!USER_CONFIG.sheetId){ toast('Connect your Google Sheet first'); return; }
 
@@ -6983,7 +7035,7 @@ async function yearendLoadChecklist(){
   const window = document.getElementById('yeFyWindow');
   wrap.innerHTML = `<div style="font-size:.85rem;color:var(--ink3);text-align:center;padding:1rem">Loading checklist…</div>`;
 
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ wrap.innerHTML = `<div style="color:var(--red);font-size:.85rem">Sign in required</div>`; return; }
 
   try {
@@ -7040,7 +7092,7 @@ async function yearendLoadCoverage(){
   const fye = USER_CONFIG?.fiscalYearEnd || 'December 31';
   if(!fy) return;
   const grid = document.getElementById('ye_stmtCoverage');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token) return;
 
   try {
@@ -7087,7 +7139,7 @@ function yearendStmtFilePicked(e){
 async function yearendUploadStatement(){
   const btn = document.getElementById('ye_stmtUploadBtn');
   const status = document.getElementById('ye_stmtStatus');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
 
   let bank = document.getElementById('ye_stmtBank').value;
@@ -7172,7 +7224,7 @@ function accrClear(){
 async function accrLogEntry(){
   const btn = document.getElementById('accr_logBtn');
   const status = document.getElementById('accr_status');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
   if(!USER_CONFIG.sheetId){ toast('Connect your Google Sheet first'); return; }
 
@@ -7252,7 +7304,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function yearendBuildPackage(){
   const btn = document.getElementById('ye_buildBtn');
   const status = document.getElementById('ye_buildStatus');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
 
   const fy = document.getElementById('yeFy')?.value;
@@ -7333,7 +7385,7 @@ function payrollSub(which){
 // ── Employees ──
 
 async function empReload(){
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ document.getElementById('empList').innerHTML = '<div style="color:var(--ink3);font-style:italic">Sign in to load employees.</div>'; return; }
   try {
     const r = await fetch('/api/payroll/employees', { headers: { 'Authorization': 'Bearer ' + token } });
@@ -7398,7 +7450,7 @@ function calcAge(dobStr){
  * Work Log and committed Payroll rows.
  */
 async function empAnnualSummary(employeeId){
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
   const defaultYear = new Date().getUTCFullYear() - 1;
   const yearStr = prompt('Annual summary — which year?', String(defaultYear));
@@ -7568,7 +7620,7 @@ function empClear(){
 }
 
 async function empSave(){
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
   const status = document.getElementById('empSaveStatus');
 
@@ -7623,7 +7675,7 @@ async function empDelete(id){
   const e = PAYROLL_EMPLOYEES.find(x => x.id === id);
   if(!e) return;
   if(!confirm(`Remove ${e.name} from active employees?\n\nTheir past pay runs and YTD numbers are preserved for T4 generation — this just hides them from new pay runs.`)) return;
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   try {
     const r = await fetch('/api/payroll/employees', {
       method: 'POST',
@@ -7746,7 +7798,7 @@ function wlClear(){
 }
 
 async function wlSave(){
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
   const status = document.getElementById('wlSaveStatus');
 
@@ -7852,7 +7904,7 @@ function prReset(){
 }
 
 async function prPreview(){
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
   const status = document.getElementById('prStatus');
   const breakdown = document.getElementById('prBreakdown');
@@ -7891,7 +7943,7 @@ async function prPreview(){
 
 async function prCommit(){
   if(!_prLastPreview){ toast('Preview first'); return; }
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   const status = document.getElementById('prStatus');
   const breakdown = document.getElementById('prBreakdown');
 
@@ -8064,7 +8116,7 @@ function prRenderBreakdown(d){
 let _rmGroups = [];
 
 async function rmLoad(){
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   const groupsEl = document.getElementById('rmGroups');
   const recentEl = document.getElementById('rmRecent');
   if(!token){ groupsEl.innerHTML = '<div style="color:var(--ink3);font-style:italic">Sign in to load remittances.</div>'; return; }
@@ -8152,7 +8204,7 @@ async function rmConfirm(idx){
   if(!remitDate) return;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(remitDate)){ toast('Invalid date — use YYYY-MM-DD'); return; }
 
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   try {
     const r = await fetch('/api/payroll/remit', {
       method: 'POST',
@@ -8189,7 +8241,7 @@ function t4SetDefaults(){
 }
 
 async function t4Generate(){
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
   const status = document.getElementById('t4Status');
   const output = document.getElementById('t4Output');
@@ -8608,7 +8660,7 @@ async function checkPendingSchemaMigrations(){
   // Or if we already verified no pending changes this session — saves a round-trip.
   if(sessionStorage.getItem(SCHEMA_OK_KEY)) return;
 
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token) return;
   if(!USER_CONFIG?.sheetId) return;  // Onboarding hasn't connected a sheet yet
 
@@ -8709,7 +8761,7 @@ function schemaBannerDismiss(){
 async function schemaBannerApply(){
   const btn = document.getElementById('schemaBannerApply');
   const detail = document.getElementById('schemaBannerDetail');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
 
   btn.disabled = true; btn.textContent = '⏳ Updating…';
@@ -8750,7 +8802,7 @@ async function schemaBannerApply(){
 async function migrateSheetSchema(){
   const btn = document.getElementById('migrateBtn');
   const status = document.getElementById('schemaMigrateStatus');
-  const token = sessionStorage.getItem(AUTH_KEY);
+  const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
   if(!USER_CONFIG.sheetId){ toast('Connect your Google Sheet first'); return; }
 
@@ -9032,7 +9084,7 @@ async function obComplete(){
     if (tokenStillValid && !USER_CONFIG.sheetId) {
       setStatus('Building your Google Sheet — this takes about 30 seconds…');
       try {
-        const token = sessionStorage.getItem(AUTH_KEY);
+        const token = localStorage.getItem(AUTH_KEY);
         const resp = await fetch('/api/google-setup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -9108,7 +9160,7 @@ async function handleLoginCallback(code) {
     if (!d.ok) throw new Error(d.error || 'Google sign-in failed');
 
     // Persist the TradeBooks JWT just like email/password login does
-    sessionStorage.setItem(AUTH_KEY, d.token);
+    localStorage.setItem(AUTH_KEY, d.token);
     if (d.user) sessionStorage.setItem(PROFILE_KEY, JSON.stringify(d.user));
 
     // Detect Google's "I won't issue you a refresh token even with prompt=consent"
@@ -9324,7 +9376,7 @@ async function handleGoogleCallback() {
   showLoading('Setting up your bookkeeping sheet...');
 
   try {
-    const token = sessionStorage.getItem(AUTH_KEY);
+    const token = localStorage.getItem(AUTH_KEY);
     // Step 1: Exchange code for tokens
     const tokenResp = await fetch('/api/google-setup', {
       method: 'POST',
@@ -9415,7 +9467,7 @@ async function handleManualCreateCallback(code) {
   showLoading('Creating your bookkeeping sheet... this takes about 20 seconds.');
 
   try {
-    const token = sessionStorage.getItem(AUTH_KEY);
+    const token = localStorage.getItem(AUTH_KEY);
     // Step 1: Exchange OAuth code for access token
     const tokenResp = await fetch('/api/google-setup', {
       method: 'POST',

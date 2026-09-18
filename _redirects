@@ -1,0 +1,2 @@
+/scan   /app/?mode=scan   302
+/scan/  /app/?mode=scan   302

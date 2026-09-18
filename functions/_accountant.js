@@ -139,7 +139,7 @@ function buildAccountTab({ title, sheetId, account, sign, txnTitle, revCats, exp
     let f, tot = `=SUM(${rng(col)})`;
     if (i === 0)      { f = guard(rng(hDate)); tot = ''; }
     else if (i === 1) { f = guard(rng(hParty)); tot = ''; }
-    else if (i === 2) { f = guard(`${sign}*${rng(hTotal)}`); }
+    else if (i === 2) { f = guard(`${sign}*(${rng(hAmt)}+${rng(hHst)}*SIGN(${rng(hAmt)}))`); }
     else if (i === 3) { f = guard(`IF(REGEXMATCH(TO_TEXT(${rng(hRef)}),"http"),"✓","")`); tot = `=COUNTIF(${rng(col)},"✓")`; }
     else if (h === 'HST on sales')        { f = guard(`IF(${rng(hAmt)}>0,${rng(hHst)},"")`); }
     else if (h === 'HST paid on expenses'){ f = guard(`IF(${rng(hAmt)}<0,${rng(hHst)},"")`); }
@@ -148,7 +148,7 @@ function buildAccountTab({ title, sheetId, account, sign, txnTitle, revCats, exp
     else if (expCats.includes(h))         { f = guard(`IF((${rng(hCat)}="${esc(h)}")*(${rng(hAmt)}<0),-${rng(hAmt)},"")`); }
     else {
       const t = transfers.find(x => x[0] === h);
-      f = guard(`IF((${rng(hCat)}="Internal Transfer")*REGEXMATCH(UPPER(${rng(hParty)}),"${esc(t ? t[1] : h)}"),ABS(${rng(hTotal)}),"")`);
+      f = guard(`IF((${rng(hCat)}="Internal Transfer")*REGEXMATCH(UPPER(${rng(hParty)}),"${esc(t ? t[1] : h)}"),ABS(${rng(hAmt)})+ABS(${rng(hHst)}),"")`);
     }
     row6.push(f); row4.push(tot);
   });

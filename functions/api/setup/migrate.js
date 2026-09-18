@@ -448,11 +448,21 @@ async function applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes,
   const sheetId = txnTab.sheetId;
   const currentColCount = txnTab.gridProperties?.columnCount || 0;
 
-  // Need at least 14 columns (A gutter + B-N data). If the column already
-  // exists AND has the header populated, skip — idempotent.
+  const TOTAL_FORMULA = '=ARRAYFORMULA(IF(E12:E="","",E12:E+H12:H*SIGN(E12:E)))';
+
+  // Idempotence: the column can exist (14 columns) while N12 holds no formula —
+  // seen on a live sheet, where every Total was blank and reconciliation read
+  // zeros. So check the formula itself, not the column count.
   if (currentColCount >= 14) {
-    // Could check the header cell content to be extra-safe but reading every
-    // sheet's header on every dryRun is wasteful. Trust column count.
+    const current = await readCellFormula(env, userId, `'${txnTab.title}'!N12`);
+    if (current === TOTAL_FORMULA) return;
+    if (dryRun) {
+      changes.push(`Restore the 'Total (incl HST)' formula in '${txnTab.title}' — it was missing, so totals and reconciliation were reading blanks.`);
+      return;
+    }
+    const fix = await writeRange(env, userId, `'${txnTab.title}'!N12`, [[TOTAL_FORMULA]]);
+    if (!fix.ok) errors.push(`Failed to restore Total formula: ${fix.error}`);
+    else changes.push(`Restored the 'Total (incl HST)' formula in '${txnTab.title}'.`);
     return;
   }
 
@@ -508,7 +518,7 @@ async function applyTransactionsTotalColumn(env, userId, sheetsByTitle, changes,
   // ── Step 4: write the ARRAYFORMULA in N12 — populates all rows automatically ──
   const formulaRes = await writeRange(
     env, userId, `'${txnTab.title}'!N12`,
-    [['=ARRAYFORMULA(IF(E12:E="","",E12:E+H12:H*SIGN(E12:E)))']]
+    [[TOTAL_FORMULA]]
   );
   if (!formulaRes.ok) errors.push(`Failed to write Total formula: ${formulaRes.error}`);
 

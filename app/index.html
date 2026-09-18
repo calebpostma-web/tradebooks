@@ -5020,9 +5020,42 @@ function rcptScanModeInit(){
   const t=document.querySelector('#rcptZone .upload-title'); if(t) t.textContent='📷 Tap to take a photo of the receipt';
 }
 
-function rcptLoad(file){
+const RCPT_MAX_PX = 2000;
+function rcptShrinkImage(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const scale=Math.min(1, RCPT_MAX_PX/Math.max(img.naturalWidth,img.naturalHeight));
+        const w=Math.round(img.naturalWidth*scale), h=Math.round(img.naturalHeight*scale);
+        const c=document.createElement('canvas'); c.width=w; c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg',0.85));
+      }catch(e){ URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('decode failed')); };
+    img.src=url;
+  });
+}
+
+async function rcptLoad(file){
   rcptMediaType=file.type||'image/jpeg';
   const isPDF=file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf');
+  if(!isPDF){
+    try{
+      const dataUrl=await rcptShrinkImage(file);
+      rcptB64=dataUrl.split(',')[1]; rcptMediaType='image/jpeg';
+      const prev=document.getElementById('rcptPreview');
+      prev.src=dataUrl; prev.classList.remove('hidden');
+      document.getElementById('rcptZone').classList.add('loaded');
+      document.getElementById('rcptFname').textContent=file.name+' · '+Math.round(rcptB64.length*0.75/1024)+' KB';
+      document.getElementById('rcptAnalyzeWrap').classList.remove('hidden');
+      if(SCAN_MODE){ rcptAnalyze(); }
+      return;
+    }catch(e){ console.warn('Image shrink failed, sending original:',e); }
+  }
   const reader=new FileReader();
   reader.onload=e=>{
     rcptB64=e.target.result.split(',')[1];
@@ -5059,7 +5092,7 @@ Return ONLY a JSON object with these exact fields:
   "total": "total amount as number string e.g. 45.18",
   "hst": "HST/GST amount if visible, else calculate as total/(1+taxRate)*taxRate rounded to 2 decimal places. Use the applicable provincial tax rate.",
   "net": "total minus hst, rounded to 2 decimal places",
-  "category": "one of: Meals & Entertainment, Professional Fees, Wages & Salaries, Small Tools, Supplies, Uniforms, Dues & Memberships, Vehicle Repairs, Fuel, Insurance, Interest & Bank Charges, Repairs & Maintenance, Property Tax, Telephone, Utilities, Conferences, Equipment Purchase, Other",
+  "category": "exactly one of: ${getExpCats().join(', ')}",
   "confidence": "High, Medium, or Low",
   "notes": "brief description of what was purchased"
 }
@@ -5077,7 +5110,9 @@ No other text, just the JSON.`;
     rcptResult=JSON.parse(clean);
     rcptShowResult();
   } catch(e){
-    document.getElementById('rcptResultContent').innerHTML=`<div style="color:var(--red);font-size:.85rem;padding:1rem">Could not read receipt — try a clearer photo, better lighting, or a text-based PDF.</div>`;
+    console.error('Receipt scan failed:',e);
+    const why = /JSON/i.test(e.message) ? 'the AI reply was not in the expected format' : (e.message||'unknown error');
+    document.getElementById('rcptResultContent').innerHTML=`<div style="color:var(--red);font-size:.85rem;padding:1rem">Could not read receipt — ${esc(String(why))}.<br><span style="color:var(--ink3)">Try again, or a clearer photo.</span></div>`;
   }
   btn.textContent='Scan receipt with AI →';
   document.getElementById('rcptAnalyzeBtn').disabled=false;

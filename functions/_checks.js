@@ -61,7 +61,7 @@ function buildChecksTab({ title, sheetId, txnTitle, txnSheetId, cfgTitle, hstTit
   const label = k => RULES.find(r => r[0] === k)[1];
 
   // Per-row expressions (all arrays over the Transactions rows)
-  const hasRow   = `((LEN(${B})+LEN(${C})+LEIFERROR(${E}*1,0))>0)`;
+  const hasRow   = `((LEN(${B})+LEN(${C})+LEN(${E}))>0)`;
   const notXfer  = `(${F}<>"Internal Transfer")`;
   const status   = `REGEXMATCH(UPPER(${C}&" "&${D}),"STATUS")`;
   const expHST   = `ROUND(ABS(IFERROR(${E}*1,0))*${rate},2)`;

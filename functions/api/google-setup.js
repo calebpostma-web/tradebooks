@@ -1104,7 +1104,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   // to today's FY. User can override C3 manually any time to view past FYs.
   data.push({ range: "'📋 HST Returns'!B3", values: [['Fiscal Year Start (auto-detected — type a date here to view a different FY):']] });
   data.push({ range: "'📋 HST Returns'!C3", values: [[
-    "=IFERROR(IF(COUNT('📒 Transactions'!B12:B)=0,DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1),DATE(YEAR(MAX('📒 Transactions'!B12:B))-IF(MONTH(MAX('📒 Transactions'!B12:B))<4,1,0),4,1)),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))"
+    "=IFERROR(IF(MAXIFS('📒 Transactions'!B12:B,'📒 Transactions'!B12:B,\"<=\"&(TODAY()+31))=0,DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1),DATE(YEAR(MAXIFS('📒 Transactions'!B12:B,'📒 Transactions'!B12:B,\"<=\"&(TODAY()+31)))-IF(MONTH(MAXIFS('📒 Transactions'!B12:B,'📒 Transactions'!B12:B,\"<=\"&(TODAY()+31)))<4,1,0),4,1)),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))"
   ]]});
 
   data.push({ range: "'📋 HST Returns'!B4:G4", values: [[

@@ -1368,11 +1368,14 @@ async function readCellFormula(env, userId, range) {
 }
 
 // Fiscal-year-start formula for HST Returns C3. FY runs Apr 1 – Mar 31.
-// Uses the latest transaction date; on an EMPTY ledger falls back to today
-// (MAX of an empty range is 0 → year 1899, which rendered as "Apr 1, 3799").
+// Uses the latest transaction date that is not in the future (a typo like
+// 2029 must not drag the whole fiscal year forward); on an EMPTY ledger it
+// falls back to today (MAX of an empty range is 0 → year 1899 → "Apr 1, 3799").
 function hstFyStartFormula(txnTitle) {
   const dates = `'${txnTitle}'!B12:B`;
-  return `=IFERROR(IF(COUNT(${dates})=0,DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1),DATE(YEAR(MAX(${dates}))-IF(MONTH(MAX(${dates}))<4,1,0),4,1)),DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1))`;
+  const latest = `MAXIFS(${dates},${dates},"<="&(TODAY()+31))`;
+  const todayFy = `DATE(YEAR(TODAY())-IF(MONTH(TODAY())<4,1,0),4,1)`;
+  return `=IFERROR(IF(${latest}=0,${todayFy},DATE(YEAR(${latest})-IF(MONTH(${latest})<4,1,0),4,1)),${todayFy})`;
 }
 
 // ── Helpers ──

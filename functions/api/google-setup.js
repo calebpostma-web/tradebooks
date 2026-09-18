@@ -163,7 +163,7 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
         // Positive Amount = money in; negative = money out. Category "Internal
         // Transfer" is excluded from P&L and HST math client-side.
         { properties: { sheetId: 300, title: '📒 Transactions', index: 2,
-            gridProperties: { rowCount: 5000, columnCount: 14, frozenRowCount: 11 },
+            gridProperties: { rowCount: 5000, columnCount: 17, frozenRowCount: 11 },
             tabColor: COLORS.teal } },
         { properties: { sheetId: 500, title: '🧾 Invoices', index: 3,
             gridProperties: { rowCount: 5000, columnCount: 17, frozenRowCount: 11 },
@@ -394,7 +394,8 @@ function bandingRequest(sheetId, startRow, endRow, startCol, endCol, tintColor) 
 
 const FMT_CURRENCY = { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00;("$"#,##0.00)' } };
 // Transactions!P — see the Type column comment in the data section.
-const TYPE_FORMULA = `=ARRAYFORMULA(IF(F12:F="","",IF((F12:F="Internal Transfer")+ISNUMBER(MATCH(F12:F,'⚙️ Config'!$B$101:$B$110,0))>0,"Transfer","P&L")))`;
+const TYPE_FORMULA = `=ARRAYFORMULA(IF(F12:F="","",IF((F12:F="Internal Transfer")+ISNUMBER(MATCH(F12:F,'⚙️ Config'!$B$101:$B$110,0))>0,"Transfer",IF(ISNUMBER(MATCH(F12:F,{'⚙️ Config'!$B$52:$B$59;'⚙️ Config'!$E$52:$E$70},0)),"Revenue",IF(ISNUMBER(MATCH(F12:F,{'⚙️ Config'!$B$17:$B$48;'⚙️ Config'!$E$17:$E$48},0)),"Expense",IF(E12:E>0,"Revenue","Expense"))))))`;
+const HST_SIGNED_FORMULA = `=ARRAYFORMULA(IF(E12:E="","",IF(P12:P="Transfer",0,IF(P12:P="Revenue",1,-1)*SIGN(E12:E)*ABS(H12:H))))`;
 const FMT_DATE     = { numberFormat: { type: 'DATE', pattern: 'mmm d, yyyy' } };
 const FMT_PERCENT  = { numberFormat: { type: 'PERCENT', pattern: '0.0%' } };
 const FMT_EDITABLE = { backgroundColor: COLORS.yellow, textFormat: { foregroundColor: { red: 0.15, green: 0.35, blue: 0.65 } } };
@@ -477,13 +478,13 @@ async function applyStyling(accessToken, spreadsheetId) {
   // Columns (0-indexed): A=gutter, B=Date, C=Party, D=Description, E=Amount,
   // F=Category, G=HST Flag, H=HST Amount, I=Account, J=Source, K=Ref,
   // L=Related Invoice, M=Match Status, N=Total (incl HST) — formula, O=Receipt (Drive link), P=Type — formula
-  requests.push(...bannerRequest(TXN, 0, 0, 16, COLORS.teal));
+  requests.push(...bannerRequest(TXN, 0, 0, 17, COLORS.teal));
   requests.push(...sectionRequest(TXN, 1, 1, 6, COLORS.teal));
   requests.push(cellFormat(TXN, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
   requests.push(cellFormat(TXN, 2, 2, 10, 6, { backgroundColor: COLORS.tealTint, numberFormat: FMT_CURRENCY.numberFormat }));
-  requests.push(headerRowRequest(TXN, 10, 1, 16, COLORS.teal));
+  requests.push(headerRowRequest(TXN, 10, 1, 17, COLORS.teal));
   requests.push({ updateDimensionProperties: { range: { sheetId: TXN, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(TXN, 11, 5000, 1, 16, COLORS.tealTint));
+  requests.push(bandingRequest(TXN, 11, 5000, 1, 17, COLORS.tealTint));
   // Date col B
   requests.push(cellFormat(TXN, 11, 1, 5000, 2, FMT_DATE));
   // Amount col E — signed currency (negatives shown in parens via FMT_CURRENCY)
@@ -527,7 +528,9 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(TXN, 12, 13, 100));// M Match Status
   requests.push(colWidth(TXN, 13, 14, 110));// N Total (incl HST) — formula
   requests.push(colWidth(TXN, 14, 15, 90)); // O Receipt (Drive link)
-  requests.push(colWidth(TXN, 15, 16, 70)); // P Type — formula
+  requests.push(colWidth(TXN, 15, 16, 80)); // P Type — formula
+  requests.push(colWidth(TXN, 16, 17, 90)); // Q HST (signed) — formula
+  requests.push(cellFormat(TXN, 11, 16, 5000, 17, FMT_CURRENCY));
 
   // ─── INVOICES ───
   // 14 cols: A gutter, B Invoice #, C Date, D Client, E Description, F Amount excl HST,
@@ -979,13 +982,13 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   ]});
   data.push({ range: "'📊 Dashboard'!D5:D10", values: [
     // Revenue: sum of positive amounts, excluding Internal Transfer
-    ["=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")"],
+    ["=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!P12:P,\"Revenue\")"],
     // HST collected: HST amount on positive (income) rows
-    ["=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")"],
+    ["=SUMIFS('📒 Transactions'!Q12:Q,'📒 Transactions'!P12:P,\"Revenue\")"],
     // Expenses: absolute value of negative amounts, excluding Internal Transfer
-    ["=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!P12:P,\"<>Transfer\")"],
+    ["=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!P12:P,\"Expense\")"],
     // ITCs: HST amount on negative (expense) rows
-    ["=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!P12:P,\"<>Transfer\")"],
+    ["=SUMIFS('📒 Transactions'!Q12:Q,'📒 Transactions'!P12:P,\"Expense\")"],
     ['=D5-D7'],
     ['=D6-D8']
   ]});
@@ -1065,16 +1068,23 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📒 Transactions'!B5:F5", values: [['Total Expenses (excl HST)', "='📊 Dashboard'!D7", '', '', '']]});
   data.push({ range: "'📒 Transactions'!B6:F6", values: [['Total HST Paid (ITCs)',     "='📊 Dashboard'!D8", '', '', '']]});
   data.push({ range: "'📒 Transactions'!B7:F7", values: [['NET INCOME before tax',     "='📊 Dashboard'!D9", '', '', '']]});
-  data.push({ range: "'📒 Transactions'!B11:P11", values: [[
+  data.push({ range: "'📒 Transactions'!B11:Q11", values: [[
     'Date', 'Party (Client/Vendor)', 'Description', 'Amount (signed, excl HST)', 'Category',
     'HST?', `HST (${taxPct}%)`, 'Account', 'Source', 'Source Ref', 'Related Invoice #', 'Match Status',
-    'Total (incl HST)', 'Receipt', 'Type',
+    'Total (incl HST)', 'Receipt', 'Type', 'HST (signed)',
   ]]});
   // Type (P): "Transfer" for Internal Transfer and for any of the user's own
   // pocket names (⚙️ Config TRANSFER COLUMNS, B101:B110); "P&L" otherwise.
   // Every P&L / HST formula excludes on this column, so a user can keep
   // "Andrea Loan" or "CRA remittance" as the visible category.
   data.push({ range: "'📒 Transactions'!P12", values: [[TYPE_FORMULA]] });
+  // HST (signed) (Q): +HST collected on a sale, −HST on a sale refund; +ITC on a
+  // purchase, −ITC on a purchase refund; 0 on transfers. HST Returns, Dashboard
+  // and Accountant tabs sum THIS, so refunds land on the right line.
+  data.push({ range: "'📒 Transactions'!Q12", values: [[HST_SIGNED_FORMULA]] });
+  // Custom category lists into Config so the Type column can classify them
+  data.push({ range: "'⚙️ Config'!E17:E48", values: Array.from({ length: 32 }, (_, i) => [(profile.customExpenseCats || [])[i] || '']) });
+  data.push({ range: "'⚙️ Config'!E52:E70", values: Array.from({ length: 19 }, (_, i) => [(profile.customIncomeCats || [])[i] || '']) });
 
   // Pre-fill the Total formula in N12:N so every existing + future row shows
   // the gross signed amount (matches what hit the bank). Empty rows render empty.
@@ -1132,8 +1142,9 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   const TXN_F = "'📒 Transactions'!F12:F";
   const TXN_H = "'📒 Transactions'!H12:H";
   const TXN_B = "'📒 Transactions'!B12:B";
-  const TXN_P = "'📒 Transactions'!P12:P";
-  const excl = `${TXN_P},"<>Transfer"`;
+  const TXN_P = "'📒 Transactions'!P12:P";   // Type: Transfer / Revenue / Expense
+  const TXN_Q = "'📒 Transactions'!Q12:Q";   // HST signed by type (refunds negative)
+  const REV = `${TXN_P},"Revenue"`, EXP = `${TXN_P},"Expense"`;
   // q-indexed start/end offsets in months from FY start: Q1 = [0, 2], Q2 = [3, 5], ...
   const qStart = q => (q - 1) * 3;              // months to add to $C$3 for window start
   const qEndOffset = q => (q - 1) * 3 + 2;      // months to feed into EOMONTH for window end
@@ -1142,14 +1153,14 @@ async function populateValues(accessToken, spreadsheetId, profile) {
 
   // Line 101 — Q1..Q4: (sum of Amount + sum of HST) within window
   const line101 = q =>
-    `=SUMIFS(${TXN_E},${TXN_E},">0",${excl},${dateGt(q)},${dateLt(q)})`
-    + `+SUMIFS(${TXN_H},${TXN_E},">0",${excl},${dateGt(q)},${dateLt(q)})`;
+    `=SUMIFS(${TXN_E},${REV},${dateGt(q)},${dateLt(q)})`
+    + `+SUMIFS(${TXN_Q},${REV},${dateGt(q)},${dateLt(q)})`;
   // Line 103 — HST collected, positive rows, within window
   const line103 = q =>
-    `=SUMIFS(${TXN_H},${TXN_E},">0",${excl},${dateGt(q)},${dateLt(q)})`;
-  // Line 106 — ITCs, negative rows, within window
+    `=SUMIFS(${TXN_Q},${REV},${dateGt(q)},${dateLt(q)})`;
+  // Line 106 — ITCs (signed: an expense refund reduces them), within window
   const line106 = q =>
-    `=SUMIFS(${TXN_H},${TXN_E},"<0",${excl},${dateGt(q)},${dateLt(q)})`;
+    `=SUMIFS(${TXN_Q},${EXP},${dateGt(q)},${dateLt(q)})`;
 
   data.push({ range: "'📋 HST Returns'!B5:G8", values: [
     ['Total Sales (incl HST) — Line 101',
@@ -1192,7 +1203,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📅 Year-End'!B5:F11", values: [
     ...incomeRows,
     ['TOTAL REVENUE',
-      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")",
+      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!P12:P,\"Revenue\")",
       '', '', '← all positive Transactions (T2 Schedule 1 Line 8000)'],
   ]});
 
@@ -1223,8 +1234,8 @@ async function populateValues(accessToken, spreadsheetId, profile) {
 
   data.push({ range: "'📅 Year-End'!A46", values: [['  HST RECONCILIATION']] });
   data.push({ range: "'📅 Year-End'!B47:F50", values: [
-    ['HST Collected (annual)', "=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")",   '', '', 'from Transactions'],
-    ['ITCs Claimed (annual)',  "=SUMIFS('📒 Transactions'!H12:H,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!P12:P,\"<>Transfer\")", '', '', 'from Transactions'],
+    ['HST Collected (annual)', "=SUMIFS('📒 Transactions'!Q12:Q,'📒 Transactions'!P12:P,\"Revenue\")",   '', '', 'from Transactions'],
+    ['ITCs Claimed (annual)',  "=SUMIFS('📒 Transactions'!Q12:Q,'📒 Transactions'!P12:P,\"Expense\")", '', '', 'from Transactions'],
     ['Net HST Owing',          '=C47-C48',                      '', '', ''],
     ['', '', '', '', ''],
   ]});
@@ -1480,7 +1491,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📊 T2 Worksheet'!B5:E5", values: [['REVENUE', '', '', '']]});
   data.push({ range: "'📊 T2 Worksheet'!B6:E10", values: [
     ['Sales/services revenue (cash basis)',
-      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\">0\",'📒 Transactions'!P12:P,\"<>Transfer\")",
+      "=SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!P12:P,\"Revenue\")",
       '8089', '← Total positive Transactions excluding Internal Transfer'],
     ['Add: Accrued Revenue (FYE adjustments)',
       "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accrued Revenue\",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Receivable (AR)\",'📓 Adjusting Entries'!F12:F200),0)",
@@ -1493,7 +1504,7 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   data.push({ range: "'📊 T2 Worksheet'!B12:E12", values: [['EXPENSES', '', '', '']]});
   data.push({ range: "'📊 T2 Worksheet'!B13:E25", values: [
     ['Total operating expenses (cash basis)',
-      "=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!E12:E,\"<0\",'📒 Transactions'!P12:P,\"<>Transfer\")",
+      "=-SUMIFS('📒 Transactions'!E12:E,'📒 Transactions'!P12:P,\"Expense\")",
       'multiple', '← Total negative Transactions excluding Internal Transfer'],
     ['Add: Accrued Expenses + AP (FYE adjustments)',
       "=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,\"Accrued Expense\",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,\"Accounts Payable (AP)\",'📓 Adjusting Entries'!F12:F200),0)",

@@ -90,9 +90,14 @@ async function runMigrations(request, env, dryRunDefault) {
   // Runs here (before 10) so the row-limit pass also covers the new column.
   await applyReceiptLinkColumn(env, userId, sheetsByTitle, changes, errors, dryRun);
 
-  // ── Migration 14: Transactions column P — Type (Transfer / P&L) + pocket categories ──
-  // Rewrites every P&L / HST formula from F<>"Internal Transfer" to P<>"Transfer".
-  await applyPocketTypeColumn(env, userId, sheetsByTitle, changes, errors, dryRun, details);
+  // ── Migration 14: Transactions columns P (Type) + Q (HST signed), pocket categories ──
+  // Rewrites every P&L / HST formula to key on Type (Transfer / Revenue / Expense).
+  let profile14 = { customExpenseCats: [], customIncomeCats: [], pocketCats: [] };
+  try {
+    const prow14 = await env.DB.prepare('SELECT custom_expense_cats, custom_income_cats, pocket_cats FROM profiles WHERE user_id = ?').bind(userId).first();
+    profile14 = { customExpenseCats: safeJSON(prow14?.custom_expense_cats, []), customIncomeCats: safeJSON(prow14?.custom_income_cats, []), pocketCats: safeJSON(prow14?.pocket_cats, []) };
+  } catch (e) { /* defaults */ }
+  await applyPocketTypeColumn(env, userId, sheetsByTitle, changes, errors, dryRun, details, profile14);
 
   // ── Migration 4: HST Returns C3 — smart FY start (data-driven default) ──
   await applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, errors, dryRun);
@@ -511,24 +516,52 @@ async function applyReceiptLinkColumn(env, userId, sheetsByTitle, changes, error
 // Transfer, or a name listed in ⚙️ Config TRANSFER COLUMNS B101:B110) or
 // "P&L"; every P&L / HST formula in the workbook then excludes on P instead
 // of on the literal category text. Two parts, each idempotent:
-//   1. column P (header + ARRAYFORMULA), grid to 16 columns
-//   2. rewrite formulas in every tab: F12:F,"<>Internal Transfer" → P12:P,"<>Transfer"
+//   1. column P Type = Transfer / Revenue / Expense (from Config lists), column Q
+//      = HST signed by type (a refund's HST is negative), grid to 17 columns;
+//      the user's custom category lists are mirrored into Config E17:E48 / E52:E70
+//   2. rewrite formulas in every tab, in order:
+//        F12:F,"<>Internal Transfer"              → P12:P,"<>Transfer"        (legacy)
+//        SUMIFS(H, E,">0", P,"<>Transfer" …       → SUMIFS(Q, P,"Revenue" …    (HST collected)
+//        SUMIFS(H, E,"<0", P,"<>Transfer" …       → SUMIFS(Q, P,"Expense" …    (ITCs)
+//        SUMIFS(E, E,">0", P,"<>Transfer" …       → SUMIFS(E, P,"Revenue" …    (revenue)
+//        SUMIFS(E, E,"<0", P,"<>Transfer" …       → SUMIFS(E, P,"Expense" …    (expenses)
 //      and the category QUERY's  F <> 'Internal Transfer'  → P <> 'Transfer'
+//      Revenue / expense are decided by CATEGORY, so a refund reduces the line
+//      it belongs to instead of being counted as the opposite kind of money.
 const XFER_SUMIFS_RE = /!F(\d+):F,"<>Internal Transfer"/g;
 const XFER_QUERY_RE  = /!B(\d+):N,(\s*)"SELECT F, COUNT\(F\), SUM\(N\) WHERE F IS NOT NULL AND F <> '' AND F <> 'Internal Transfer'/g;
+const SIGN_H_POS_RE  = /SUMIFS\(('[^']+'!)H(\d+):H,\1E\d+:E,">0",\1P(\d+):P,"<>Transfer"/g;
+const SIGN_H_NEG_RE  = /SUMIFS\(('[^']+'!)H(\d+):H,\1E\d+:E,"<0",\1P(\d+):P,"<>Transfer"/g;
+const SIGN_E_POS_RE  = /SUMIFS\(('[^']+'!)E(\d+):E,\1E\d+:E,">0",\1P(\d+):P,"<>Transfer"/g;
+const SIGN_E_NEG_RE  = /SUMIFS\(('[^']+'!)E(\d+):E,\1E\d+:E,"<0",\1P(\d+):P,"<>Transfer"/g;
+const NEEDS_RETYPE = cell => [XFER_SUMIFS_RE, XFER_QUERY_RE, SIGN_H_POS_RE, SIGN_H_NEG_RE, SIGN_E_POS_RE, SIGN_E_NEG_RE].some(re => { re.lastIndex = 0; return re.test(cell); });
+const RETYPE = cell => cell
+  .replace(XFER_SUMIFS_RE, '!P$1:P,"<>Transfer"')
+  .replace(XFER_QUERY_RE, "!B$1:P,$2\"SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND P <> 'Transfer'")
+  .replace(SIGN_H_POS_RE, 'SUMIFS($1Q$2:Q,$1P$3:P,"Revenue"')
+  .replace(SIGN_H_NEG_RE, 'SUMIFS($1Q$2:Q,$1P$3:P,"Expense"')
+  .replace(SIGN_E_POS_RE, 'SUMIFS($1E$2:E,$1P$3:P,"Revenue"')
+  .replace(SIGN_E_NEG_RE, 'SUMIFS($1E$2:E,$1P$3:P,"Expense"');
 
-async function applyPocketTypeColumn(env, userId, sheetsByTitle, changes, errors, dryRun, details) {
+async function applyPocketTypeColumn(env, userId, sheetsByTitle, changes, errors, dryRun, details, profile = {}) {
   const txnTab = Object.values(sheetsByTitle).find(s => /transactions/i.test(s.title));
   const cfgTab = Object.values(sheetsByTitle).find(s => /config/i.test(s.title));
   if (!txnTab || !cfgTab) return;
   const t = txnTab.title, sheetId = txnTab.sheetId;
-  const TYPE_FORMULA = `=ARRAYFORMULA(IF(F12:F="","",IF((F12:F="Internal Transfer")+ISNUMBER(MATCH(F12:F,'${cfgTab.title.replace(/'/g, "''")}'!$B$101:$B$110,0))>0,"Transfer","P&L")))`;
+  const C = `'${cfgTab.title.replace(/'/g, "''")}'`;
+  const TYPE_FORMULA = `=ARRAYFORMULA(IF(F12:F="","",IF((F12:F="Internal Transfer")+ISNUMBER(MATCH(F12:F,${C}!$B$101:$B$110,0))>0,"Transfer",IF(ISNUMBER(MATCH(F12:F,{${C}!$B$52:$B$59;${C}!$E$52:$E$70},0)),"Revenue",IF(ISNUMBER(MATCH(F12:F,{${C}!$B$17:$B$48;${C}!$E$17:$E$48},0)),"Expense",IF(E12:E>0,"Revenue","Expense"))))))`;
+  const HST_SIGNED_FORMULA = `=ARRAYFORMULA(IF(E12:E="","",IF(P12:P="Transfer",0,IF(P12:P="Revenue",1,-1)*SIGN(E12:E)*ABS(H12:H))))`;
 
-  // ── Part 1: column P ──
-  const hdr = await readRange(env, userId, `'${t}'!P11`);
-  const haveHeader = hdr.ok && String(hdr.values?.[0]?.[0] || '').trim() === 'Type';
+  // ── Part 1: columns P + Q, and the custom category lists in Config ──
+  const hdr = await readRange(env, userId, `'${t}'!P11:Q11`);
+  const haveHeader = hdr.ok && String(hdr.values?.[0]?.[0] || '').trim() === 'Type' && String(hdr.values?.[0]?.[1] || '').trim() === 'HST (signed)';
   const cur = haveHeader ? await readCellFormula(env, userId, `'${t}'!P12`) : null;
   const needCol = !haveHeader || cur !== TYPE_FORMULA;
+  const expList = (profile.customExpenseCats || []).slice(0, 32), incList = (profile.customIncomeCats || []).slice(0, 19);
+  const cfgLists = await readRange(env, userId, `${C}!E17:E70`);
+  const curExp = (cfgLists.ok ? cfgLists.values.slice(0, 32) : []).map(r => String((r || [])[0] || '').trim()).filter(Boolean);
+  const curInc = (cfgLists.ok ? cfgLists.values.slice(35, 54) : []).map(r => String((r || [])[0] || '').trim()).filter(Boolean);
+  const needLists = JSON.stringify(curExp) !== JSON.stringify(expList) || JSON.stringify(curInc) !== JSON.stringify(incList);
 
   // ── Part 2: formulas keyed on the literal category ──
   const sid = await getUserSheetId(env, userId);
@@ -544,11 +577,8 @@ async function applyPocketTypeColumn(env, userId, sheetsByTitle, changes, errors
     const title = tabs[i].title;
     (vr.values || []).forEach((row, r) => row.forEach((cell, c) => {
       if (typeof cell !== 'string' || cell[0] !== '=') return;
-      XFER_SUMIFS_RE.lastIndex = 0; XFER_QUERY_RE.lastIndex = 0;
-      if (!XFER_SUMIFS_RE.test(cell) && !XFER_QUERY_RE.test(cell)) return;
-      const updated = cell
-        .replace(XFER_SUMIFS_RE, '!P$1:P,"<>Transfer"')
-        .replace(XFER_QUERY_RE, "!B$1:P,$2\"SELECT F, COUNT(F), SUM(N) WHERE F IS NOT NULL AND F <> '' AND P <> 'Transfer'");
+      if (!NEEDS_RETYPE(cell)) return;
+      const updated = RETYPE(cell);
       const a1 = `${colLetter(c)}${r + 1}`;
       writes.push({ range: `${quoteTab(title)}!${a1}`, values: [[updated]] });
       perTab[title] = (perTab[title] || 0) + 1;
@@ -556,44 +586,61 @@ async function applyPocketTypeColumn(env, userId, sheetsByTitle, changes, errors
     }));
   });
 
-  if (!needCol && !writes.length) return;
+  if (!needCol && !writes.length && !needLists) return;
   if (dryRun) {
-    if (needCol) changes.push(`Add a 'Type' column (P) to '${t}' so your own pocket names (Settings → Pockets) count as transfers.`);
+    if (needCol) changes.push(`Add 'Type' and 'HST (signed)' columns (P, Q) to '${t}' — your pocket names count as transfers, and refunds reduce the line they belong to.`);
+    if (needLists) changes.push(`Mirror your custom categories into '${cfgTab.title}' so the Type column can classify them.`);
     if (writes.length) changes.push(`Point ${writes.length} P&L / HST formula(s) at the Type column — ${Object.entries(perTab).map(([k, n]) => `${k} (${n})`).join(', ')}.`);
     return;
   }
 
+  if (needLists) {
+    const w = await batchUpdate(env, userId, [
+      { range: `${C}!E17:E48`, values: Array.from({ length: 32 }, (_, i) => [expList[i] || '']) },
+      { range: `${C}!E52:E70`, values: Array.from({ length: 19 }, (_, i) => [incList[i] || '']) },
+    ]);
+    if (!w.ok) errors.push(`Could not write custom categories to '${cfgTab.title}': ${w.error}`);
+    else changes.push(`Mirrored your custom categories into '${cfgTab.title}' (${expList.length} expense, ${incList.length} income).`);
+  }
+
   if (needCol) {
     const reqs = [];
-    if ((txnTab.gridProperties?.columnCount || 0) < 16) {
+    if ((txnTab.gridProperties?.columnCount || 0) < 17) {
       reqs.push({ updateSheetProperties: {
-        properties: { sheetId, gridProperties: { columnCount: 16, rowCount: txnTab.gridProperties?.rowCount || 5000, frozenRowCount: 11 } },
+        properties: { sheetId, gridProperties: { columnCount: 17, rowCount: txnTab.gridProperties?.rowCount || 5000, frozenRowCount: 11 } },
         fields: 'gridProperties.columnCount,gridProperties.rowCount,gridProperties.frozenRowCount',
       }});
-      txnTab.gridProperties = { ...(txnTab.gridProperties || {}), columnCount: 16 };
+      txnTab.gridProperties = { ...(txnTab.gridProperties || {}), columnCount: 17 };
     }
     reqs.push({ repeatCell: {
-      range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 15, endColumnIndex: 16 },
+      range: { sheetId, startRowIndex: 11, endRowIndex: txnTab.gridProperties?.rowCount || 5000, startColumnIndex: 16, endColumnIndex: 17 },
+      cell: { userEnteredFormat: { numberFormat: FMT_CURRENCY.numberFormat } },
+      fields: 'userEnteredFormat.numberFormat',
+    }});
+    reqs.push({ repeatCell: {
+      range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 15, endColumnIndex: 17 },
       cell: { userEnteredFormat: { backgroundColor: COLORS.teal, textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 }, horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP' } },
       fields: 'userEnteredFormat',
     }});
-    reqs.push(colWidthReq(sheetId, 15, 16, 70));
-    // no dropdown on P (it is a formula); clear any validation that spilled from M via row growth
-    reqs.push({ setDataValidation: { range: { sheetId, startRowIndex: 11, endRowIndex: txnTab.gridProperties?.rowCount || 5000, startColumnIndex: 13, endColumnIndex: 16 } } });
+    reqs.push(colWidthReq(sheetId, 15, 16, 80));
+    reqs.push(colWidthReq(sheetId, 16, 17, 90));
+    // no dropdown on P/Q (formulas); clear any validation that spilled from M via row growth
+    reqs.push({ setDataValidation: { range: { sheetId, startRowIndex: 11, endRowIndex: txnTab.gridProperties?.rowCount || 5000, startColumnIndex: 13, endColumnIndex: 17 } } });
     const res = await spreadsheetsBatchUpdate(env, userId, reqs);
     if (!res.ok) { errors.push(`Could not add Type column to '${t}': ${res.error}`); return; }
     try {
       const bd = await fetch(`${SHEETS_API}/${sid}?fields=${encodeURIComponent('sheets(properties(sheetId),bandedRanges)')}`, { headers: auth }).then(r => r.json());
       const bands = (bd.sheets || []).find(x => x.properties?.sheetId === sheetId)?.bandedRanges || [];
-      const bandReqs = bands.filter(b => (b.range?.endColumnIndex || 0) < 16 && (b.range?.endColumnIndex || 0) >= 14).map(b => ({ updateBanding: { bandedRange: { bandedRangeId: b.bandedRangeId, range: { ...b.range, endColumnIndex: 16 } }, fields: 'range' } }));
+      const bandReqs = bands.filter(b => (b.range?.endColumnIndex || 0) < 17 && (b.range?.endColumnIndex || 0) >= 14).map(b => ({ updateBanding: { bandedRange: { bandedRangeId: b.bandedRangeId, range: { ...b.range, endColumnIndex: 17 } }, fields: 'range' } }));
       if (bandReqs.length) await spreadsheetsBatchUpdate(env, userId, bandReqs);
     } catch (e) { /* cosmetic */ }
     const w = await batchUpdate(env, userId, [
-      { range: `'${t}'!P11`, values: [['Type']] },
+      { range: `'${t}'!P11:Q11`, values: [['Type', 'HST (signed)']] },
       { range: `'${t}'!P12`, values: [[TYPE_FORMULA]] },
+      { range: `'${t}'!Q12`, values: [[HST_SIGNED_FORMULA]] },
     ]);
-    if (!w.ok) { errors.push(`Failed to write Type column: ${w.error}`); return; }
-    changes.push(`Added 'Type' column (P) to '${t}' — pocket names now count as transfers.`);
+    if (!w.ok) { errors.push(`Failed to write Type / HST (signed) columns: ${w.error}`); return; }
+    changes.push(`Added 'Type' and 'HST (signed)' columns (P, Q) to '${t}'.`);
   }
 
   if (writes.length) {
@@ -1304,7 +1351,7 @@ async function applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dry
     [`'${TITLE}'!B5:E5`, [['REVENUE', '', '', '']]],
     [`'${TITLE}'!B6:E10`, [
       ['Sales/services revenue (cash basis)',
-        `=SUMIFS('${txnTitle}'!E12:E,'${txnTitle}'!E12:E,">0",'${txnTitle}'!P12:P,"<>Transfer")`,
+        `=SUMIFS('${txnTitle}'!E12:E,'${txnTitle}'!P12:P,"Revenue")`,
         '8089', '← Total positive Transactions excluding Internal Transfer'],
       ['Add: Accrued Revenue (FYE adjustments)',
         `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Accrued Revenue",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,"Accounts Receivable (AR)",'📓 Adjusting Entries'!F12:F200),0)`,
@@ -1315,7 +1362,7 @@ async function applyT2Worksheet(env, userId, sheetsByTitle, changes, errors, dry
     [`'${TITLE}'!B12:E12`, [['EXPENSES', '', '', '']]],
     [`'${TITLE}'!B13:E25`, [
       ['Total operating expenses (cash basis)',
-        `=-SUMIFS('${txnTitle}'!E12:E,'${txnTitle}'!E12:E,"<0",'${txnTitle}'!P12:P,"<>Transfer")`,
+        `=-SUMIFS('${txnTitle}'!E12:E,'${txnTitle}'!P12:P,"Expense")`,
         'multiple', '← Total negative Transactions excluding Internal Transfer'],
       ['Add: Accrued Expenses + AP (FYE adjustments)',
         `=IFERROR(SUMIF('📓 Adjusting Entries'!C12:C200,"Accrued Expense",'📓 Adjusting Entries'!F12:F200)+SUMIF('📓 Adjusting Entries'!C12:C200,"Accounts Payable (AP)",'📓 Adjusting Entries'!F12:F200),0)`,

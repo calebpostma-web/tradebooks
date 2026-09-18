@@ -75,13 +75,22 @@ function cleanList(list, fallback) {
 }
 
 // ── Read (or seed) the transfer-column config from ⚙️ Config ──
-async function loadTransferColumns(env, userId, cfgTitle, dryRun, changes, errors) {
+async function loadTransferColumns(env, userId, cfgTab, dryRun, changes, errors) {
+  const cfgTitle = cfgTab.title;
   const hdr = await readRange(env, userId, `${q(cfgTitle)}!${TRANSFER_CFG.headerCell}`);
   const present = hdr.ok && hdr.values && hdr.values[0] && String(hdr.values[0][0] || '').includes('TRANSFER COLUMNS');
   if (!present) {
     if (dryRun) {
       changes.push(`Add a TRANSFER COLUMNS section to '${cfgTitle}' (names for card payments, CRA and shareholder rows in the Accountant View — edit them to your wording).`);
       return DEFAULT_TRANSFERS;
+    }
+    // ⚙️ Config is created with 100 rows; the block lives at 100–110.
+    const needRows = TRANSFER_CFG.firstRow + 10;
+    if ((cfgTab.gridProperties?.rowCount || 0) < needRows) {
+      const grow = await spreadsheetsBatchUpdate(env, userId, [{ updateSheetProperties: {
+        properties: { sheetId: cfgTab.sheetId, gridProperties: { rowCount: needRows } }, fields: 'gridProperties.rowCount' } }]);
+      if (!grow.ok) { errors.push(`Could not grow '${cfgTitle}' for TRANSFER COLUMNS: ${grow.error}`); return DEFAULT_TRANSFERS; }
+      cfgTab.gridProperties = { ...(cfgTab.gridProperties || {}), rowCount: needRows };
     }
     const res = await batchUpdate(env, userId, [
       { range: `${q(cfgTitle)}!${TRANSFER_CFG.headerCell}`, values: [['  TRANSFER COLUMNS — Accountant View column names for money moved between accounts (not expenses). Column C = words to match in the payee.']] },
@@ -214,7 +223,7 @@ export async function ensureAccountantTabs(env, userId, { sheetsByTitle, profile
   const card = String(profile?.creditCard || 'AMEX').trim();
   const revCats = cleanList(profile?.customIncomeCats, DEFAULT_INC_CATS);
   const expCats = cleanList(profile?.customExpenseCats, DEFAULT_EXP_CATS).filter(c => !/internal transfer|owner draw|skip/i.test(c));
-  const transfers = await loadTransferColumns(env, userId, cfgTab.title, dryRun, changes, errors);
+  const transfers = await loadTransferColumns(env, userId, cfgTab, dryRun, changes, errors);
   const headers = buildHeaders(revCats, expCats, transfers);
 
   const usedIds = new Set(Object.values(sheetsByTitle).map(s => s.sheetId));

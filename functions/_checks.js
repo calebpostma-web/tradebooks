@@ -23,7 +23,7 @@
 import { readRange, batchUpdate, spreadsheetsBatchUpdate } from './_sheets.js';
 
 export const CHECKS_TITLE = '⚠️ Checks';
-const LAYOUT_VERSION = 1;
+const LAYOUT_VERSION = 2;
 const GST_RATE = 0.05;      // federal part, for Status-card GST-only sales
 
 const COLORS = {
@@ -72,36 +72,42 @@ function buildChecksTab({ title, sheetId, txnTitle, txnSheetId, cfgTitle, hstTit
   const ruleHSTn = `IF(${hasRow}*(${G}="No")*(IFERROR(${H}*1,0)<>0),"${esc(label('HST-NO'))}; ","")`;
   const ruleCat  = `IF(${hasRow}*(LEN(${F})=0),"${esc(label('CATEGORY'))}; ","")`;
   const ruleDate = `IF(${hasRow}*NOT(ISNUMBER(${B})),"${esc(label('DATE-BAD'))}; ",IF(${hasRow}*ISNUMBER(${B})*((${B}<${fyStart})+(${B}>EDATE(${fyStart},12)-1)),"${esc(label('DATE-FY'))}; ",""))`;
-  const ruleDup  = `IF(${hasRow}*ISNUMBER(${B})*(IFERROR(${E}*1,0)<>0)*(COUNTIFS(${C},${C},${E},${E},${B},">="&(${B}-2),${B},"<="&(${B}+2))>1),"${esc(label('DUP'))}; ","")`;
+  const dnum     = `IF(ISNUMBER(${B}),${B},0)`;   // text dates would error inside COUNTIFS criteria
+  const ruleDup  = `IF(${hasRow}*ISNUMBER(${B})*(IFERROR(${E}*1,0)<>0)*(COUNTIFS(${C},${C},${E},${E},${B},">="&(${dnum}-2),${B},"<="&(${dnum}+2))>1),"${esc(label('DUP'))}; ","")`;
   const ruleAcct = `IF(${hasRow}*(${I}<>"${esc(bank)}")*(${I}<>"${esc(card)}"),"${esc(label('ACCOUNT'))}: "&${I}&"; ","")`;
   const ruleAmt  = `IF(${hasRow}*ISNUMBER(${B})*(IFERROR(${E}*1,0)=0),"${esc(label('AMOUNT'))}; ","")`;
-  const flags = `${ruleHST}&${ruleHSTn}&${ruleCat}&${ruleDate}&${ruleDup}&${ruleAcct}&${ruleAmt}`;
+  const safe = r => `IFERROR(${r},"(check error); ")`;
+  const flags = [ruleHST, ruleHSTn, ruleCat, ruleDate, ruleDup, ruleAcct, ruleAmt].map(safe).join('&');
 
+  const listCore = `SORT(FILTER({ROW(${B}),${B},${C},${E},${F},${H},${I},flags},flags<>""),2,TRUE)`;
   const listFormula =
     `=LET(flags,ARRAYFORMULA(${flags}),` +
-    `IFERROR(SORT(FILTER({ROW(${B}),${B},${C},${E},${F},${H},${I},flags},flags<>""),2,TRUE),"No problems found"))`;
+    `IFERROR(${listCore},IF(COUNTIF(flags,"?*")=0,"No problems found","CHECK ENGINE ERROR — see status cell")))`;
+  const statusCell =
+    `=LET(flags,ARRAYFORMULA(${flags}),x,IFERROR(${listCore},NA()),` +
+    `IF(ISNA(x),IF(COUNTIF(flags,"?*")=0,"OK — nothing to list","ERROR "&IFERROR(ERROR.TYPE(${listCore}),"?")),"OK"))`;
 
   const statusFormula =
     `=IFERROR(SORT(FILTER({ROW(${B}),${B},${C},${E},${H},ROUND(ABS(IFERROR(${E}*1,0))*(${rate}-${GST_RATE}),2)},` +
     `ARRAYFORMULA(${hasRow}*${status}*(${G}="Yes")*${hstIsGst})),2,TRUE),"None")`;
 
   const gid = txnSheetId;
+  const S = 2000;
   const values = [
     { range: `${q(title)}!A1`, values: [[`CHECKS  ·  what needs a look, straight from the ledger  ·  click "open" to jump to the row  ·  v${LAYOUT_VERSION}`]] },
     { range: `${q(title)}!B3:C3`, values: [['Problems found', `=IF(ISNUMBER(B14),COUNTA(B14:B),0)`]] },
     { range: `${q(title)}!B4:C11`, values: RULES.map(([, lbl]) => [lbl, `=COUNTIF($I$14:$I,"*${esc(lbl)}*")`]) },
+    { range: `${q(title)}!E6:F6`, values: [['Check engine', statusCell]] },
     { range: `${q(title)}!E3:F4`, values: [
       ['Bank periods off (🏦 Account Balances)', `=IFERROR(COUNTIF(${q(balTitle)}!K12:K,"⚠*"),0)`],
-      ['Status-card GST-only sales (info)', `=IF(ISNUMBER(B${'{S}'}),COUNTA(B${'{S}'}:B),0)`],
+      ['Status-card GST-only sales (info)', `=IF(ISNUMBER(B${S + 2}),COUNTA(B${S + 2}:B),0)`],
     ]},
     { range: `${q(title)}!B13:J13`, values: [['Row', 'Date', 'Name', 'Amount', 'Category', 'HST', 'Account', 'Problem(s)', 'Open']] },
     { range: `${q(title)}!B14`, values: [[listFormula]] },
     { range: `${q(title)}!J14`, values: [[`=ARRAYFORMULA(IF(ISNUMBER(B14:B),HYPERLINK("#gid=${gid}&range=B"&B14:B,"open"),""))`]] },
   ];
 
-  // Status-card block goes far down so the main list has room to grow: row 2000
-  const S = 2000;
-  values[3].values[1][1] = `=IF(ISNUMBER(B${S + 2}),COUNTA(B${S + 2}:B),0)`;
+  // Status-card block goes far down so the main list has room to grow (row S)
   values.push({ range: `${q(title)}!B${S}`, values: [['STATUS-CARD SALES  ·  GST-only rows (accepted by the HST check)  ·  last column = 8% Ontario part credited at point of sale']] });
   values.push({ range: `${q(title)}!B${S + 1}:G${S + 1}`, values: [['Row', 'Date', 'Name', 'Amount', 'HST charged', '8% credited']] });
   values.push({ range: `${q(title)}!B${S + 2}`, values: [[statusFormula]] });

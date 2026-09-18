@@ -3319,11 +3319,12 @@ function applyConfig() {
   });
 
   // Bank tab labels in importer
-  const bankTabs = document.querySelectorAll('.bank-tab');
-  if (bankTabs.length >= 2) {
-    bankTabs[0].textContent = C.primaryBank || 'Bank';
-    bankTabs[1].textContent = C.creditCard || 'Credit Card';
-  }
+  // Label by id, never by position — the first pill in the DOM is the CREDIT
+  // CARD one, so positional labelling put "BMO" on the AMEX button.
+  const ccTab = document.getElementById('bankTabCC');
+  const bankTab = document.getElementById('bankTabBank');
+  if (ccTab) ccTab.textContent = `💳 ${C.creditCard || 'Credit Card'}`;
+  if (bankTab) bankTab.textContent = `🏦 ${C.primaryBank || 'Bank Account'}`;
 
   // Employee roster (incorporated only)
   if (isCorp && C.employees && C.employees.length > 0) {

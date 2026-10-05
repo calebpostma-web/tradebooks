@@ -175,11 +175,11 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
             gridProperties: { rowCount: 200, columnCount: 8 },
             tabColor: COLORS.brown } },
         // 💼 Payroll — pay run history, YTD tracking, remittance due dates.
-        // 16 cols B-Q: Pay Date, Employee, Age, Business, Work Description,
+        // 20 cols B-U: Pay Date, Employee, Age, Business, Work Description,
         // Hours, Rate, Gross, CPP (ee), EI (ee), Fed Tax, ON Tax, Net Pay,
-        // YTD Gross, Remittance Due, Status
+        // YTD Gross, Remittance Due, Status, Period, Employer CPP, Employer EI, Stub
         { properties: { sheetId: 800, title: '💼 Payroll', index: 6,
-            gridProperties: { rowCount: 5000, columnCount: 17, frozenRowCount: 11 },
+            gridProperties: { rowCount: 5000, columnCount: 21, frozenRowCount: 11 },
             tabColor: COLORS.brown } },
         // 📝 Work Log — contemporaneous entries for CRA audit defence.
         // 8 cols B-I: Date, Employee, Business, Task Description, Hours,
@@ -649,21 +649,23 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(YE, 5, 6, 260));
 
   // ─── PAYROLL ───
-  // 17 cols (A gutter + B-Q data): Pay Date, Employee, Age, Business,
+  // 21 cols (A gutter + B-U data): Pay Date, Employee, Age, Business,
   // Work Description, Hours, Rate, Gross, CPP (ee), EI (ee), Fed Tax,
-  // ON Tax, Net Pay, YTD Gross, Remittance Due, Status
-  requests.push(...bannerRequest(PAY, 0, 0, 17, COLORS.brown));
+  // ON Tax, Net Pay, YTD Gross, Remittance Due, Status,
+  // Period, Employer CPP, Employer EI, Stub (Migration 15 layout)
+  requests.push(...bannerRequest(PAY, 0, 0, 21, COLORS.brown));
   requests.push(...sectionRequest(PAY, 1, 1, 7, COLORS.brown));
   requests.push(cellFormat(PAY, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
   requests.push(cellFormat(PAY, 2, 2, 10, 7, { backgroundColor: COLORS.brownTint, numberFormat: FMT_CURRENCY.numberFormat }));
-  requests.push(headerRowRequest(PAY, 10, 1, 17, COLORS.brown));
+  requests.push(headerRowRequest(PAY, 10, 1, 21, COLORS.brown));
   requests.push({ updateDimensionProperties: { range: { sheetId: PAY, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 40 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(PAY, 11, 5000, 1, 17, COLORS.brownTint));
+  requests.push(bandingRequest(PAY, 11, 5000, 1, 21, COLORS.brownTint));
   // Dates: col B (Pay Date), col P (Remittance Due)
   requests.push(cellFormat(PAY, 11, 1, 5000, 2, FMT_DATE));
   requests.push(cellFormat(PAY, 11, 15, 5000, 16, FMT_DATE));
-  // Currency: col H (Gross) through col N (YTD Gross) — 7 currency columns
-  requests.push(cellFormat(PAY, 11, 7, 5000, 14, FMT_CURRENCY));
+  // Currency: col H (Rate) through col O (YTD Gross), plus S–T employer share
+  requests.push(cellFormat(PAY, 11, 7, 5000, 15, FMT_CURRENCY));
+  requests.push(cellFormat(PAY, 11, 18, 5000, 20, FMT_CURRENCY));
   // Status dropdown (col Q, index 16)
   requests.push({
     setDataValidation: {
@@ -691,6 +693,10 @@ async function applyStyling(accessToken, spreadsheetId) {
   requests.push(colWidth(PAY, 14, 15, 95));  // O YTD Gross
   requests.push(colWidth(PAY, 15, 16, 110)); // P Remittance Due
   requests.push(colWidth(PAY, 16, 17, 90));  // Q Status
+  requests.push(colWidth(PAY, 17, 18, 170)); // R Period
+  requests.push(colWidth(PAY, 18, 19, 100)); // S Employer CPP
+  requests.push(colWidth(PAY, 19, 20, 95));  // T Employer EI
+  requests.push(colWidth(PAY, 20, 21, 70));  // U Stub
 
   // ─── WORK LOG ───
   // 9 cols (A gutter + B-I data): Date, Employee, Business, Task Description,
@@ -1279,12 +1285,15 @@ async function populateValues(accessToken, spreadsheetId, profile) {
     'Fed + ON Tax Withheld (YTD)', '=IFERROR(SUM(L12:L)+SUM(M12:M),0)', '', '', '', '', ''
   ]]});
   data.push({ range: "'💼 Payroll'!B6:H6", values: [[
-    'Outstanding Remittance Owed', '=IFERROR(SUMIFS(J12:J,Q12:Q,"Paid")+SUMIFS(L12:L,Q12:Q,"Paid")+SUMIFS(M12:M,Q12:Q,"Paid"),0)', '', '', '', '', ''
+    'Outstanding Remittance Owed (incl. employer share)',
+    '=IFERROR(SUMIFS(J12:J,Q12:Q,"Paid")+SUMIFS(K12:K,Q12:Q,"Paid")+SUMIFS(L12:L,Q12:Q,"Paid")+SUMIFS(M12:M,Q12:Q,"Paid")+SUMIFS(S12:S,Q12:Q,"Paid")+SUMIFS(T12:T,Q12:Q,"Paid"),0)',
+    '', '', '', '', ''
   ]]});
-  data.push({ range: "'💼 Payroll'!B11:Q11", values: [[
+  data.push({ range: "'💼 Payroll'!B11:U11", values: [[
     'Pay Date', 'Employee', 'Age', 'Business', 'Work Description',
     'Hours', 'Rate', 'Gross', 'CPP (ee)', 'EI (ee)', 'Fed Tax', 'ON Tax',
     'Net Pay', 'YTD Gross', 'Remittance Due', 'Status',
+    'Period', 'Employer CPP', 'Employer EI', 'Stub',
   ]]});
 
   // ─── WORK LOG TAB ───

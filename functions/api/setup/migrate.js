@@ -34,6 +34,8 @@ const COLORS = {
   blueTint: { red: 0.929, green: 0.949, blue: 0.973 },
   white:    { red: 1, green: 1, blue: 1 },
   textMuted:{ red: 0.45, green: 0.45, blue: 0.45 },
+  brown:    { red: 0.420, green: 0.255, blue: 0.098 },
+  brownTint:{ red: 0.988, green: 0.976, blue: 0.957 },
 };
 const FMT_DATE = { numberFormat: { type: 'DATE', pattern: 'yyyy-mm-dd' } };
 const FMT_CURRENCY = { numberFormat: { type: 'CURRENCY', pattern: '$#,##0.00' } };
@@ -98,6 +100,10 @@ async function runMigrations(request, env, dryRunDefault) {
     profile14 = { customExpenseCats: safeJSON(prow14?.custom_expense_cats, []), customIncomeCats: safeJSON(prow14?.custom_income_cats, []), pocketCats: safeJSON(prow14?.pocket_cats, []) };
   } catch (e) { /* defaults */ }
   await applyPocketTypeColumn(env, userId, sheetsByTitle, changes, errors, dryRun, details, profile14);
+
+  // ── Migration 15: 💼 Payroll columns R–U (Period, Employer CPP, Employer EI, Stub) ──
+  // Employer share now lives on the row so remittances show what CRA actually receives.
+  await applyPayrollEmployerColumns(env, userId, sheetsByTitle, changes, errors, dryRun);
 
   // ── Migration 4: HST Returns C3 — smart FY start (data-driven default) ──
   await applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, errors, dryRun);
@@ -505,6 +511,88 @@ async function applyReceiptLinkColumn(env, userId, sheetsByTitle, changes, error
   const w = await writeRange(env, userId, `'${t}'!O11`, [['Receipt']]);
   if (!w.ok) { errors.push(`Failed to write Receipt header: ${w.error}`); return; }
   changes.push(`Added 'Receipt' column (O) to '${t}'.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 15: 💼 Payroll — employer share + period + stub columns (R–U)
+// ════════════════════════════════════════════════════════════════════
+// Before this the Payroll row carried only the EMPLOYEE deductions, so the
+// Remittance tab under-stated what CRA is owed by the whole employer share
+// (CPP match + 1.4× EI). New columns:
+//   R Period        "2026-04-01 → 2026-09-30" (the stub needs it)
+//   S Employer CPP  = employee CPP incl. CPP2
+//   T Employer EI   = 1.4 × employee EI
+//   U Stub          link to the pay stub saved in Drive
+// Older rows keep blank S/T; readers fall back to the CRA identities.
+// Summary cell C6 ("Outstanding Remittance Owed") now includes S and T.
+// Idempotent on the R11 header.
+async function applyPayrollEmployerColumns(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  const payTab = Object.values(sheetsByTitle).find(s => /payroll/i.test(s.title) && !/remittance/i.test(s.title));
+  if (!payTab) return;
+  const sheetId = payTab.sheetId;
+  const t = payTab.title;
+
+  const hdr = await readRange(env, userId, `'${t}'!R11`);
+  if (hdr.ok && String(hdr.values?.[0]?.[0] || '').trim() === 'Period') return;
+
+  if (dryRun) {
+    changes.push(`Add Period / Employer CPP / Employer EI / Stub columns (R–U) to '${t}' and fix the Outstanding Remittance total to include the employer share.`);
+    return;
+  }
+
+  const rowCount = payTab.gridProperties?.rowCount || 5000;
+  const reqs = [];
+  if ((payTab.gridProperties?.columnCount || 0) < 21) {
+    reqs.push({ updateSheetProperties: {
+      properties: { sheetId, gridProperties: { columnCount: 21, rowCount, frozenRowCount: 11 } },
+      fields: 'gridProperties.columnCount,gridProperties.rowCount,gridProperties.frozenRowCount',
+    }});
+  }
+  // Header cells R11:U11 styled like the rest of row 11
+  reqs.push({ repeatCell: {
+    range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 17, endColumnIndex: 21 },
+    cell: { userEnteredFormat: {
+      backgroundColor: COLORS.brown,
+      horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE',
+      textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 },
+      wrapStrategy: 'WRAP',
+    }},
+    fields: 'userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat,wrapStrategy)',
+  }});
+  // S, T currency
+  reqs.push({ repeatCell: {
+    range: { sheetId, startRowIndex: 11, endRowIndex: rowCount, startColumnIndex: 18, endColumnIndex: 20 },
+    cell: { userEnteredFormat: FMT_CURRENCY }, fields: 'userEnteredFormat.numberFormat',
+  }});
+  reqs.push(colWidthReq(sheetId, 17, 18, 170)); // R Period
+  reqs.push(colWidthReq(sheetId, 18, 19, 100)); // S Employer CPP
+  reqs.push(colWidthReq(sheetId, 19, 20, 95));  // T Employer EI
+  reqs.push(colWidthReq(sheetId, 20, 21, 70));  // U Stub
+  const res = await spreadsheetsBatchUpdate(env, userId, reqs);
+  if (!res.ok) { errors.push(`Could not add employer-share columns to '${t}': ${res.error}`); return; }
+
+  // Banding: extend to cover U
+  try {
+    const sid = await getUserSheetId(env, userId);
+    const tok = await getGoogleAccessToken(env, userId);
+    if (tok.ok) {
+      const bd = await fetch(`${SHEETS_API}/${sid}?fields=${encodeURIComponent('sheets(properties(sheetId),bandedRanges)')}`, { headers: { Authorization: `Bearer ${tok.accessToken}` } }).then(r => r.json());
+      const bands = (bd.sheets || []).find(x => x.properties?.sheetId === sheetId)?.bandedRanges || [];
+      const bandReqs = bands.filter(b => (b.range?.endColumnIndex || 0) === 17).map(b => ({ updateBanding: { bandedRange: { bandedRangeId: b.bandedRangeId, range: { ...b.range, endColumnIndex: 21 } }, fields: 'range' } }));
+      if (bandReqs.length) await spreadsheetsBatchUpdate(env, userId, bandReqs);
+    }
+  } catch (e) { /* cosmetic */ }
+
+  const w = await batchUpdate(env, userId, [
+    { range: `'${t}'!R11:U11`, values: [['Period', 'Employer CPP', 'Employer EI', 'Stub']] },
+    // Outstanding remittance = employee deductions + employer share on rows still 'Paid'
+    { range: `'${t}'!C6`, values: [[
+      '=IFERROR(SUMIFS(J12:J,Q12:Q,"Paid")+SUMIFS(K12:K,Q12:Q,"Paid")+SUMIFS(L12:L,Q12:Q,"Paid")+SUMIFS(M12:M,Q12:Q,"Paid")+SUMIFS(S12:S,Q12:Q,"Paid")+SUMIFS(T12:T,Q12:Q,"Paid"),0)',
+    ]]},
+    { range: `'${t}'!B6`, values: [['Outstanding Remittance Owed (incl. employer share)']] },
+  ]);
+  if (!w.ok) { errors.push(`Failed to write employer-share headers: ${w.error}`); return; }
+  changes.push(`Added Period / Employer CPP / Employer EI / Stub columns (R–U) to '${t}'; Outstanding Remittance now includes the employer share.`);
 }
 
 // ════════════════════════════════════════════════════════════════════

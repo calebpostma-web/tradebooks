@@ -34,6 +34,7 @@ export const RATES_2026 = {
   // completeness; the caller gates on employee.familyEiExempt === true.
   eiRateEe: 0.0163,
   eiRateEr: 0.0228,
+  eiEmployerMultiplier: 1.4,   // employer premium = 1.4 × employee premium
   eiMie: 68900,
 
   // Federal basic personal amount (linear phase-down above ~$177K — for
@@ -218,7 +219,14 @@ export function calculateOntarioTax(grossPay, ytdGross, ytdOnTaxPaid, isUnder18)
  *   },
  * }
  *
- * output = { age, gross, cpp, cpp2, ei, fedTax, onTax, netPay, flags, breakdown }
+ * output = { age, gross, cpp, cpp2, ei, fedTax, onTax, netPay,
+ *            employerCpp, employerEi, employerShare, totalRemittance, employerCost,
+ *            flags, breakdown }
+ *
+ * EMPLOYER SHARE: the corporation matches every dollar of CPP/CPP2 it
+ * withholds and pays 1.4× the employee's EI. Both go to CRA in the SAME
+ * remittance as the employee deductions. totalRemittance is the cheque
+ * CRA expects; employerCost is what the corp spends on top of gross.
  */
 export function calculatePayRun({ employee, payDate, grossPay, ytd }) {
   const gross = Math.max(0, Number(grossPay) || 0);
@@ -241,6 +249,14 @@ export function calculatePayRun({ employee, payDate, grossPay, ytd }) {
   const totalDeductions = round2(cppBase + cpp2 + ei + fedTax + onTax);
   const netPay = round2(gross - totalDeductions);
 
+  // Employer side — CRA T4001: employer CPP = employee CPP (incl. CPP2),
+  // employer EI = 1.4 × employee EI (standard rate; reduced-rate employers N/A).
+  const employerCpp = round2(cppBase + cpp2);
+  const employerEi = round2(ei * RATES_2026.eiEmployerMultiplier);
+  const employerShare = round2(employerCpp + employerEi);
+  const totalRemittance = round2(totalDeductions + employerShare);
+  const employerCost = round2(gross + employerShare);
+
   return {
     age,
     gross: round2(gross),
@@ -251,6 +267,11 @@ export function calculatePayRun({ employee, payDate, grossPay, ytd }) {
     onTax,
     totalDeductions,
     netPay,
+    employerCpp,
+    employerEi,
+    employerShare,
+    totalRemittance,
+    employerCost,
     flags: { isUnder18, cppExempt, familyEiExempt },
     breakdown: {
       ytdGrossAfterRun: round2(ytdGross + gross),

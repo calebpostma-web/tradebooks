@@ -14,10 +14,12 @@
 //       remittanceDue: '2026-05-15',
 //       label: 'Due May 15, 2026',
 //       runs: [
-//         { sheetRow, payDate, employee, cpp, fedTax, onTax, total },
+//         { sheetRow, payDate, employee, cpp, ei, fedTax, onTax,
+//           employerCpp, employerEi, employeePart, employerPart, total },
 //         ...
 //       ],
-//       totalCpp, totalFedTax, totalOnTax, totalAmount,
+//       totalCpp, totalEi, totalFedTax, totalOnTax, totalEmployerCpp, totalEmployerEi,
+//       totalEmployee, totalEmployer, totalAmount   (totalAmount = what CRA receives)
 //     },
 //   ],
 //   recentRemittances: [
@@ -58,9 +60,12 @@ async function loadPendingGroups(env, userId) {
     if (r.status.toLowerCase() !== 'paid') continue;           // already remitted or cancelled
 
     const cppNum = r.cpp;
+    const eiNum = r.ei;
     const fedNum = r.fedTax;
     const onNum = r.onTax;
-    const total = round2(cppNum + fedNum + onNum);
+    const employeePart = round2(cppNum + eiNum + fedNum + onNum);
+    const employerPart = round2(r.employerCpp + r.employerEi);
+    const total = round2(employeePart + employerPart);   // what CRA receives
     if (total <= 0) continue;
 
     const dueKey = r.remitDue;
@@ -69,7 +74,9 @@ async function loadPendingGroups(env, userId) {
         remittanceDue: dueKey,
         label: formatDueLabel(dueKey),
         runs: [],
-        totalCpp: 0, totalFedTax: 0, totalOnTax: 0, totalAmount: 0,
+        totalCpp: 0, totalEi: 0, totalFedTax: 0, totalOnTax: 0,
+        totalEmployerCpp: 0, totalEmployerEi: 0,
+        totalEmployee: 0, totalEmployer: 0, totalAmount: 0,
       });
     }
     const g = byDue.get(dueKey);
@@ -77,11 +84,18 @@ async function loadPendingGroups(env, userId) {
       sheetRow: r.sheetRow,
       payDate: r.payDate,
       employee: r.employee,
-      cpp: cppNum, fedTax: fedNum, onTax: onNum, total,
+      cpp: cppNum, ei: eiNum, fedTax: fedNum, onTax: onNum,
+      employerCpp: r.employerCpp, employerEi: r.employerEi,
+      employeePart, employerPart, total,
     });
     g.totalCpp += cppNum;
+    g.totalEi += eiNum;
     g.totalFedTax += fedNum;
     g.totalOnTax += onNum;
+    g.totalEmployerCpp += r.employerCpp;
+    g.totalEmployerEi += r.employerEi;
+    g.totalEmployee += employeePart;
+    g.totalEmployer += employerPart;
     g.totalAmount += total;
   }
 
@@ -89,8 +103,13 @@ async function loadPendingGroups(env, userId) {
   const groups = [...byDue.values()].map(g => ({
     ...g,
     totalCpp: round2(g.totalCpp),
+    totalEi: round2(g.totalEi),
     totalFedTax: round2(g.totalFedTax),
     totalOnTax: round2(g.totalOnTax),
+    totalEmployerCpp: round2(g.totalEmployerCpp),
+    totalEmployerEi: round2(g.totalEmployerEi),
+    totalEmployee: round2(g.totalEmployee),
+    totalEmployer: round2(g.totalEmployer),
     totalAmount: round2(g.totalAmount),
   }));
   groups.sort((a, b) => a.remittanceDue.localeCompare(b.remittanceDue));
@@ -103,7 +122,9 @@ async function loadRecentRemittances(env, userId) {
   const result = await readRange(env, userId, `'${TXN_TAB}'!B12:M`);
   if (!result.ok) return [];
 
-  const items = [];
+  // One remittance = one bank payment, but it is booked as two ledger rows
+  // (…-EE employee deductions, …-ER employer share). Merge them by base ref.
+  const byRef = new Map();
   for (const row of result.values) {
     if (!row || !row[0]) continue;
     // Columns 0 Date, 1 Party, 2 Description, 3 Amount, 4 Category,
@@ -111,16 +132,18 @@ async function loadRecentRemittances(env, userId) {
     const [date, party, desc, amount, , , , , source, ref] = row;
     const refStr = String(ref || '');
     if (!refStr.startsWith('CRA-REMIT-')) continue;
-
-    items.push({
-      date: normalizeDate(date),
-      amount: Math.abs(num(amount)),
-      ref: refStr,
-      description: desc || '',
-      party: party || 'CRA',
-      source: source || '',
-    });
+    const base = refStr.replace(/-(EE|ER)$/, '');
+    const part = refStr.endsWith('-ER') ? 'employer' : 'employee';
+    if (!byRef.has(base)) {
+      byRef.set(base, { date: normalizeDate(date), amount: 0, employee: 0, employer: 0, ref: base, description: desc || '', party: party || 'CRA', source: source || '' });
+    }
+    const it = byRef.get(base);
+    const amt = Math.abs(num(amount));
+    it.amount = round2(it.amount + amt);
+    it[part] = round2(it[part] + amt);
+    if (part === 'employee') it.description = String(desc || '').replace(/^CRA source deductions \(employee CPP\/EI\/tax\) — /, '');
   }
+  const items = [...byRef.values()];
   items.sort((a, b) => b.date.localeCompare(a.date));
   return items.slice(0, 10);
 }

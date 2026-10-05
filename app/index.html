@@ -2330,7 +2330,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
   <!-- ─── Remittance sub-panel ─── -->
   <div id="pay-sub-remittance" class="pay-sub-panel" style="display:none">
     <div style="background:#fff8e8;border:1px solid #e6c97a;border-left:3px solid #b88a00;border-radius:var(--radius);padding:.7rem 1rem;font-size:.82rem;line-height:1.55;margin-bottom:1.25rem">
-      📅 <strong>Monthly source-deduction remittance.</strong> CRA requires CPP + federal + Ontario tax withheld during a month to reach them by the 15th of the following month. Pay each group to CRA via online banking (payee "Canada Revenue Agency – Payroll", use your Business Number + RP0001), then mark it Remitted here so the ledger records the CRA transaction and your Payroll rows get stamped.
+      📅 <strong>Monthly source-deduction remittance.</strong> CRA requires the CPP, EI and federal + Ontario tax withheld during a month <strong>plus the employer's matching CPP and 1.4× EI</strong> to reach them by the 15th of the following month — one payment covers both. Pay each group to CRA via online banking (payee "Canada Revenue Agency – Payroll", use your Business Number + RP0001), then mark it Remitted here so the ledger records the CRA transaction and your Payroll rows get stamped.
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
@@ -8100,7 +8100,8 @@ function prRenderCommitResult(d){
       <div style="font-size:.85rem;line-height:1.7">
         Pay date: <strong>${esc(d.payDate)}</strong><br>
         Gross: <strong>$${d.gross.toFixed(2)}</strong> · Deductions: $${d.deductions.total.toFixed(2)} · Net: <strong style="color:var(--green)">$${d.netPay.toFixed(2)}</strong><br>
-        ${d.remittanceDue ? `Remittance due to CRA: <strong>${esc(d.remittanceDue)}</strong> (monthly remitter, 15th of month after pay)` : `<em>No remittance owed — all deductions zero.</em>`}
+        ${d.employer ? `Employer CPP/EI: $${d.employer.share.toFixed(2)} · Total cost to corporation: <strong>$${d.employer.employerCost.toFixed(2)}</strong><br>` : ''}
+        ${d.remittanceDue ? `Remit <strong>$${(d.employer ? d.employer.totalRemittance : d.deductions.total).toFixed(2)}</strong> to CRA by <strong>${esc(d.remittanceDue)}</strong> (monthly remitter, 15th of month after pay)` : `<em>No remittance owed — all deductions zero.</em>`}
       </div>
       <div style="font-size:.78rem;color:var(--ink3);margin-top:.7rem">
         Wrote row to 💼 Payroll (${esc(d.payrollRow || '')}) + matching −$${d.netPay.toFixed(2)} Wages entry to 📒 Transactions. ${sheetLink}
@@ -8177,6 +8178,14 @@ function prRenderBreakdown(d){
         <div style="text-align:right;font-family:var(--mono);font-weight:600;padding-top:.3rem;border-top:1px solid var(--rule);color:var(--green)">$${c.netPay.toFixed(2)}</div>
       </div>
 
+      <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.3rem">Employer side (corporation pays on top of gross)</div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:.2rem .8rem;font-size:.85rem;line-height:1.5;margin-bottom:.8rem">
+        <div>Employer CPP (matches employee)</div><div style="text-align:right;font-family:var(--mono)">$${Number(c.employerCpp||0).toFixed(2)}</div>
+        <div>Employer EI (1.4×)</div><div style="text-align:right;font-family:var(--mono);color:${(c.employerEi||0)===0?'var(--ink3)':'var(--ink)'}">$${Number(c.employerEi||0).toFixed(2)}</div>
+        <div style="padding-top:.3rem;border-top:1px solid var(--rule);font-weight:600">Total cost to corporation</div>
+        <div style="text-align:right;font-family:var(--mono);font-weight:600;padding-top:.3rem;border-top:1px solid var(--rule)">$${Number(c.employerCost||c.gross).toFixed(2)}</div>
+      </div>
+
       <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.3rem">YTD Projection</div>
       <div style="font-size:.78rem;color:var(--ink3);line-height:1.55;margin-bottom:.8rem">
         Before: gross $${d.ytdBefore.gross.toFixed(2)} · CPP $${d.ytdBefore.cppBase.toFixed(2)} · Fed $${d.ytdBefore.fedTax.toFixed(2)} · ON $${d.ytdBefore.onTax.toFixed(2)}<br>
@@ -8185,7 +8194,7 @@ function prRenderBreakdown(d){
 
       ${d.remittanceDue
         ? `<div style="font-size:.82rem;background:#fff8e8;border:1px solid #e6c97a;border-left:3px solid #b88a00;border-radius:4px;padding:.55rem .8rem">
-             📅 <strong>Source deduction remittance due ${esc(d.remittanceDue)}</strong> — CPP + Federal + Ontario tax totaling $${(c.cpp+c.cpp2+c.fedTax+c.onTax).toFixed(2)} must reach CRA by this date. (Monthly remitter, 15th of month after pay.)
+             📅 <strong>Remit $${Number(c.totalRemittance||0).toFixed(2)} to CRA by ${esc(d.remittanceDue)}</strong> — employee deductions $${c.totalDeductions.toFixed(2)} + employer CPP/EI $${Number(c.employerShare||0).toFixed(2)}. One payment, payee "CRA – Payroll Deductions". (Monthly remitter, 15th of month after pay.)
            </div>`
         : `<div style="font-size:.82rem;color:var(--ink3);font-style:italic">No deductions — nothing to remit to CRA for this run.</div>`}
     </div>`;
@@ -8235,7 +8244,7 @@ function rmRenderGroups(){
         <div style="display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;margin-bottom:.6rem">
           <div>
             <div style="font-weight:600;font-size:.95rem">${esc(g.label)}${dueSoon ? ' <span style="color:#b88a00;font-size:.75rem;font-weight:500">· due soon</span>' : ''}</div>
-            <div style="font-size:.75rem;color:var(--ink3);margin-top:.15rem">${g.runs.length} pay run${g.runs.length===1?'':'s'} · total <strong style="color:var(--ink)">$${g.totalAmount.toFixed(2)}</strong></div>
+            <div style="font-size:.75rem;color:var(--ink3);margin-top:.15rem">${g.runs.length} pay run${g.runs.length===1?'':'s'} · employee $${Number(g.totalEmployee||0).toFixed(2)} + employer $${Number(g.totalEmployer||0).toFixed(2)} = pay CRA <strong style="color:var(--ink)">$${g.totalAmount.toFixed(2)}</strong></div>
           </div>
           <button class="btn btn-green btn-sm" onclick="rmConfirm(${idx})" style="padding:.35rem .85rem;font-size:.8rem">Mark remitted →</button>
         </div>
@@ -8243,9 +8252,12 @@ function rmRenderGroups(){
           ${runRows}
         </div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.3rem;font-size:.75rem;color:var(--ink3);margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--paper2)">
-          <div>CPP: <strong style="color:var(--ink);font-family:var(--mono)">$${g.totalCpp.toFixed(2)}</strong></div>
-          <div>Fed: <strong style="color:var(--ink);font-family:var(--mono)">$${g.totalFedTax.toFixed(2)}</strong></div>
-          <div>ON: <strong style="color:var(--ink);font-family:var(--mono)">$${g.totalOnTax.toFixed(2)}</strong></div>
+          <div>Employee CPP: <strong style="color:var(--ink);font-family:var(--mono)">$${g.totalCpp.toFixed(2)}</strong></div>
+          <div>Employee EI: <strong style="color:var(--ink);font-family:var(--mono)">$${Number(g.totalEi||0).toFixed(2)}</strong></div>
+          <div>Fed + ON tax: <strong style="color:var(--ink);font-family:var(--mono)">$${(g.totalFedTax+g.totalOnTax).toFixed(2)}</strong></div>
+          <div>Employer CPP: <strong style="color:var(--ink);font-family:var(--mono)">$${Number(g.totalEmployerCpp||0).toFixed(2)}</strong></div>
+          <div>Employer EI: <strong style="color:var(--ink);font-family:var(--mono)">$${Number(g.totalEmployerEi||0).toFixed(2)}</strong></div>
+          <div>Pay CRA: <strong style="color:var(--ink);font-family:var(--mono)">$${g.totalAmount.toFixed(2)}</strong></div>
         </div>
       </div>`;
   }).join('');
@@ -8259,7 +8271,7 @@ function rmRenderRecent(items){
   }
   el.innerHTML = items.map(it => `
     <div style="border-left:3px solid var(--green);padding:.4rem .7rem;background:var(--paper2);border-radius:4px;font-size:.78rem;line-height:1.5">
-      <div><strong>${esc(it.date)}</strong> · $${it.amount.toFixed(2)}</div>
+      <div><strong>${esc(it.date)}</strong> · $${it.amount.toFixed(2)}${it.employer ? ` <span style="color:var(--ink3)">(employee $${it.employee.toFixed(2)} + employer $${it.employer.toFixed(2)})</span>` : ''}</div>
       <div style="color:var(--ink3)">${esc(it.description)}</div>
       <div style="font-family:var(--mono);font-size:.65rem;color:var(--ink3);margin-top:.2rem">${esc(it.ref)}</div>
     </div>
@@ -8279,7 +8291,7 @@ async function rmConfirm(idx){
   const g = _rmGroups[idx];
   if(!g) return;
   const today = new Date().toISOString().slice(0,10);
-  const msg = `Confirm remittance of $${g.totalAmount.toFixed(2)} to CRA?\n\nThis will:\n• Write a −$${g.totalAmount.toFixed(2)} Transaction (category: Wages & Salaries, ref: CRA-REMIT-…)\n• Flip ${g.runs.length} Payroll row(s) from Paid → Remitted\n\nEnter the date you actually paid CRA (YYYY-MM-DD) or blank for today:`;
+  const msg = `Confirm remittance of $${g.totalAmount.toFixed(2)} to CRA?\n(employee deductions $${Number(g.totalEmployee||0).toFixed(2)} + employer CPP/EI $${Number(g.totalEmployer||0).toFixed(2)})\n\nThis will:\n• Write two Transactions totalling −$${g.totalAmount.toFixed(2)} (employee deductions + employer share, refs CRA-REMIT-…-EE / -ER)\n• Flip ${g.runs.length} Payroll row(s) from Paid → Remitted\n\nEnter the date you actually paid CRA (YYYY-MM-DD) or blank for today:`;
   const remitDate = (prompt(msg, today) || today).trim();
   if(!remitDate) return;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(remitDate)){ toast('Invalid date — use YYYY-MM-DD'); return; }

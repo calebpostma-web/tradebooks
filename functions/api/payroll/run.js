@@ -5,7 +5,7 @@
 // idempotency override. Writes:
 //   1. One row to 💼 Payroll  (Pay Date, Employee, Age, Business, Work
 //      Description, Hours, Rate, Gross, CPP, EI, Fed Tax, ON Tax, Net Pay,
-//      YTD Gross, Remittance Due, Status)
+//      YTD Gross, Remittance Due, Status, Period, Employer CPP, Employer EI, Stub)
 //   2. One row to 📒 Transactions  (-Net Pay, category Wages & Salaries,
 //      account = BMO, ref = PAY-<empShort>-<payDate>)
 //
@@ -82,7 +82,7 @@ export async function onRequestPost({ request, env }) {
   const remitDue = totalDeductions > 0 ? remittanceDueDate(payDate) : '';
   const status = 'Paid';  // employee paid; CRA remittance tracked separately via Status flip
 
-  // Build Payroll row (16 data columns B-Q)
+  // Build Payroll row (20 data columns B-U)
   const businesses = [...new Set(wlEntries.map(e => e.business).filter(Boolean))];
   const businessDisplay = businesses.length === 0 ? 'Postma' : businesses.length === 1 ? businesses[0] : 'Multi';
   const workDescription = buildWorkDescription(wlEntries, adjustment);
@@ -105,9 +105,19 @@ export async function onRequestPost({ request, env }) {
     round2(ytd.gross + result.gross),  // O YTD Gross
     remitDue,                     // P Remittance Due
     status,                       // Q Status
+    `${periodStart} → ${periodEnd}`, // R Period
+    result.employerCpp,           // S Employer CPP (matches employee CPP incl. CPP2)
+    result.employerEi,            // T Employer EI (1.4× employee EI)
+    '',                           // U Stub (Drive link, filled when a stub is generated)
   ]];
 
-  const payResult = await appendRows(env, userId, `'${PAYROLL_TAB}'!B12:Q`, payrollRow);
+  let payResult = await appendRows(env, userId, `'${PAYROLL_TAB}'!B12:U`, payrollRow);
+  if (!payResult.ok && /grid|range|column/i.test(payResult.error || '')) {
+    // Sheet not yet migrated to the 21-column layout (user hasn't clicked
+    // "Update sheet"). Write the classic 16 columns so the pay still lands;
+    // readers fall back to the CRA identities for the employer share.
+    payResult = await appendRows(env, userId, `'${PAYROLL_TAB}'!B12:Q`, [payrollRow[0].slice(0, 16)]);
+  }
   if (!payResult.ok) return json({ ok: false, error: 'Payroll write failed: ' + payResult.error });
 
   // Build Transactions row for the NET pay that left BMO.
@@ -148,6 +158,10 @@ export async function onRequestPost({ request, env }) {
     deductions: {
       cpp: result.cpp, cpp2: result.cpp2, ei: result.ei,
       fedTax: result.fedTax, onTax: result.onTax, total: round2(totalDeductions),
+    },
+    employer: {
+      cpp: result.employerCpp, ei: result.employerEi, share: result.employerShare,
+      totalRemittance: result.totalRemittance, employerCost: result.employerCost,
     },
     remittanceDue: remitDue || null,
     status,

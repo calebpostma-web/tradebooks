@@ -1,8 +1,10 @@
 // ════════════════════════════════════════════════════════════════════
 // POST /api/payroll/remit
 //
-// Marks a set of Payroll rows as Remitted and writes a single matching
-// negative Transaction for the CRA source deduction payment.
+// Marks a set of Payroll rows as Remitted and writes the matching negative
+// Transactions for the CRA payment: one row for the employee deductions
+// (ref …-EE) and one for the employer CPP/EI share (ref …-ER). Together
+// they equal the single bank debit to CRA.
 //
 // Request body:
 //   {
@@ -13,8 +15,9 @@
 //   }
 //
 // Server re-reads the Payroll rows (don't trust client-supplied totals),
-// verifies each is currently Paid with deductions owed, sums CPP+Fed+ON,
-// writes ONE Transactions row (ref CRA-REMIT-YYYYMMDD), then flips each
+// verifies each is currently Paid with deductions owed, sums employee
+// CPP+EI+Fed+ON and employer CPP+EI, writes the Transactions rows
+// (ref CRA-REMIT-YYYYMMDD-EE / -ER), then flips each
 // Payroll row's Status column from 'Paid' to 'Remitted'.
 // ════════════════════════════════════════════════════════════════════
 
@@ -64,13 +67,18 @@ export async function onRequestPost({ request, env }) {
       issues.push(`Row ${rowNum} (${employee} ${payDate}) has Status '${status}' — only 'Paid' rows can be remitted`);
       continue;
     }
-    const total = round2(r.cpp + r.fedTax + r.onTax);
+    const employeePart = round2(r.cpp + r.ei + r.fedTax + r.onTax);
+    const employerPart = round2(r.employerCpp + r.employerEi);
+    const total = round2(employeePart + employerPart);
     if (total <= 0) {
       issues.push(`Row ${rowNum} (${employee} ${payDate}) has $0 deductions — nothing to remit`);
       continue;
     }
     pickedRows.push({
-      sheetRow: rowNum, payDate, employee, cpp: r.cpp, fedTax: r.fedTax, onTax: r.onTax, total,
+      sheetRow: rowNum, payDate, employee,
+      cpp: r.cpp, ei: r.ei, fedTax: r.fedTax, onTax: r.onTax,
+      employerCpp: r.employerCpp, employerEi: r.employerEi,
+      employeePart, employerPart, total,
     });
   }
 
@@ -78,34 +86,52 @@ export async function onRequestPost({ request, env }) {
     return json({ ok: false, error: 'No valid rows to remit', issues }, 400);
   }
 
-  const totalCpp = round2(pickedRows.reduce((s, r) => s + r.cpp, 0));
-  const totalFed = round2(pickedRows.reduce((s, r) => s + r.fedTax, 0));
-  const totalOn  = round2(pickedRows.reduce((s, r) => s + r.onTax, 0));
-  const totalAmount = round2(totalCpp + totalFed + totalOn);
+  const sum = (k) => round2(pickedRows.reduce((s, r) => s + (r[k] || 0), 0));
+  const totalCpp = sum('cpp');
+  const totalEi = sum('ei');
+  const totalFed = sum('fedTax');
+  const totalOn = sum('onTax');
+  const totalEmployerCpp = sum('employerCpp');
+  const totalEmployerEi = sum('employerEi');
+  const totalEmployee = sum('employeePart');
+  const totalEmployer = sum('employerPart');
+  const totalAmount = round2(totalEmployee + totalEmployer);
 
   // Build remittance description: list distinct pay months from the picked rows.
   const months = [...new Set(pickedRows.map(r => monthLabel(r.payDate)))].sort();
   const payRunCount = pickedRows.length;
-  const description = `CRA source deductions — ${months.join(', ')} (${payRunCount} pay run${payRunCount === 1 ? '' : 's'})`
-    + (notes ? ` · ${notes}` : '');
+  const runsLabel = `${months.join(', ')} (${payRunCount} pay run${payRunCount === 1 ? '' : 's'})`;
   const ref = `CRA-REMIT-${remitDate.replace(/-/g, '')}`;
 
-  // Write the Transaction row (negative; money out to CRA)
-  const txnRow = [[
+  // TWO ledger rows for the one bank payment:
+  //   1. Employee deductions — the part of gross wages that went to CRA
+  //      instead of the employee. Net pay + this row = gross wages.
+  //   2. Employer CPP/EI — the corporation's own cost on top of gross.
+  // Same category so total wage cost sums in one column; the description
+  // and ref suffix keep them distinguishable. Statement import matches the
+  // single bank debit to the pair by ref prefix.
+  const txnRows = [[
     remitDate,                    // B Date
     'CRA',                        // C Party
-    description,                  // D Description
-    -totalAmount,                 // E Amount (signed)
-    WAGE_CATEGORY,                // F Category (total wage cost = net + remittance)
-    'No',                         // G HST?
-    0,                            // H HST Amount
+    `CRA source deductions (employee CPP/EI/tax) — ${runsLabel}` + (notes ? ` · ${notes}` : ''),
+    -totalEmployee,               // E Amount (signed)
+    WAGE_CATEGORY,                // F Category
+    'No', 0,                      // G HST?, H HST
     account,                      // I Account
     'Payroll',                    // J Source
-    ref,                          // K Ref
+    `${ref}-EE`,                  // K Ref
     '',                           // L Related Invoice
     'N/A',                        // M Match Status
   ]];
-  const txnResult = await appendRows(env, userId, `'${TXN_TAB}'!B12:M`, txnRow);
+  if (totalEmployer > 0) {
+    txnRows.push([
+      remitDate, 'CRA',
+      `Employer CPP/EI (corporation's share) — ${runsLabel}`,
+      -totalEmployer,
+      WAGE_CATEGORY, 'No', 0, account, 'Payroll', `${ref}-ER`, '', 'N/A',
+    ]);
+  }
+  const txnResult = await appendRows(env, userId, `'${TXN_TAB}'!B12:M`, txnRows);
   if (!txnResult.ok) return json({ ok: false, error: 'Transaction write failed: ' + txnResult.error });
 
   // Flip Payroll Status column (col Q = 17th col, row-indexed) on each picked row.
@@ -120,8 +146,12 @@ export async function onRequestPost({ request, env }) {
 
   return json({
     ok: true,
-    remitDate, account, ref, description,
-    totals: { cpp: totalCpp, fedTax: totalFed, onTax: totalOn, total: totalAmount },
+    remitDate, account, ref, description: runsLabel,
+    totals: {
+      cpp: totalCpp, ei: totalEi, fedTax: totalFed, onTax: totalOn,
+      employerCpp: totalEmployerCpp, employerEi: totalEmployerEi,
+      employee: totalEmployee, employer: totalEmployer, total: totalAmount,
+    },
     rowsMarkedRemitted: pickedRows.map(r => r.sheetRow),
     payRunCount,
     months,

@@ -20,8 +20,9 @@
 //     familyEiExempt:  boolean  (defaults true for 'child'|'spouse'),
 //     startDate:       'YYYY-MM-DD',
 //     defaultRate:     number,
-//     td1FedClaim:     number   (1 = basic only),
+//     td1FedClaim:     number   (0 = no claim here, 1 = basic only, 2–10 chart codes),
 //     td1OnClaim:      number,
+//     email:           string   (pay stubs are emailed here),
 //     active:          boolean  (soft-delete flag),
 //     notes:           string   (optional),
 //   }
@@ -76,8 +77,10 @@ export async function onRequestPost({ request, env }) {
     familyEiExempt,
     startDate: body.startDate ? String(body.startDate).trim() : new Date().toISOString().slice(0, 10),
     defaultRate: parseFloat(body.defaultRate) || 0,
-    td1FedClaim: parseInt(body.td1FedClaim, 10) || 1,
-    td1OnClaim: parseInt(body.td1OnClaim, 10) || 1,
+    // 0 is a legitimate value (no claim at this employer) — do not || 1 it away.
+    td1FedClaim: claimCode(body.td1FedClaim),
+    td1OnClaim: claimCode(body.td1OnClaim),
+    email: body.email ? String(body.email).trim() : '',
     active: body.active !== false,
     notes: body.notes ? String(body.notes).trim() : '',
     updatedAt: new Date().toISOString(),
@@ -140,14 +143,22 @@ async function mirrorToSheet(env, userId, employees) {
         e.relationship || '',
         e.startDate || '',
         e.defaultRate || '',
-        e.td1FedClaim || 1,
-        e.td1OnClaim || 1,
+        e.td1FedClaim ?? 1,
+        e.td1OnClaim ?? 1,
       ]);
     } else {
       rows.push(['', '', '', '', '', '', '', '']);
     }
   }
   await writeRange(env, userId, EMP_SHEET_RANGE, rows);
+}
+
+/** TD1 claim code: integer 0–10 (or an explicit $ amount ≥ 1000); missing/invalid → 1. */
+function claimCode(v) {
+  if (v === undefined || v === null || v === '') return 1;
+  const n = parseInt(v, 10);
+  if (!isFinite(n) || n < 0) return 1;
+  return n;
 }
 
 // ── Fallback UUID (unused in modern Workers but here for safety) ────

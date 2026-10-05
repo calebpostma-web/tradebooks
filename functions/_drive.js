@@ -213,3 +213,26 @@ export async function createCoverLetterDoc(accessToken, folderId, title, body) {
 
   return { id: docId, viewUrl: `https://docs.google.com/document/d/${docId}/edit` };
 }
+
+// ── Convenience: upload into a nested folder path and share ───────────
+
+/**
+ * Upload `bytes` as `filename` under folderPath (array of folder names,
+ * created as needed, e.g. ['AI Bookkeeper Payroll', '2026']) and make it
+ * viewable by anyone with the link. Never throws — returns
+ * { ok, url, fileId } or { ok:false, error }. Used by pay stubs.
+ */
+export async function uploadToDrive(accessToken, { folderPath, filename, mimeType, bytes }) {
+  try {
+    let parentId = null;
+    for (const name of folderPath) {
+      parentId = await findOrCreateFolder(accessToken, name, parentId);
+      if (!parentId) return { ok: false, error: `Drive: could not find or create folder "${name}"` };
+    }
+    const up = await uploadFile(accessToken, parentId, filename, mimeType, bytes);
+    await makeShareable(accessToken, up.id);
+    return { ok: true, fileId: up.id, url: up.viewUrl };
+  } catch (e) {
+    return { ok: false, error: 'Drive: ' + (e.message || String(e)) };
+  }
+}

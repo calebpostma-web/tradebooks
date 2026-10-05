@@ -2221,9 +2221,13 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
             <div class="field"><label>SIN (optional)</label><input type="text" id="emp_sin" placeholder="Required for T4"></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-            <div class="field"><label>TD1 Fed code</label><input type="number" id="emp_td1Fed" value="1" min="0"></div>
-            <div class="field"><label>TD1 ON code</label><input type="number" id="emp_td1On" value="1" min="0"></div>
+            <div class="field"><label>TD1 Fed code</label><input type="number" id="emp_td1Fed" value="1" min="0" max="10"></div>
+            <div class="field"><label>TD1 ON code</label><input type="number" id="emp_td1On" value="1" min="0" max="10"></div>
           </div>
+          <div style="font-size:.74rem;color:var(--ink3);line-height:1.5;margin-top:-.2rem;margin-bottom:.6rem">
+            From the employee's signed TD1 / TD1ON. <strong>1</strong> = basic personal amount only (most people). <strong>0</strong> = no claim here — use when another employer already applies their basic amount, or they ticked "more than one employer"; tax is then withheld from the first dollar. <strong>2–10</strong> = extra credits (spouse, disability, tuition) per the CRA chart. Only one employer can claim the basic amount.
+          </div>
+          <div class="field"><label>Email (for pay stubs, optional)</label><input type="email" id="emp_email" placeholder="name@example.com"></div>
           <div class="field"><label>Notes (optional)</label><textarea id="emp_notes" rows="2" placeholder="e.g. Summer-only, tire season, etc."></textarea></div>
           <div style="display:flex;gap:.5rem">
             <button class="btn btn-green" onclick="empSave()">💾 Save employee</button>
@@ -2323,6 +2327,9 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         <div id="prBreakdown" style="font-size:.85rem;color:var(--ink3);font-style:italic;padding:1rem;background:var(--paper2);border-radius:var(--radius);border:1px solid var(--rule)">
           Select an employee, period, and pay date, then click Preview to see the deductions.
         </div>
+
+        <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin:1.4rem 0 .6rem">Pay stubs — recent pay runs</div>
+        <div id="prRecent" style="font-size:.82rem;color:var(--ink3);font-style:italic">Loading…</div>
       </div>
     </div>
   </div>
@@ -7457,7 +7464,7 @@ function payrollSub(which){
   ['employees','worklog','payruns','remittance','t4'].forEach(k => {
     document.getElementById('pay-sub-'+k).style.display = (k === which) ? '' : 'none';
   });
-  if(which === 'payruns') { try { prSetDefaults(); } catch(e) { console.warn(e); } }
+  if(which === 'payruns') { try { prSetDefaults(); prLoadRecent(); } catch(e) { console.warn(e); } }
   if(which === 'remittance') { try { rmLoad(); } catch(e) { console.warn(e); } }
   if(which === 't4') { try { t4SetDefaults(); } catch(e) { console.warn(e); } }
 }
@@ -7501,7 +7508,7 @@ function empRender(){
         </div>
         <div style="font-size:.78rem;color:var(--ink3);line-height:1.5">
           DOB ${esc(e.dob)} · ${esc(e.relationship)}${e.familyEiExempt?' · family-EI exempt':''}<br>
-          Default rate $${Number(e.defaultRate||0).toFixed(2)}/hr · TD1 Fed ${e.td1FedClaim||1} / ON ${e.td1OnClaim||1}
+          Default rate $${Number(e.defaultRate||0).toFixed(2)}/hr · TD1 Fed ${e.td1FedClaim??1} / ON ${e.td1OnClaim??1}${e.email ? ` · ✉ ${esc(e.email)}` : ''}
         </div>
         <div style="display:flex;gap:.4rem;margin-top:.55rem;flex-wrap:wrap">
           <button onclick="empLoad('${esc(e.id)}')" style="background:var(--paper2);border:1px solid var(--rule);border-radius:4px;padding:.25rem .65rem;font-size:.75rem;cursor:pointer">Edit</button>
@@ -7674,6 +7681,8 @@ function empOpenAnnualWindow(d){
   setTimeout(() => { try { win.print(); } catch(e) {} }, 400);
 }
 
+function td1Code(v){ const n = parseInt(v, 10); return (isFinite(n) && n >= 0) ? n : 1; }
+
 function empLoad(id){
   const e = PAYROLL_EMPLOYEES.find(x => x.id === id);
   if(!e) return;
@@ -7685,14 +7694,15 @@ function empLoad(id){
   document.getElementById('emp_relationship').value = e.relationship || 'child';
   document.getElementById('emp_defaultRate').value = e.defaultRate || '';
   document.getElementById('emp_sin').value = e.sin || '';
-  document.getElementById('emp_td1Fed').value = e.td1FedClaim || 1;
-  document.getElementById('emp_td1On').value = e.td1OnClaim || 1;
+  document.getElementById('emp_td1Fed').value = e.td1FedClaim ?? 1;
+  document.getElementById('emp_td1On').value = e.td1OnClaim ?? 1;
+  document.getElementById('emp_email').value = e.email || '';
   document.getElementById('emp_notes').value = e.notes || '';
 }
 
 function empClear(){
   document.getElementById('empFormTitle').textContent = 'Add employee';
-  ['emp_id','emp_name','emp_dob','emp_startDate','emp_defaultRate','emp_sin','emp_notes'].forEach(id => document.getElementById(id).value = '');
+  ['emp_id','emp_name','emp_dob','emp_startDate','emp_defaultRate','emp_sin','emp_email','emp_notes'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('emp_relationship').value = 'child';
   document.getElementById('emp_td1Fed').value = 1;
   document.getElementById('emp_td1On').value = 1;
@@ -7712,8 +7722,9 @@ async function empSave(){
     relationship: document.getElementById('emp_relationship').value,
     defaultRate: parseFloat(document.getElementById('emp_defaultRate').value) || 0,
     sin: document.getElementById('emp_sin').value.trim() || undefined,
-    td1FedClaim: parseInt(document.getElementById('emp_td1Fed').value, 10) || 1,
-    td1OnClaim: parseInt(document.getElementById('emp_td1On').value, 10) || 1,
+    td1FedClaim: td1Code(document.getElementById('emp_td1Fed').value),
+    td1OnClaim: td1Code(document.getElementById('emp_td1On').value),
+    email: document.getElementById('emp_email').value.trim() || undefined,
     notes: document.getElementById('emp_notes').value.trim() || undefined,
   };
 
@@ -8094,6 +8105,7 @@ function prRenderCommitResult(d){
   status.textContent = '✓ Pay run committed.';
   status.style.color = 'var(--green)';
   _prLastPreview = null;
+  setTimeout(prLoadRecent, 800);
   breakdown.innerHTML = `
     <div style="border-left:3px solid var(--green);padding:.8rem 1rem;background:#e8f5ee;border-radius:var(--radius)">
       <div style="font-weight:600;margin-bottom:.4rem">✅ Pay run committed for ${esc(d.employee.name)}</div>
@@ -8135,6 +8147,10 @@ function prRenderBreakdown(d){
   const flagChips = [];
   if(flags.isUnder18) flagChips.push('<span style="background:#dff7e0;color:#1a5c38;font-size:.7rem;padding:.1rem .45rem;border-radius:3px">Under 18 · CPP exempt</span>');
   if(flags.familyEiExempt) flagChips.push('<span style="background:#e8eefc;color:#203a75;font-size:.7rem;padding:.1rem .45rem;border-radius:3px">Family-EI exempt</span>');
+  if(flags.td1Fed !== undefined){
+    const zero = flags.td1Fed === 0 || flags.td1On === 0;
+    flagChips.push(`<span style="background:${zero?'#fff3e0':'#f1f1f1'};color:${zero?'#8a4b00':'#444'};font-size:.7rem;padding:.1rem .45rem;border-radius:3px" title="Basic amount applied: federal $${Number(c.breakdown?.appliedFedBpa||0).toLocaleString()} · Ontario $${Number(c.breakdown?.appliedOnBpa||0).toLocaleString()}">TD1 ${flags.td1Fed}/${flags.td1On}${zero?' · tax from $1':''}</span>`);
+  }
 
   const wlRows = wl.entries.length
     ? wl.entries.map(e => `<tr>
@@ -8198,6 +8214,79 @@ function prRenderBreakdown(d){
            </div>`
         : `<div style="font-size:.82rem;color:var(--ink3);font-style:italic">No deductions — nothing to remit to CRA for this run.</div>`}
     </div>`;
+}
+
+// ── Pay stubs (recent runs) ──
+
+async function prLoadRecent(){
+  const el = document.getElementById('prRecent');
+  if(!el) return;
+  const token = localStorage.getItem(AUTH_KEY);
+  if(!token){ el.innerHTML = 'Sign in to see pay runs.'; return; }
+  try {
+    const r = await fetch('/api/payroll/stub?list=1', { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if(!d.ok){ el.innerHTML = `<span style="color:var(--red)">${esc(d.error || 'Could not load pay runs')}</span>`; return; }
+    if(!d.runs.length){ el.innerHTML = 'No committed pay runs yet. Each committed run gets a printable, emailable stub here.'; return; }
+    el.style.fontStyle = 'normal'; el.style.color = 'var(--ink)';
+    el.innerHTML = d.runs.map(r => `
+      <div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:.6rem 1rem;align-items:center;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:var(--radius);background:white;margin-bottom:.4rem">
+        <div style="font-family:var(--mono);font-size:.78rem;color:var(--ink3)">${esc(r.payDate)}</div>
+        <div><div style="font-weight:600">${esc(r.employee)}</div><div style="font-size:.74rem;color:var(--ink3)">${r.period ? esc(r.period) + ' · ' : ''}${r.hours ? r.hours.toFixed(2) + ' h · ' : ''}gross $${r.gross.toFixed(2)} · net <strong>$${r.netPay.toFixed(2)}</strong>${r.stub ? ` · <a href="${escAttr(r.stub)}" target="_blank" style="color:var(--green)">📎 Drive</a>` : ''}</div></div>
+        <button class="btn btn-outline btn-sm" onclick="prPrintStub(${r.sheetRow})" title="Opens the stub in a new tab — use Print or Save as PDF">🖨 Print / PDF</button>
+        <button class="btn btn-outline btn-sm" onclick="prEmailStub(${r.sheetRow}, '${escAttr(r.employee)}')" title="Email the stub to the employee's address on file (also saves a copy to Drive)">✉ Email</button>
+      </div>`).join('');
+  } catch(err){
+    el.innerHTML = `<span style="color:var(--red)">${esc(err.message)}</span>`;
+  }
+}
+
+async function prPrintStub(sheetRow){
+  const token = localStorage.getItem(AUTH_KEY);
+  const win = window.open('', '_blank');
+  if(win) win.document.write('<p style="font-family:sans-serif;padding:2rem">Preparing pay statement…</p>');
+  try {
+    const r = await fetch(`/api/payroll/stub?row=${sheetRow}&format=html`, { headers: { 'Authorization': 'Bearer ' + token } });
+    if(!r.ok){ const d = await r.json().catch(()=>({})); throw new Error(d.error || ('HTTP ' + r.status)); }
+    const html = await r.text();
+    if(!win){ toast('Pop-up blocked — allow pop-ups for this site to print stubs'); return; }
+    win.document.open(); win.document.write(html); win.document.close();
+    win.focus();
+    setTimeout(() => { try { win.print(); } catch(e){} }, 400);
+  } catch(err){
+    if(win) win.close();
+    toast('Could not build stub: ' + err.message);
+  }
+}
+
+async function prEmailStub(sheetRow, employeeName){
+  const token = localStorage.getItem(AUTH_KEY);
+  const emp = (typeof PAYROLL_EMPLOYEES !== 'undefined' ? PAYROLL_EMPLOYEES : []).find(e => e.name === employeeName);
+  let to = emp?.email || '';
+  if(!to){
+    to = (prompt(`No email on file for ${employeeName}.\nEnter an address to send this stub to (and add it on the Employees tab for next time):`) || '').trim();
+    if(!to) return;
+  } else if(!confirm(`Email the pay stub to ${employeeName} at ${to}?\n\nA copy is also saved to Drive (AI Bookkeeper Payroll / year) and linked on the Payroll row.`)) return;
+  toast('Sending stub…');
+  try {
+    const r = await fetch('/api/payroll/stub-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ row: sheetRow, to }),
+    });
+    const d = await r.json();
+    if(!d.ok){
+      toast(d.error || 'Email failed');
+      if(d.driveUrl) toast('Stub saved to Drive — open it from the 📎 link');
+      prLoadRecent();
+      return;
+    }
+    toast(`✓ Stub emailed to ${d.to}${d.cc && d.cc.length ? ' (cc ' + d.cc.join(', ') + ')' : ''}`);
+    if(d.driveError) console.warn('Drive:', d.driveError);
+    prLoadRecent();
+  } catch(err){
+    toast('Email failed: ' + err.message);
+  }
 }
 
 // ── Remittance ──

@@ -37,9 +37,14 @@ export const RATES_2026 = {
   eiEmployerMultiplier: 1.4,   // employer premium = 1.4 × employee premium
   eiMie: 68900,
 
-  // Federal basic personal amount (linear phase-down above ~$177K — for
-  // Caleb's kids earning well under that, we use the full amount).
+  // Federal basic personal amount (linear phase-down above ~$181K — for
+  // family payroll well under that, we use the full amount).
   fedBpa: 16452,
+
+  // TD1 claim-code chart step (T4008-ON Jan 2026, Chart 1): code 1 = BPA,
+  // code 2 = 16,452.01–19,285, … each code $2,833 wide. The formula uses
+  // the mid-point of the range: BPA + (code − 1.5) × step.
+  fedClaimStep: 2833,
 
   // Under-18 federal supplement (non-refundable credit, reduced by
   // childcare/attendant claims above $3,533 — N/A for family payroll).
@@ -58,6 +63,9 @@ export const RATES_2026 = {
   // Ontario BPA and under-18 supplement
   onBpa: 12989,
   onUnder18Supplement: 482,
+  // TD1ON claim-code chart step (T4008-ON Jan 2026, Chart 2): code 2 =
+  // 12,989.01–15,787, each code $2,798 wide.
+  onClaimStep: 2798,
 
   // Ontario tax brackets — 2026 (indexed 1.019, except $150K/$220K which
   // are fixed by statute and not indexed)
@@ -145,6 +153,29 @@ export function calculateCpp(grossPay, ytdPensionable, ytdCppPaid, ytdCpp2Paid, 
   return { cppBase: round2(cppBaseThisRun), cpp2: round2(cpp2ThisRun) };
 }
 
+// ─── TD1 claim codes ────────────────────────────────────────────────
+
+/**
+ * Total claim amount implied by a TD1 claim code.
+ *   0      → no personal amounts at this employer (another employer has
+ *            the basic amount, or income is taxed from dollar one)
+ *   1      → basic personal amount only
+ *   2–10   → mid-point of that code's range on the CRA chart
+ *   >10    → beyond the chart; CRA says calculate manually — we treat the
+ *            value as the claim AMOUNT itself if it looks like dollars
+ *            (≥ 1000), otherwise cap at code 10.
+ * Anything missing/invalid → code 1 (CRA's default when no TD1 is on file).
+ */
+export function claimAmountForCode(code, bpa, step) {
+  const c = Number(code);
+  if (!isFinite(c) || c < 0) return bpa;          // no/invalid code → basic
+  if (c === 0) return 0;
+  if (c === 1) return bpa;
+  if (c >= 1000) return c;                         // explicit dollar amount
+  const k = Math.min(Math.floor(c), 10);
+  return bpa + (k - 1.5) * step;
+}
+
 // ─── Income tax ─────────────────────────────────────────────────────
 
 /**
@@ -154,12 +185,12 @@ export function calculateCpp(grossPay, ytdPensionable, ytdCppPaid, ytdCpp2Paid, 
  * Under-BPA income owes zero — the method handles irregular/lumpy pay well
  * because tax is always `annual-tax-on-YTD-projection − YTD-already-paid`.
  */
-export function calculateFederalTax(grossPay, ytdGross, ytdFedTaxPaid, isUnder18) {
+export function calculateFederalTax(grossPay, ytdGross, ytdFedTaxPaid, isUnder18, claimCode = 1) {
   const R = RATES_2026;
   const taxable = ytdGross + grossPay;
   if (taxable <= 0) return 0;
 
-  const effectiveBpa = R.fedBpa + (isUnder18 ? R.fedUnder18Supplement : 0);
+  const effectiveBpa = claimAmountForCode(claimCode, R.fedBpa, R.fedClaimStep) + (isUnder18 ? R.fedUnder18Supplement : 0);
   const bpaCredit = Math.min(taxable, effectiveBpa) * R.fedBrackets[0].rate;
 
   const basicTax = bracketTax(taxable, R.fedBrackets);
@@ -173,12 +204,12 @@ export function calculateFederalTax(grossPay, ytdGross, ytdFedTaxPaid, isUnder18
  * Ontario tax THIS pay run, including under-18 supplement and the
  * low-income tax reduction.
  */
-export function calculateOntarioTax(grossPay, ytdGross, ytdOnTaxPaid, isUnder18) {
+export function calculateOntarioTax(grossPay, ytdGross, ytdOnTaxPaid, isUnder18, claimCode = 1) {
   const R = RATES_2026;
   const taxable = ytdGross + grossPay;
   if (taxable <= 0) return 0;
 
-  const effectiveBpa = R.onBpa + (isUnder18 ? R.onUnder18Supplement : 0);
+  const effectiveBpa = claimAmountForCode(claimCode, R.onBpa, R.onClaimStep) + (isUnder18 ? R.onUnder18Supplement : 0);
   const bpaCredit = Math.min(taxable, effectiveBpa) * R.onBrackets[0].rate;
 
   const basicOnTax = bracketTax(taxable, R.onBrackets);
@@ -207,7 +238,7 @@ export function calculateOntarioTax(grossPay, ytdGross, ytdOnTaxPaid, isUnder18)
  * breakdown for display/audit. All values rounded to cents.
  *
  * input = {
- *   employee: { dob, relationship?, familyEiExempt },
+ *   employee: { dob, relationship?, familyEiExempt, td1FedClaim?, td1OnClaim? },
  *   payDate: 'YYYY-MM-DD',
  *   grossPay: number,
  *   ytd: {
@@ -243,8 +274,12 @@ export function calculatePayRun({ employee, payDate, grossPay, ytd }) {
 
   const { cppBase, cpp2 } = calculateCpp(gross, ytdGross, ytdCppBase, ytdCpp2, cppExempt);
   const ei = familyEiExempt ? 0 : round2(Math.min(gross * RATES_2026.eiRateEe, RATES_2026.eiMie * RATES_2026.eiRateEe));
-  const fedTax = calculateFederalTax(gross, ytdGross, ytdFedTax, isUnder18);
-  const onTax = calculateOntarioTax(gross, ytdGross, ytdOnTax, isUnder18);
+  // TD1 claim codes from the employee record (default 1 = basic amount,
+  // which is also CRA's rule when no TD1 is on file). 0 = no claim here.
+  const td1Fed = employee?.td1FedClaim ?? 1;
+  const td1On = employee?.td1OnClaim ?? 1;
+  const fedTax = calculateFederalTax(gross, ytdGross, ytdFedTax, isUnder18, td1Fed);
+  const onTax = calculateOntarioTax(gross, ytdGross, ytdOnTax, isUnder18, td1On);
 
   const totalDeductions = round2(cppBase + cpp2 + ei + fedTax + onTax);
   const netPay = round2(gross - totalDeductions);
@@ -272,11 +307,11 @@ export function calculatePayRun({ employee, payDate, grossPay, ytd }) {
     employerShare,
     totalRemittance,
     employerCost,
-    flags: { isUnder18, cppExempt, familyEiExempt },
+    flags: { isUnder18, cppExempt, familyEiExempt, td1Fed: Number(td1Fed), td1On: Number(td1On) },
     breakdown: {
       ytdGrossAfterRun: round2(ytdGross + gross),
-      appliedFedBpa: RATES_2026.fedBpa + (isUnder18 ? RATES_2026.fedUnder18Supplement : 0),
-      appliedOnBpa: RATES_2026.onBpa + (isUnder18 ? RATES_2026.onUnder18Supplement : 0),
+      appliedFedBpa: claimAmountForCode(td1Fed, RATES_2026.fedBpa, RATES_2026.fedClaimStep) + (isUnder18 ? RATES_2026.fedUnder18Supplement : 0),
+      appliedOnBpa: claimAmountForCode(td1On, RATES_2026.onBpa, RATES_2026.onClaimStep) + (isUnder18 ? RATES_2026.onUnder18Supplement : 0),
     },
   };
 }

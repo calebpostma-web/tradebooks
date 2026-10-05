@@ -18,14 +18,13 @@
 //     (becomes 'Remitted' when /api/payroll/remit fires in Stage 4)
 // ════════════════════════════════════════════════════════════════════
 
-import { readRange, appendRows } from '../../_sheets.js';
+import { appendRows } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
 import { calculatePayRun, remittanceDueDate } from '../../_payroll.js';
-
-const WORK_LOG_TAB = '📝 Work Log';
-const PAYROLL_TAB = '💼 Payroll';
-const TXN_TAB = '📒 Transactions';
-const WAGE_CATEGORY = 'Wages & Salaries';
+import {
+  PAYROLL_TAB, TXN_TAB, round2,
+  loadEmployee, loadWorkLogInRange, loadYtdState, findExistingPayrollRow, resolveWageCategory,
+} from '../../_payroll_sheet.js';
 
 export const onRequestOptions = () => options();
 
@@ -52,6 +51,7 @@ export async function onRequestPost({ request, env }) {
 
   const employee = await loadEmployee(env, userId, employeeId);
   if (!employee) return json({ ok: false, error: `Employee ${employeeId} not found` }, 404);
+  const WAGE_CATEGORY = await resolveWageCategory(env, userId);
 
   // Idempotency check — existing Payroll row for this (employee, payDate)?
   const existingRow = await findExistingPayrollRow(env, userId, employee.name, payDate);
@@ -165,8 +165,6 @@ export async function onRequestPost({ request, env }) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
-
 function buildWorkDescription(entries, adjustment) {
   if (!entries.length) {
     return adjustment > 0 ? `Adjustment / bonus only` : `—`;
@@ -178,85 +176,4 @@ function buildWorkDescription(entries, adjustment) {
   else desc = `${tasks.slice(0, 3).join('; ')}; +${tasks.length - 3} more`;
   if (adjustment > 0) desc += ` (+ adjustment)`;
   return desc;
-}
-
-async function loadEmployee(env, userId, employeeId) {
-  try {
-    const row = await env.DB.prepare('SELECT employees FROM profiles WHERE user_id = ?')
-      .bind(userId).first();
-    if (!row || !row.employees) return null;
-    const list = JSON.parse(row.employees);
-    if (!Array.isArray(list)) return null;
-    return list.find(e => e.id === employeeId) || null;
-  } catch {
-    return null;
-  }
-}
-
-async function loadWorkLogInRange(env, userId, employeeName, startIso, endIso) {
-  const result = await readRange(env, userId, `'${WORK_LOG_TAB}'!B12:I`);
-  if (!result.ok) return [];
-  const startT = Date.parse(startIso);
-  const endT = Date.parse(endIso);
-  const entries = [];
-  for (const row of result.values) {
-    if (!row || !row[0]) continue;
-    const [date, name, business, task, hours, rate, notes, audit] = row;
-    if (name !== employeeName) continue;
-    const t = Date.parse(date);
-    if (isNaN(t) || t < startT || t > endT) continue;
-    entries.push({
-      date, business: business || '', task: task || '',
-      hours: parseFloat(hours) || 0, rate: parseFloat(rate) || 0,
-      notes: notes || '', audit: audit || '',
-    });
-  }
-  return entries;
-}
-
-async function loadYtdState(env, userId, employeeName, payDateIso) {
-  const ytd = { gross: 0, cppBase: 0, cpp2: 0, fedTax: 0, onTax: 0 };
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
-  if (!result.ok) return ytd;
-  const payT = Date.parse(payDateIso);
-  const payYear = new Date(payDateIso).getUTCFullYear();
-
-  for (const row of result.values) {
-    if (!row || !row[0]) continue;
-    const [rowDate, rowName, , , , , , gross, cpp, , fedTax, onTax, , , , status] = row;
-    if (rowName !== employeeName) continue;
-    if (status && String(status).toLowerCase() === 'cancelled') continue;
-    const rowT = Date.parse(rowDate);
-    if (isNaN(rowT)) continue;
-    if (new Date(rowDate).getUTCFullYear() !== payYear) continue;
-    if (rowT >= payT) continue;
-
-    ytd.gross   += parseFloat(gross)   || 0;
-    ytd.cppBase += parseFloat(cpp)     || 0;
-    ytd.fedTax  += parseFloat(fedTax)  || 0;
-    ytd.onTax   += parseFloat(onTax)   || 0;
-  }
-
-  ytd.gross   = round2(ytd.gross);
-  ytd.cppBase = round2(ytd.cppBase);
-  ytd.fedTax  = round2(ytd.fedTax);
-  ytd.onTax   = round2(ytd.onTax);
-  return ytd;
-}
-
-async function findExistingPayrollRow(env, userId, employeeName, payDateIso) {
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
-  if (!result.ok) return null;
-  for (let i = 0; i < result.values.length; i++) {
-    const row = result.values[i];
-    if (!row || !row[0]) continue;
-    const [rowDate, rowName] = row;
-    if (rowName !== employeeName) continue;
-    const rowT = Date.parse(rowDate);
-    if (isNaN(rowT)) continue;
-    if (new Date(rowDate).toISOString().slice(0, 10) === payDateIso) {
-      return { sheetRow: 12 + i, rowValues: row };
-    }
-  }
-  return null;
 }

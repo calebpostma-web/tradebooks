@@ -18,6 +18,7 @@
 
 import { readRange } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
+import { num } from '../../_payroll_sheet.js';
 
 const WORK_LOG_TAB = '📝 Work Log';
 const PAYROLL_TAB = '💼 Payroll';
@@ -56,14 +57,14 @@ export async function onRequestGet({ request, env }) {
       if (isNaN(t) || t < yearStart || t > yearEnd) continue;
       wlEntries.push({
         date, business: business || 'Postma', task: task || '',
-        hours: parseFloat(hours) || 0, rate: parseFloat(rate) || 0,
+        hours: num(hours), rate: num(rate),
         notes: notes || '', audit: audit || '',
       });
     }
   }
 
   // Payroll rows for this employee in this year
-  const payResult = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
+  const payResult = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:U`);
   const payRuns = [];
   if (payResult.ok) {
     for (const row of payResult.values) {
@@ -75,12 +76,12 @@ export async function onRequestGet({ request, env }) {
       if (isNaN(t) || t < yearStart || t > yearEnd) continue;
       payRuns.push({
         payDate,
-        gross: parseFloat(gross) || 0,
-        cpp: parseFloat(cpp) || 0,
-        ei: parseFloat(ei) || 0,
-        fedTax: parseFloat(fedTax) || 0,
-        onTax: parseFloat(onTax) || 0,
-        netPay: parseFloat(netPay) || 0,
+        gross: num(gross),
+        cpp: num(cpp),
+        ei: num(ei),
+        fedTax: num(fedTax),
+        onTax: num(onTax),
+        netPay: num(netPay),
         status: status || '',
       });
     }

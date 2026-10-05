@@ -18,12 +18,9 @@
 // Payroll row's Status column from 'Paid' to 'Remitted'.
 // ════════════════════════════════════════════════════════════════════
 
-import { readRange, writeRange, appendRows } from '../../_sheets.js';
+import { writeRange, appendRows } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
-
-const PAYROLL_TAB = '💼 Payroll';
-const TXN_TAB = '📒 Transactions';
-const WAGE_CATEGORY = 'Wages & Salaries';
+import { PAYROLL_TAB, TXN_TAB, round2, loadPayrollRows, resolveWageCategory } from '../../_payroll_sheet.js';
 
 export const onRequestOptions = () => options();
 
@@ -48,35 +45,32 @@ export async function onRequestPost({ request, env }) {
   if (!remitDate) return json({ ok: false, error: 'remitDate is required' }, 400);
 
   // Read Payroll tab and verify each row is Paid with a deduction total.
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
-  if (!result.ok) return json({ ok: false, error: 'Failed to read Payroll: ' + result.error });
+  const res = await loadPayrollRows(env, userId);
+  if (!res.ok) return json({ ok: false, error: 'Failed to read Payroll: ' + res.error });
+  const bySheetRow = new Map(res.rows.map(r => [r.sheetRow, r]));
+  const WAGE_CATEGORY = await resolveWageCategory(env, userId);
 
   const pickedRows = [];
   const issues = [];
   for (const rowNum of payrollRows) {
-    const i = rowNum - 12;
-    const row = result.values[i];
-    if (!row || !row[0]) { issues.push(`Row ${rowNum} not found`); continue; }
-    // 0 PayDate, 1 Employee, ..., 8 CPP, 10 FedTax, 11 ONTax, 14 RemitDue, 15 Status
-    const [payDate, employee, , , , , , , cpp, , fedTax, onTax, , , remitDue, status] = row;
-    if (String(status || '').toLowerCase() === 'remitted') {
+    const r = bySheetRow.get(rowNum);
+    if (!r) { issues.push(`Row ${rowNum} not found`); continue; }
+    const { payDate, employee, status } = r;
+    if (status.toLowerCase() === 'remitted') {
       issues.push(`Row ${rowNum} (${employee} ${payDate}) is already Remitted`);
       continue;
     }
-    if (String(status || '').toLowerCase() !== 'paid') {
+    if (status.toLowerCase() !== 'paid') {
       issues.push(`Row ${rowNum} (${employee} ${payDate}) has Status '${status}' — only 'Paid' rows can be remitted`);
       continue;
     }
-    const cppNum = parseFloat(cpp) || 0;
-    const fedNum = parseFloat(fedTax) || 0;
-    const onNum = parseFloat(onTax) || 0;
-    const total = cppNum + fedNum + onNum;
+    const total = round2(r.cpp + r.fedTax + r.onTax);
     if (total <= 0) {
       issues.push(`Row ${rowNum} (${employee} ${payDate}) has $0 deductions — nothing to remit`);
       continue;
     }
     pickedRows.push({
-      sheetRow: rowNum, payDate, employee, cpp: cppNum, fedTax: fedNum, onTax: onNum, total,
+      sheetRow: rowNum, payDate, employee, cpp: r.cpp, fedTax: r.fedTax, onTax: r.onTax, total,
     });
   }
 
@@ -138,8 +132,6 @@ export async function onRequestPost({ request, env }) {
 }
 
 // ── Helpers ──
-
-function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
 function monthLabel(iso) {
   try {

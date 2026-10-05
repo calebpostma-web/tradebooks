@@ -39,6 +39,7 @@
 
 import { readRange } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
+import { num } from '../../_payroll_sheet.js';
 import { ageOnDate } from '../../_payroll.js';
 
 const PAYROLL_TAB = '💼 Payroll';
@@ -67,7 +68,7 @@ export async function onRequestGet({ request, env }) {
   };
 
   // Read all Payroll rows for the year
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
+  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:U`);
   if (!result.ok) return json({ ok: false, error: 'Failed to read Payroll: ' + result.error });
 
   // Group rows by employee name
@@ -83,12 +84,12 @@ export async function onRequestGet({ request, env }) {
     if (!byName.has(empName)) byName.set(empName, []);
     byName.get(empName).push({
       payDate: d.toISOString().slice(0, 10),
-      gross: parseFloat(gross) || 0,
-      cpp: parseFloat(cpp) || 0,
-      ei: parseFloat(ei) || 0,
-      fedTax: parseFloat(fedTax) || 0,
-      onTax: parseFloat(onTax) || 0,
-      netPay: parseFloat(netPay) || 0,
+      gross: num(gross),
+      cpp: num(cpp),
+      ei: num(ei),
+      fedTax: num(fedTax),
+      onTax: num(onTax),
+      netPay: num(netPay),
       status: status || '',
     });
   }

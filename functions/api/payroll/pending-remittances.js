@@ -29,9 +29,7 @@
 
 import { readRange } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
-
-const PAYROLL_TAB = '💼 Payroll';
-const TXN_TAB = '📒 Transactions';
+import { TXN_TAB, num, round2, loadPayrollRows } from '../../_payroll_sheet.js';
 
 export const onRequestOptions = () => options();
 
@@ -49,31 +47,23 @@ export async function onRequestGet({ request, env }) {
 // ── Pending remittance groups ───────────────────────────────────────
 
 async function loadPendingGroups(env, userId) {
-  const result = await readRange(env, userId, `'${PAYROLL_TAB}'!B12:Q`);
-  if (!result.ok) return [];
+  const res = await loadPayrollRows(env, userId);
+  if (!res.ok) return [];
 
   // Group by remittance due date
   const byDue = new Map();
 
-  for (let i = 0; i < result.values.length; i++) {
-    const row = result.values[i];
-    if (!row || !row[0]) continue;
+  for (const r of res.rows) {
+    if (!r.remitDue) continue;                                 // no deductions owed
+    if (r.status.toLowerCase() !== 'paid') continue;           // already remitted or cancelled
 
-    // Columns: 0 Pay Date, 1 Employee, 2 Age, 3 Business, 4 Work Desc,
-    //          5 Hours, 6 Rate, 7 Gross, 8 CPP, 9 EI, 10 Fed, 11 ON,
-    //          12 Net, 13 YTD, 14 Remit Due, 15 Status
-    const [payDate, employee, , , , , , , cpp, , fedTax, onTax, , , remitDue, status] = row;
-
-    if (!remitDue) continue;                                   // no deductions owed
-    if (!status || String(status).toLowerCase() !== 'paid') continue; // already remitted or cancelled
-
-    const cppNum = parseFloat(cpp) || 0;
-    const fedNum = parseFloat(fedTax) || 0;
-    const onNum = parseFloat(onTax) || 0;
-    const total = cppNum + fedNum + onNum;
+    const cppNum = r.cpp;
+    const fedNum = r.fedTax;
+    const onNum = r.onTax;
+    const total = round2(cppNum + fedNum + onNum);
     if (total <= 0) continue;
 
-    const dueKey = normalizeDate(remitDue);
+    const dueKey = r.remitDue;
     if (!byDue.has(dueKey)) {
       byDue.set(dueKey, {
         remittanceDue: dueKey,
@@ -84,9 +74,9 @@ async function loadPendingGroups(env, userId) {
     }
     const g = byDue.get(dueKey);
     g.runs.push({
-      sheetRow: 12 + i,                // 1-indexed sheet row
-      payDate: normalizeDate(payDate),
-      employee: employee || '',
+      sheetRow: r.sheetRow,
+      payDate: r.payDate,
+      employee: r.employee,
       cpp: cppNum, fedTax: fedNum, onTax: onNum, total,
     });
     g.totalCpp += cppNum;
@@ -124,7 +114,7 @@ async function loadRecentRemittances(env, userId) {
 
     items.push({
       date: normalizeDate(date),
-      amount: Math.abs(parseFloat(amount) || 0),
+      amount: Math.abs(num(amount)),
       ref: refStr,
       description: desc || '',
       party: party || 'CRA',
@@ -136,8 +126,6 @@ async function loadRecentRemittances(env, userId) {
 }
 
 // ── Helpers ──
-
-function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
 function normalizeDate(v) {
   if (!v) return '';

@@ -23,7 +23,7 @@ import { authenticateRequest, json, options } from '../../_shared.js';
 import { calculatePayRun, remittanceDueDate } from '../../_payroll.js';
 import {
   PAYROLL_TAB, TXN_TAB, round2,
-  loadEmployee, loadWorkLogInRange, loadYtdState, findExistingPayrollRow, resolveWageCategory,
+  loadEmployee, loadWorkLogInRange, loadYtdState, findExistingPayrollRow, resolveWageCategory, loadRemitter,
 } from '../../_payroll_sheet.js';
 
 export const onRequestOptions = () => options();
@@ -74,12 +74,13 @@ export async function onRequestPost({ request, env }) {
   }
 
   const ytd = await loadYtdState(env, userId, employee.name, payDate);
+  const remitter = await loadRemitter(env, userId);
 
   const result = calculatePayRun({ employee, payDate, grossPay, ytd });
 
   // Determine remittance due + status
-  const totalDeductions = result.cpp + result.cpp2 + result.fedTax + result.onTax;
-  const remitDue = totalDeductions > 0 ? remittanceDueDate(payDate) : '';
+  const totalDeductions = result.cpp + result.cpp2 + result.ei + result.fedTax + result.onTax;
+  const remitDue = totalDeductions > 0 ? remittanceDueDate(payDate, remitter) : '';
   const status = 'Paid';  // employee paid; CRA remittance tracked separately via Status flip
 
   // Build Payroll row (20 data columns B-U)
@@ -164,6 +165,7 @@ export async function onRequestPost({ request, env }) {
       totalRemittance: result.totalRemittance, employerCost: result.employerCost,
     },
     remittanceDue: remitDue || null,
+    remitter,
     status,
     workLogEntries: wlEntries.length,
     payrollRow: payResult.updates?.updatedRange,

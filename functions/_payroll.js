@@ -316,27 +316,38 @@ export function calculatePayRun({ employee, payDate, grossPay, ytd }) {
   };
 }
 
-// ─── Remittance due date (monthly — 15th of following month) ────────
+// ─── Remittance due date ────────────────────────────────────────────
 
 /**
- * For a pay run on `payDateIso`, return the CRA source deduction
- * remittance due date (ISO YYYY-MM-DD). Monthly remitter default:
- * due the 15th of the month AFTER the month in which pay was issued.
+ * CRA source-deduction due date for a pay issued on `payDateIso`.
  *
- * E.g., pay on Feb 23 → remit by Mar 15.
- * If the 15th falls on a weekend/holiday, CRA allows the next business
- * day — for simplicity we return the 15th; UI can show the business-day
- * adjustment if needed.
+ *   remitter = 'monthly'   (regular remitter, CRA default for new accounts)
+ *     → 15th of the month AFTER the pay month.   Feb 23 → Mar 15
+ *   remitter = 'quarterly' (CRA-assigned; AMWA < $3,000 + clean history,
+ *                           or a new small employer who requested it)
+ *     → 15th of the month after the calendar quarter.  Oct 5 → Jan 15
+ *
+ * The remitter type is a property of the RP account, assigned by CRA —
+ * NOT the HST filing frequency. If the 15th is a weekend/holiday CRA
+ * accepts the next business day; we return the 15th.
  */
-export function remittanceDueDate(payDateIso) {
+export function remittanceDueDate(payDateIso, remitter = 'monthly') {
   const d = new Date(payDateIso);
   if (isNaN(d.getTime())) return null;
   const y = d.getUTCFullYear();
-  const m = d.getUTCMonth() + 1;  // 0-indexed → month after pay month
-  const yNext = m === 12 ? y + 1 : y;
-  const mNext = m === 12 ? 0 : m;
-  const due = new Date(Date.UTC(yNext, mNext, 15));
+  const m0 = d.getUTCMonth();                       // 0-indexed pay month
+  let dueM0;                                        // 0-indexed month that contains the 15th
+  if (remitter === 'quarterly') {
+    dueM0 = (Math.floor(m0 / 3) + 1) * 3;           // month after quarter end: 3, 6, 9, 12
+  } else {
+    dueM0 = m0 + 1;
+  }
+  const due = new Date(Date.UTC(y, dueM0, 15));     // Date.UTC rolls month 12 → Jan next year
   return due.toISOString().slice(0, 10);
+}
+
+export function normalizeRemitter(v) {
+  return String(v || '').toLowerCase() === 'quarterly' ? 'quarterly' : 'monthly';
 }
 
 // ─── Small helpers ──────────────────────────────────────────────────

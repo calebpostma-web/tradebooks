@@ -106,6 +106,16 @@ export async function resolveWageCategory(env, userId) {
   return DEFAULT_WAGE_CATEGORY;
 }
 
+/** 'monthly' | 'quarterly' from the profile (CRA-assigned remitter type). */
+export async function loadRemitter(env, userId) {
+  try {
+    const row = await env.DB.prepare('SELECT payroll_remitter FROM profiles WHERE user_id = ?').bind(userId).first();
+    return String(row?.payroll_remitter || '').toLowerCase() === 'quarterly' ? 'quarterly' : 'monthly';
+  } catch {
+    return 'monthly';
+  }
+}
+
 // ─── Work Log ───────────────────────────────────────────────────────
 
 /**

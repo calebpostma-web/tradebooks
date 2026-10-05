@@ -180,6 +180,7 @@ async function loadProfile(userId, env) {
     customExpenseCats: safeJSON(row.custom_expense_cats, []),
     customIncomeCats: safeJSON(row.custom_income_cats, []),
     pocketCats: safeJSON(row.pocket_cats, []),
+    payrollRemitter: row.payroll_remitter === 'quarterly' ? 'quarterly' : 'monthly',
   };
 }
 

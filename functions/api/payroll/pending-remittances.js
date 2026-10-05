@@ -29,9 +29,10 @@
 // }
 // ════════════════════════════════════════════════════════════════════
 
-import { readRange } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
-import { TXN_TAB, num, round2, loadPayrollRows } from '../../_payroll_sheet.js';
+import { readRange, writeRange } from '../../_sheets.js';
+import { PAYROLL_TAB, TXN_TAB, num, round2, loadPayrollRows, loadRemitter } from '../../_payroll_sheet.js';
+import { remittanceDueDate } from '../../_payroll.js';
 
 export const onRequestOptions = () => options();
 
@@ -40,24 +41,33 @@ export async function onRequestGet({ request, env }) {
   if (!auth) return json({ ok: false, error: 'Unauthorized' }, 401);
   const userId = auth.userId;
 
-  const groups = await loadPendingGroups(env, userId);
+  const remitter = await loadRemitter(env, userId);
+  const { groups, healed } = await loadPendingGroups(env, userId, remitter);
   const recentRemittances = await loadRecentRemittances(env, userId);
 
-  return json({ ok: true, groups, recentRemittances });
+  return json({ ok: true, remitter, groups, recentRemittances, healed });
 }
 
 // ── Pending remittance groups ───────────────────────────────────────
 
-async function loadPendingGroups(env, userId) {
+async function loadPendingGroups(env, userId, remitter = 'monthly') {
   const res = await loadPayrollRows(env, userId);
-  if (!res.ok) return [];
+  if (!res.ok) return { groups: [], healed: 0 };
 
-  // Group by remittance due date
+  // Group by remittance due date. The due date is RECOMPUTED from the pay
+  // date and the current remitter type, so switching monthly ↔ quarterly
+  // in Settings re-buckets rows that were committed under the old type.
+  // Rows still 'Paid' whose stored due date (col P) disagrees get rewritten
+  // so the sheet matches what the app shows.
   const byDue = new Map();
+  const heals = [];
 
   for (const r of res.rows) {
     if (!r.remitDue) continue;                                 // no deductions owed
     if (r.status.toLowerCase() !== 'paid') continue;           // already remitted or cancelled
+    const dueNow = remittanceDueDate(r.payDate, remitter) || r.remitDue;
+    if (dueNow !== r.remitDue) heals.push({ sheetRow: r.sheetRow, due: dueNow });
+    r.remitDue = dueNow;
 
     const cppNum = r.cpp;
     const eiNum = r.ei;
@@ -113,7 +123,11 @@ async function loadPendingGroups(env, userId) {
     totalAmount: round2(g.totalAmount),
   }));
   groups.sort((a, b) => a.remittanceDue.localeCompare(b.remittanceDue));
-  return groups;
+
+  for (const h of heals) {
+    try { await writeRange(env, userId, `'${PAYROLL_TAB}'!P${h.sheetRow}`, [[h.due]]); } catch { /* cosmetic */ }
+  }
+  return { groups, healed: heals.length };
 }
 
 // ── Recent remittances (from 📒 Transactions) ────────────────────────

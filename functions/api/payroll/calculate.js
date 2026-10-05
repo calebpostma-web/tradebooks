@@ -26,7 +26,7 @@
 
 import { authenticateRequest, json, options } from '../../_shared.js';
 import { calculatePayRun, remittanceDueDate } from '../../_payroll.js';
-import { loadEmployee, loadWorkLogInRange, loadYtdState } from '../../_payroll_sheet.js';
+import { loadEmployee, loadWorkLogInRange, loadYtdState, loadRemitter } from '../../_payroll_sheet.js';
 
 export const onRequestOptions = () => options();
 
@@ -60,6 +60,7 @@ export async function onRequestPost({ request, env }) {
 
   // 3. Read Payroll rows for YTD state (calendar year of payDate)
   const ytd = await loadYtdState(env, userId, employee.name, payDate);
+  const remitter = await loadRemitter(env, userId);
 
   // 4. Run the engine
   const result = calculatePayRun({
@@ -92,8 +93,9 @@ export async function onRequestPost({ request, env }) {
       onTax: Math.round((ytd.onTax + result.onTax) * 100) / 100,
     },
     calculation: result,
-    remittanceDue: (result.cpp + result.cpp2 + result.fedTax + result.onTax) > 0
-      ? remittanceDueDate(payDate)
+    remitter,
+    remittanceDue: (result.cpp + result.cpp2 + result.ei + result.fedTax + result.onTax) > 0
+      ? remittanceDueDate(payDate, remitter)
       : null,
   });
 }

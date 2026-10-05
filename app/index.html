@@ -2337,7 +2337,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
   <!-- ─── Remittance sub-panel ─── -->
   <div id="pay-sub-remittance" class="pay-sub-panel" style="display:none">
     <div style="background:#fff8e8;border:1px solid #e6c97a;border-left:3px solid #b88a00;border-radius:var(--radius);padding:.7rem 1rem;font-size:.82rem;line-height:1.55;margin-bottom:1.25rem">
-      📅 <strong>Monthly source-deduction remittance.</strong> CRA requires the CPP, EI and federal + Ontario tax withheld during a month <strong>plus the employer's matching CPP and 1.4× EI</strong> to reach them by the 15th of the following month — one payment covers both. Pay each group to CRA via online banking (payee "Canada Revenue Agency – Payroll", use your Business Number + RP0001), then mark it Remitted here so the ledger records the CRA transaction and your Payroll rows get stamped.
+      📅 <strong>Monthly source-deduction remittance.</strong> CRA requires the CPP, EI and federal + Ontario tax withheld during a month <strong>plus the employer's matching CPP and 1.4× EI</strong> to reach them by the due date for your remitter type (monthly: 15th of the next month; quarterly: 15th after quarter end — set in Settings) — one payment covers both. Pay each group to CRA via online banking (payee "Canada Revenue Agency – Payroll", use your Business Number + RP0001), then mark it Remitted here so the ledger records the CRA transaction and your Payroll rows get stamped.
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
@@ -2947,6 +2947,7 @@ let USER_CONFIG = {
   customExpenseCats: [],
   customIncomeCats: [],
   pocketCats: [],   // money moved between own pockets, by the user's names (AMEX Payment, Andrea Loan…)
+  payrollRemitter: 'monthly',   // CRA-assigned remitter type for the RP account: 'monthly' | 'quarterly'
   // Invoice customization — persisted in localStorage (cross-device sync TBD)
   invoicePhone: '',
   invoiceWebsite: '',
@@ -8113,7 +8114,7 @@ function prRenderCommitResult(d){
         Pay date: <strong>${esc(d.payDate)}</strong><br>
         Gross: <strong>$${d.gross.toFixed(2)}</strong> · Deductions: $${d.deductions.total.toFixed(2)} · Net: <strong style="color:var(--green)">$${d.netPay.toFixed(2)}</strong><br>
         ${d.employer ? `Employer CPP/EI: $${d.employer.share.toFixed(2)} · Total cost to corporation: <strong>$${d.employer.employerCost.toFixed(2)}</strong><br>` : ''}
-        ${d.remittanceDue ? `Remit <strong>$${(d.employer ? d.employer.totalRemittance : d.deductions.total).toFixed(2)}</strong> to CRA by <strong>${esc(d.remittanceDue)}</strong> (monthly remitter, 15th of month after pay)` : `<em>No remittance owed — all deductions zero.</em>`}
+        ${d.remittanceDue ? `Remit <strong>$${(d.employer ? d.employer.totalRemittance : d.deductions.total).toFixed(2)}</strong> to CRA by <strong>${esc(d.remittanceDue)}</strong> (${d.remitter === 'quarterly' ? 'quarterly remitter — 15th after quarter end' : 'monthly remitter — 15th of the next month'})` : `<em>No remittance owed — all deductions zero.</em>`}
       </div>
       <div style="font-size:.78rem;color:var(--ink3);margin-top:.7rem">
         Wrote row to 💼 Payroll (${esc(d.payrollRow || '')}) + matching −$${d.netPay.toFixed(2)} Wages entry to 📒 Transactions. ${sheetLink}
@@ -8210,7 +8211,7 @@ function prRenderBreakdown(d){
 
       ${d.remittanceDue
         ? `<div style="font-size:.82rem;background:#fff8e8;border:1px solid #e6c97a;border-left:3px solid #b88a00;border-radius:4px;padding:.55rem .8rem">
-             📅 <strong>Remit $${Number(c.totalRemittance||0).toFixed(2)} to CRA by ${esc(d.remittanceDue)}</strong> — employee deductions $${c.totalDeductions.toFixed(2)} + employer CPP/EI $${Number(c.employerShare||0).toFixed(2)}. One payment, payee "CRA – Payroll Deductions". (Monthly remitter, 15th of month after pay.)
+             📅 <strong>Remit $${Number(c.totalRemittance||0).toFixed(2)} to CRA by ${esc(d.remittanceDue)}</strong> — employee deductions $${c.totalDeductions.toFixed(2)} + employer CPP/EI $${Number(c.employerShare||0).toFixed(2)}. One payment, payee "CRA – Payroll Deductions". (${d.remitter === 'quarterly' ? 'Quarterly remitter — 15th after quarter end.' : 'Monthly remitter — 15th of the next month.'})
            </div>`
         : `<div style="font-size:.82rem;color:var(--ink3);font-style:italic">No deductions — nothing to remit to CRA for this run.</div>`}
     </div>`;
@@ -8261,7 +8262,15 @@ async function prPrintStub(sheetRow){
 
 async function prEmailStub(sheetRow, employeeName){
   const token = localStorage.getItem(AUTH_KEY);
-  const emp = (typeof PAYROLL_EMPLOYEES !== 'undefined' ? PAYROLL_EMPLOYEES : []).find(e => e.name === employeeName);
+  // Always look the address up fresh from the server — the in-page list can
+  // be stale if the employee was just edited.
+  let emp = null;
+  try {
+    const er = await fetch('/api/payroll/employees', { headers: { 'Authorization': 'Bearer ' + token } });
+    const ed = await er.json();
+    if(ed.ok && Array.isArray(ed.employees)){ PAYROLL_EMPLOYEES = ed.employees; emp = ed.employees.find(e => e.name === employeeName) || null; }
+  } catch(e){ /* fall back to the in-page list */ }
+  if(!emp) emp = (typeof PAYROLL_EMPLOYEES !== 'undefined' ? PAYROLL_EMPLOYEES : []).find(e => e.name === employeeName);
   let to = emp?.email || '';
   if(!to){
     to = (prompt(`No email on file for ${employeeName}.\nEnter an address to send this stub to (and add it on the Employees tab for next time):`) || '').trim();
@@ -8292,6 +8301,7 @@ async function prEmailStub(sheetRow, employeeName){
 // ── Remittance ──
 
 let _rmGroups = [];
+let _rmRemitter = 'monthly';
 
 async function rmLoad(){
   const token = localStorage.getItem(AUTH_KEY);
@@ -8307,6 +8317,7 @@ async function rmLoad(){
       return;
     }
     _rmGroups = d.groups || [];
+    _rmRemitter = d.remitter || 'monthly';
     rmRenderGroups();
     rmRenderRecent(d.recentRemittances || []);
   } catch(err){
@@ -8316,11 +8327,12 @@ async function rmLoad(){
 
 function rmRenderGroups(){
   const el = document.getElementById('rmGroups');
+  const remitNote = `<div style="font-size:.74rem;color:var(--ink3);margin-bottom:.6rem">Remitter type: <strong>${_rmRemitter === 'quarterly' ? 'Quarterly (due the 15th after each quarter)' : 'Monthly (due the 15th of the next month)'}</strong> · change in Settings</div>`;
   if(!_rmGroups.length){
-    el.innerHTML = '<div style="color:var(--ink3);font-style:italic;padding:.5rem 0">No pending remittances. Commit a pay run with CPP or tax deductions and it will appear here.</div>';
+    el.innerHTML = remitNote + '<div style="color:var(--ink3);font-style:italic;padding:.5rem 0">No pending remittances. Commit a pay run with CPP or tax deductions and it will appear here.</div>';
     return;
   }
-  el.innerHTML = _rmGroups.map((g, idx) => {
+  el.innerHTML = remitNote + _rmGroups.map((g, idx) => {
     const runRows = g.runs.map(r => `
       <div style="display:grid;grid-template-columns:auto 1fr auto;gap:.5rem;font-size:.78rem;padding:.2rem 0;color:var(--ink)">
         <div style="color:var(--ink3);font-family:var(--mono)">${esc(r.payDate)}</div>
@@ -8645,6 +8657,7 @@ function renderSettings(){
   const ccOpts = ['AMEX','Visa','Mastercard','Capital One','None'].map(c=>`<option${c===C.creditCard?' selected':''}>${c}</option>`).join('');
   const fyOpts = ['January 31','February 28','March 31','April 30','May 31','June 30','July 31','August 31','September 30','October 31','November 30','December 31'].map(f=>`<option${f===C.fiscalYearEnd?' selected':''}>${f}</option>`).join('');
   const typeOpts = `<option value="sole_prop"${C.businessType==='sole_prop'?' selected':''}>Sole Proprietor</option><option value="incorporated"${C.businessType==='incorporated'?' selected':''}>Incorporated</option>`;
+  const remitOpts = `<option value="monthly"${C.payrollRemitter!=='quarterly'?' selected':''}>Monthly (regular) — 15th of the next month</option><option value="quarterly"${C.payrollRemitter==='quarterly'?' selected':''}>Quarterly — Apr 15 / Jul 15 / Oct 15 / Jan 15</option>`;
 
   const f = (lbl,id,val,type) => `<div class="field"><label>${lbl}</label><input type="${type||'text'}" id="${id}" value="${val||''}" style="font-size:.88rem"></div>`;
   const s = (lbl,id,opts) => `<div class="field"><label>${lbl}</label><select id="${id}" style="font-size:.88rem">${opts}</select></div>`;
@@ -8671,6 +8684,10 @@ function renderSettings(){
       ${s('Fiscal Year End','set_fiscalYearEnd',fyOpts)}
       ${f('Home Office %','set_homeOfficePercent',C.homeOfficePercent,'number')}
     </div>
+    <div class="field-row">
+      ${s('Payroll remitter type (CRA)','set_payrollRemitter',remitOpts)}
+    </div>
+    <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">Assigned by CRA for your payroll (RP) account — it is <strong>not</strong> your HST filing frequency. New accounts are monthly unless CRA has told you otherwise; if you file nil remittances quarterly, you're quarterly. Changing this re-dates any remittance not yet paid.</div>
 
     <hr class="divider">
     <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Invoice Settings</div>
@@ -9136,6 +9153,7 @@ async function saveSettings(){
     creditCard: document.getElementById('set_creditCard')?.value || 'AMEX',
     fiscalYearEnd: document.getElementById('set_fiscalYearEnd')?.value || 'December 31',
     homeOfficePercent: parseInt(document.getElementById('set_homeOfficePercent')?.value) || 0,
+    payrollRemitter: document.getElementById('set_payrollRemitter')?.value === 'quarterly' ? 'quarterly' : 'monthly',
     invoiceStart: parseInt(document.getElementById('set_invoiceStart')?.value) || 1001,
     email: document.getElementById('set_email')?.value || '',
     clients: (document.getElementById('set_clients')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),

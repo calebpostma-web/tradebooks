@@ -962,9 +962,10 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <label style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:.4rem">Invoice number</label>
           <div class="inv-num-row">
             <div class="inv-num-disp" id="invNumDisp">1001</div>
-            <button class="btn-regen" onclick="regenInv()">↺ New #</button>
-            <input type="number" style="width:85px;padding:.48rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--mono);font-size:.85rem" placeholder="Custom" oninput="customInv(this.value)">
+            <button class="btn-regen" onclick="regenInv()" title="Next number after the highest one in your Invoices tab">↺ Next #</button>
+            <input type="text" id="invNumCustom" maxlength="24" autocomplete="off" spellcheck="false" style="width:150px;padding:.48rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-family:var(--mono);font-size:.85rem" placeholder="or type: PCT-10377" oninput="customInv(this.value)">
           </div>
+          <div id="invNumWarn" style="display:none;font-size:.76rem;margin-top:.35rem"></div>
         </div>
         <div class="field-row">
           <div class="field"><label>Invoice date</label><input type="date" id="invDate" oninput="invUpdate()"></div>
@@ -3683,6 +3684,7 @@ function showTab(t){
   document.getElementById('panel-'+t).classList.add('active');
   // Lazy load on first open
   if (t === 'payroll') { try { payrollInit(); } catch(e) { console.warn(e); } }
+  if (t === 'invoice') { try { invNumberInit(); } catch(e) { console.warn(e); } }
   if (t === 'yearend') { try { yearendInit(); } catch(e) { console.warn(e); } }
 }
 function toast(msg,ms=3500){
@@ -4639,8 +4641,81 @@ function setInvCurrency(c){
   renderLines();invUpdate();
 })();
 
-function regenInv(){invNum=String((USER_CONFIG?.invoiceStart||1001)+Math.floor(Math.random()*200));document.getElementById('invNumDisp').textContent=invNum;invUpdate()}
-function customInv(v){if(v){invNum=v;document.getElementById('invNumDisp').textContent=v;invUpdate()}}
+// ── Invoice numbers ────────────────────────────────────────────────
+// Free text: "1042", "C-1042", "PCT-10377" (the website order number) all
+// work. "Next #" is the highest number already in the Invoices tab + 1,
+// looked up live so two devices can't both hand out 1043. Typing a number
+// that already exists shows a warning before send.
+let _invKnown = null;     // { numbers:Set, nextNumber } from /api/invoice/list, or null if not loaded
+let _invKnownAt = 0;
+
+async function invLoadKnown(force){
+  const token = localStorage.getItem(AUTH_KEY);
+  if(!token) return null;
+  if(!force && _invKnown && Date.now() - _invKnownAt < 60000) return _invKnown;
+  try {
+    const r = await fetch('/api/invoice/list?start=' + encodeURIComponent(USER_CONFIG?.invoiceStart || 1001), { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if(d.ok){
+      _invKnown = { numbers: new Set((d.numbers || []).map(n => String(n).trim().toUpperCase())), nextNumber: d.nextNumber };
+      _invKnownAt = Date.now();
+      return _invKnown;
+    }
+  } catch(e){ /* offline — fall back to local counter */ }
+  return _invKnown;
+}
+
+function invCleanNumber(v){
+  // Letters, digits, and - / # . _ only; collapse whitespace; cap length.
+  return String(v || '').replace(/\s+/g, '').replace(/[^A-Za-z0-9\-\/#._]/g, '').slice(0, 24);
+}
+
+function invSetNumber(v){
+  invNum = v;
+  document.getElementById('invNumDisp').textContent = v;
+  invCheckDuplicate();
+  invUpdate();
+}
+
+function invCheckDuplicate(){
+  const warn = document.getElementById('invNumWarn');
+  if(!warn) return;
+  const key = String(invNum || '').trim().toUpperCase();
+  if(_invKnown && key && _invKnown.numbers.has(key)){
+    warn.style.display = '';
+    warn.style.color = 'var(--red)';
+    warn.textContent = `⚠ Invoice ${invNum} already exists in your Invoices tab. Sending again will create a second row with the same number.`;
+  } else {
+    warn.style.display = 'none';
+    warn.textContent = '';
+  }
+}
+
+async function regenInv(){
+  const btn = document.querySelector('.btn-regen');
+  if(btn) btn.disabled = true;
+  const known = await invLoadKnown(true);
+  if(btn) btn.disabled = false;
+  const next = known?.nextNumber || String(USER_CONFIG?.invoiceStart || 1001);
+  const custom = document.getElementById('invNumCustom');
+  if(custom) custom.value = '';
+  invSetNumber(next);
+}
+
+function customInv(v){
+  const clean = invCleanNumber(v);
+  const el = document.getElementById('invNumCustom');
+  if(el && el.value !== clean) el.value = clean;
+  if(clean) invSetNumber(clean);
+}
+
+/** Called when the Invoice Wizard tab opens: load known numbers, default to next. */
+async function invNumberInit(){
+  const known = await invLoadKnown(false);
+  const custom = document.getElementById('invNumCustom');
+  if(known && !(custom && custom.value)) invSetNumber(known.nextNumber);
+  else invCheckDuplicate();
+}
 
 // ── Deposit / down payment toggle ───────────────────────────────────
 // When ON, deposit fields are revealed. Amount is gross (incl HST). Date is
@@ -5000,6 +5075,7 @@ async function invSendToSheets(){
         depMsg = ` Status set to <strong>Awaiting deposit</strong> — $${fmtMoney(depAmt)} required before work begins.`;
       }
       status.innerHTML = `✅ Invoice #${invNum} added to <strong>Invoices</strong>.${depMsg} Revenue will post to <strong>Transactions</strong> when the deposit is imported and matched. ${sheetLink}`;
+      _invKnown = null; invLoadKnown(true).then(() => invCheckDuplicate());   // the number we just used is now taken
     } else {
       status.textContent = '❌ ' + (d.error || 'Unknown error');
       btn.disabled = false;

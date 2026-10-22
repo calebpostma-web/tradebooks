@@ -34,7 +34,7 @@ async function ensureToken(env, userId, rotate = false) {
 async function recentEvents(env, userId) {
   try {
     const r = await env.DB.prepare(
-      'SELECT id, received_at, from_addr, subject, kind, order_no, status, detail FROM intake_events WHERE user_id = ? ORDER BY id DESC LIMIT 40'
+      'SELECT id, received_at, from_addr, subject, kind, order_no, status, detail, payload FROM intake_events WHERE user_id = ? ORDER BY id DESC LIMIT 40'
     ).bind(userId).all();
     return r.results || [];
   } catch { return []; }
@@ -47,7 +47,7 @@ export async function onRequestGet({ request, env }) {
     const token = await ensureToken(env, auth.userId);
     const events = await recentEvents(env, auth.userId);
     const verify = events.find(e => e.kind === 'gmail_verify');
-    return json({ ok: true, token, address: `orders-${token}@${DOMAIN}`, events, gmailVerify: verify ? { code: verify.detail, at: verify.received_at } : null });
+    return json({ ok: true, token, address: `orders-${token}@${DOMAIN}`, events: events.map(({ payload, ...e }) => e), gmailVerify: verify ? (() => { let pl = {}; try { pl = JSON.parse(verify.payload || '{}') || {}; } catch { /* legacy */ } return { code: pl.code || (/^\d{6,12}$/.test(verify.detail) ? verify.detail : ''), link: pl.link || '', at: verify.received_at }; })() : null });
   } catch (e) {
     return json({ ok: false, error: e.message }, 500);
   }

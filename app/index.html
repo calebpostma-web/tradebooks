@@ -8987,10 +8987,10 @@ async function intakeRender(){
       <div style="font-size:.8rem;line-height:1.55;color:var(--ink2);margin-bottom:.8rem">
         <strong>One-time setup in Gmail</strong> (the mailbox that gets the order emails):
         Settings → <em>See all settings</em> → <em>Forwarding and POP/IMAP</em> → <em>Add a forwarding address</em> → paste the address above.
-        Gmail emails a confirmation code to it — it appears here within a minute; type it back into Gmail.
+        Gmail emails a confirmation to it — a <strong>Confirm forwarding</strong> button appears here within a minute; click it (or type the code back into Gmail if Google sent one instead).
         Then <em>Filters and Blocked Addresses</em> → <em>Create a new filter</em> → From: <code>orders@pctires.ca</code> → <em>Forward it to</em> the address above. Done — every new order books itself.
       </div>
-      ${d.gmailVerify ? `<div style="background:#fff8e8;border-left:3px solid #b88a00;padding:.6rem .9rem;border-radius:4px;margin-bottom:.8rem;font-size:.85rem">📬 <strong>Gmail confirmation code:</strong> <span style="font-family:var(--mono);font-size:1.05rem;user-select:all">${esc(d.gmailVerify.code)}</span> <span style="color:var(--ink3);font-size:.75rem">(received ${esc(String(d.gmailVerify.at).slice(0,16).replace('T',' '))})</span></div>` : ''}
+      ${d.gmailVerify ? `<div style="background:#fff8e8;border-left:3px solid #b88a00;padding:.6rem .9rem;border-radius:4px;margin-bottom:.8rem;font-size:.85rem">📬 <strong>Gmail forwarding confirmation</strong> <span style="color:var(--ink3);font-size:.75rem">(received ${esc(String(d.gmailVerify.at).slice(0,16).replace('T',' '))})</span><div style="margin-top:.45rem">${d.gmailVerify.link ? `<a class="btn btn-primary btn-sm" href="${esc(d.gmailVerify.link)}" target="_blank" rel="noopener">Confirm forwarding ↗</a> <span style="color:var(--ink2);font-size:.78rem;margin-left:.4rem">Opens Google — click <em>Confirm</em> there, then go back to Gmail's Forwarding page and refresh.</span>` : d.gmailVerify.code ? `Code: <span style="font-family:var(--mono);font-size:1.05rem;user-select:all">${esc(d.gmailVerify.code)}</span> — type it into Gmail's verify box.` : `<span style="color:var(--ink2)">Google's email arrived but had no code or link in it — click <em>Re-send email</em> in Gmail and check back here.</span>`}</div></div>` : ''}
       <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);margin:.6rem 0 .3rem">Recent intake</div>
       ${evRows}
       <details style="margin-top:.9rem">

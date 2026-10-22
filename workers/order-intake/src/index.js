@@ -25,8 +25,10 @@ export default {
     const to = message.to || '';
     const envelopeFrom = message.from || '';
     let parsedMail;
+    let rawText = '';
     try {
-      parsedMail = await PostalMime.parse(message.raw);
+      rawText = await new Response(message.raw).text();
+      parsedMail = await PostalMime.parse(rawText);
     } catch (e) {
       await logIntake(env, { to, from: envelopeFrom, subject: '', kind: 'error', status: 'error', detail: 'MIME parse failed: ' + e.message });
       return;
@@ -43,9 +45,16 @@ export default {
       // and the body is often HTML-only, so look in subject, text, then de-tagged HTML.
       const text = parsedMail.text || '';
       const htmlText = String(parsedMail.html || '').replace(/<[^>]+>/g, ' ');
-      const code = (/\(#?(\d{6,12})\)/.exec(subject) || /confirmation code:?\s*(\d{6,12})/i.exec(text + ' ' + htmlText) || /\b(\d{9})\b/.exec(text + ' ' + htmlText) || [])[1] || '';
-      const link = (/https:\/\/mail-settings\.google\.com\/mail\/[^\s)>"']+/i.exec(text + ' ' + htmlText) || [])[0] || '';
-      await logIntake(env, { userId, to, from: headerFrom, subject, kind: 'gmail_verify', status: 'info', detail: code || '(no code found)', payload: { link } });
+      const rawSubject = message.headers?.get?.('subject') || '';
+      // Quoted-printable soft line breaks can split the body; digits survive, so fall back to the raw message.
+      const rawFlat = rawText.replace(/=\r?\n/g, '');
+      const hay = [subject, rawSubject, text, htmlText, rawFlat].join(' \n ');
+      const code = (/\(#?(\d{6,12})\)/.exec(subject + ' ' + rawSubject) || /confirmation code:?\s*(\d{6,12})/i.exec(hay) || /\b(\d{9})\b/.exec(hay) || [])[1] || '';
+      // Google now sends a confirmation LINK (mail.google.com/mail/vf-…) instead of a code; keep matching the old host too.
+      const link = (/https:\/\/mail(?:-settings)?\.google\.com\/mail\/(?:vf-|u\/\d+\/)?[^\s)>"']+/i.exec(hay) || [])[0] || '';
+      const detail = code ? code : link ? 'Confirmation link received — click it in Settings' : '(no code or link found)';
+      await logIntake(env, { userId, to, from: headerFrom, subject: subject || rawSubject, kind: 'gmail_verify', status: 'info', detail,
+        payload: { code, link, debug: (code || link) ? undefined : { rawSubject, textLen: text.length, htmlLen: htmlText.length, text: text.slice(0, 4000) } } });
       return;
     }
 

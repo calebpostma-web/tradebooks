@@ -1004,7 +1004,7 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           <select id="invCategory" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;font-family:var(--sans);background:white"></select>
         </div>
         <div class="toggle-row" id="invDepositRow" style="margin-top:.9rem">
-          <div class="toggle-lbl">Deposit / down payment<small id="invDepLabel">Required upfront before work begins</small></div>
+          <div class="toggle-lbl">Deposit required — not received yet<small id="invDepLabel">Prints "required deposit" on the invoice. Already have the money? Use <strong>Payments</strong> below instead.</small></div>
           <label class="toggle-sw"><input type="checkbox" id="invDepositOn" onchange="toggleDeposit()"><div class="t-track"></div><div class="t-knob"></div></label>
         </div>
         <div id="invDepositFields" style="display:none;margin-top:.6rem;padding:.85rem 1rem;background:var(--paper2);border-left:3px solid var(--green);border-radius:4px">
@@ -4854,7 +4854,7 @@ function invPayHint(){
   const m = document.getElementById('invPayMethod')?.value;
   const el = document.getElementById('invPayHintEl');
   if(!el) return;
-  if(!invEditing){ el.textContent = 'Send the invoice to Google Sheets first — payments are recorded against its row.'; return; }
+  if(!invEditing){ el.textContent = (m === 'cash' ? 'Cash: booked to Transactions right now (Account: Cash, HST split out). ' : 'Recorded on the invoice; booked when the bank statement matches. ') + 'Recording a payment saves the invoice to Sheets first.'; return; }
   el.textContent = m === 'cash'
     ? 'Cash: booked to Transactions right now (Account: Cash, HST split out, tagged with this invoice number).'
     : 'Recorded on the invoice now; the revenue row is written when the bank/card statement is imported and this deposit matches.';
@@ -4867,13 +4867,12 @@ function invRenderPayments(){
   if(!list) return;
   const dateEl = document.getElementById('invPayDate'); if(dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0,10);
   invPayHint();
+  form.style.opacity = '1'; form.querySelectorAll('input,select,button').forEach(x => x.disabled = false);
   if(!invEditing){
     list.innerHTML = '<span style="color:var(--ink3);font-style:italic">No payments yet.</span>';
     bal.textContent = '';
-    form.style.opacity = '.5'; form.querySelectorAll('input,select,button').forEach(x => x.disabled = true);
     return;
   }
-  form.style.opacity = '1'; form.querySelectorAll('input,select,button').forEach(x => x.disabled = false);
   const pays = invEditing.payments || [];
   const paid = pays.reduce((s,p)=>s+(Number(p.amount)||0),0);
   const total = Number(invEditing.total)||0;
@@ -4891,7 +4890,14 @@ function invRenderPayments(){
 }
 
 async function invRecordPayment(){
-  if(!invEditing){ toast('Send the invoice to Sheets first'); return; }
+  if(!invEditing){
+    // New invoice: save it first so there's a row to attach the payment to.
+    const client = document.getElementById('invClient').value.trim();
+    if(!client){ toast('Enter the client name first'); return; }
+    const btn0 = document.getElementById('invPayBtn'); btn0.disabled = true; btn0.textContent = 'Saving…';
+    try { await invSendToSheets(); } finally { btn0.disabled = false; btn0.textContent = 'Record'; }
+    if(!invEditing){ toast('Could not save the invoice — see the message above the buttons'); return; }
+  }
   const token = localStorage.getItem(AUTH_KEY);
   const kind = document.getElementById('invPayKind').value;
   const method = document.getElementById('invPayMethod').value;

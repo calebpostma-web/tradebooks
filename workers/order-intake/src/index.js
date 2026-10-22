@@ -39,9 +39,12 @@ export default {
 
     // ── Gmail forwarding confirmation ──
     if (/forwarding confirmation/i.test(subject) || /forwarding-noreply@google\.com/i.test(headerFrom)) {
+      // Gmail puts the code in the subject: "(#123456789) Gmail Forwarding Confirmation - Receive Mail from …"
+      // and the body is often HTML-only, so look in subject, text, then de-tagged HTML.
       const text = parsedMail.text || '';
-      const code = (/confirmation code:?\s*(\d{6,12})/i.exec(text) || /\b(\d{9})\b/.exec(text) || [])[1] || '';
-      const link = (/https:\/\/mail-settings\.google\.com\/mail\/[^\s)>"']+/i.exec(text) || [])[0] || '';
+      const htmlText = String(parsedMail.html || '').replace(/<[^>]+>/g, ' ');
+      const code = (/\(#?(\d{6,12})\)/.exec(subject) || /confirmation code:?\s*(\d{6,12})/i.exec(text + ' ' + htmlText) || /\b(\d{9})\b/.exec(text + ' ' + htmlText) || [])[1] || '';
+      const link = (/https:\/\/mail-settings\.google\.com\/mail\/[^\s)>"']+/i.exec(text + ' ' + htmlText) || [])[0] || '';
       await logIntake(env, { userId, to, from: headerFrom, subject, kind: 'gmail_verify', status: 'info', detail: code || '(no code found)', payload: { link } });
       return;
     }

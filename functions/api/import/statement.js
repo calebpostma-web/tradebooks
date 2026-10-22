@@ -12,6 +12,7 @@
 
 import { appendRows, writeRange, readRange, batchUpdate, generateRef } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
+import { num } from '../../_payroll_sheet.js';
 
 const TXN_TAB = '📒 Transactions';
 const INVOICES_TAB = '🧾 Invoices';
@@ -325,11 +326,12 @@ async function loadOpenInvoices(env, userId) {
     const client = row[2] || '';
     const sub = row[4];
     const hst = row[5];
-    const total = parseFloat(row[6]) || 0;
+    // Money cells arrive formatted ("$1,234.00") — num() strips that; parseFloat gave 0.
+    const total = num(row[6]);
     const status = (row[9] || '').toString().trim();
-    const depositAmount = parseFloat(row[13]) || 0;
+    const depositAmount = num(row[13]);
     const depositDate = (row[14] || '').toString().trim();
-    const balanceDue = parseFloat(row[15]) || 0;
+    const balanceDue = num(row[15]);
 
     if (!invNum) continue;
     const sLower = status.toLowerCase();
@@ -354,8 +356,8 @@ async function loadOpenInvoices(env, userId) {
       invNum: String(invNum),
       dateIssued,
       client,
-      subtotal: parseFloat(sub) || 0,
-      hst: parseFloat(hst) || 0,
+      subtotal: num(sub),
+      hst: num(hst),
       total,
       depositAmount,
       depositDate,

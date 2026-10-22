@@ -14,11 +14,8 @@
 //             numbers:[...], nextNumber:"1043" }
 // ════════════════════════════════════════════════════════════════════
 
-import { readRange } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
-import { num, isoDate } from '../../_payroll_sheet.js';
-
-const INVOICES_TAB = '🧾 Invoices';
+import { loadInvoices } from '../../_invoices.js';
 
 export const onRequestOptions = () => options();
 
@@ -29,26 +26,21 @@ export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   const start = parseInt(url.searchParams.get('start') || '', 10) || 1001;
 
-  const res = await readRange(env, userId, `'${INVOICES_TAB}'!B12:K`);
+  const res = await loadInvoices(env, userId);
   if (!res.ok) return json({ ok: false, error: res.error });
 
   const invoices = [];
   let maxSeq = start - 1;
-  for (let i = 0; i < res.values.length; i++) {
-    const row = res.values[i];
-    const invNum = String(row?.[0] ?? '').trim();
-    if (!invNum) continue;
+  for (const inv of res.invoices) {
     invoices.push({
-      invNum,
-      date: isoDate(row[1]) || String(row[1] || ''),
-      client: String(row[2] || ''),
-      total: num(row[6]),
-      status: String(row[9] || ''),
-      sheetRow: 12 + i,
+      invNum: inv.invNum, date: inv.date, client: inv.client, total: inv.total,
+      status: inv.status, balanceDue: inv.balanceDue, paidSoFar: inv.paidSoFar,
+      sheetRow: inv.sheetRow, hasLines: !!inv.lines,
     });
-    const m = /(\d+)(?!.*\d)/.exec(invNum);          // last run of digits
+    const m = /(\d+)(?!.*\d)/.exec(inv.invNum);          // last run of digits
     if (m) { const n = parseInt(m[1], 10); if (n > maxSeq && n < 1e9) maxSeq = n; }
   }
+  invoices.sort((a, b) => b.sheetRow - a.sheetRow);          // newest first
 
   return json({
     ok: true,

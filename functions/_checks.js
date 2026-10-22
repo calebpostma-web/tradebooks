@@ -23,7 +23,7 @@
 import { readRange, batchUpdate, spreadsheetsBatchUpdate } from './_sheets.js';
 
 export const CHECKS_TITLE = '⚠️ Checks';
-const LAYOUT_VERSION = 3;   // v3: transfers recognised via Type column P (pocket categories)
+const LAYOUT_VERSION = 4;   // v4: "Cash" is a known account (cash invoice payments). v3: transfers via Type column P
 const GST_RATE = 0.05;      // federal part, for Status-card GST-only sales
 
 const COLORS = {
@@ -74,7 +74,8 @@ function buildChecksTab({ title, sheetId, txnTitle, txnSheetId, cfgTitle, hstTit
   const ruleDate = `IF(${hasRow}*NOT(ISNUMBER(${B})),"${esc(label('DATE-BAD'))}; ",IF(${hasRow}*ISNUMBER(${B})*((${B}<${fyStart})+(${B}>EDATE(${fyStart},12)-1)),"${esc(label('DATE-FY'))}; ",""))`;
   const dnum     = `IF(ISNUMBER(${B}),${B},0)`;   // text dates would error inside COUNTIFS criteria
   const ruleDup  = `IF(${hasRow}*ISNUMBER(${B})*(IFERROR(${E}*1,0)<>0)*(COUNTIFS(${C},${C},${E},${E},${B},">="&(${dnum}-2),${B},"<="&(${dnum}+2))>1),"${esc(label('DUP'))}; ","")`;
-  const ruleAcct = `IF(${hasRow}*(${I}<>"${esc(bank)}")*(${I}<>"${esc(card)}"),"${esc(label('ACCOUNT'))}: "&${I}&"; ","")`;
+  // Cash is a real account too (cash sales from the Invoice Wizard, cash receipts from the scanner).
+  const ruleAcct = `IF(${hasRow}*(${I}<>"${esc(bank)}")*(${I}<>"${esc(card)}")*(${I}<>"Cash"),"${esc(label('ACCOUNT'))}: "&${I}&"; ","")`;
   const ruleAmt  = `IF(${hasRow}*ISNUMBER(${B})*(IFERROR(${E}*1,0)=0),"${esc(label('AMOUNT'))}; ","")`;
   const safe = r => `IFERROR(${r},"(check error); ")`;
   const flags = [ruleHST, ruleHSTn, ruleCat, ruleDate, ruleDup, ruleAcct, ruleAmt].map(safe).join('&');

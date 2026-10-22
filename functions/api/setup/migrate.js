@@ -105,6 +105,10 @@ async function runMigrations(request, env, dryRunDefault) {
   // Employer share now lives on the row so remittances show what CRA actually receives.
   await applyPayrollEmployerColumns(env, userId, sheetsByTitle, changes, errors, dryRun);
 
+  // ── Migration 16: 🧾 Invoices columns R (Lines JSON) + S (Payments JSON) ──
+  // Invoices can be reopened/edited, and cash payments are tracked per invoice.
+  await applyInvoiceDetailColumns(env, userId, sheetsByTitle, changes, errors, dryRun);
+
   // ── Migration 4: HST Returns C3 — smart FY start (data-driven default) ──
   await applyHstReturnsSmartFyStart(env, userId, sheetsByTitle, changes, errors, dryRun);
 
@@ -593,6 +597,73 @@ async function applyPayrollEmployerColumns(env, userId, sheetsByTitle, changes, 
   ]);
   if (!w.ok) { errors.push(`Failed to write employer-share headers: ${w.error}`); return; }
   changes.push(`Added Period / Employer CPP / Employer EI / Stub columns (R–U) to '${t}'; Outstanding Remittance now includes the employer share.`);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Migration 16: 🧾 Invoices — Lines (R) and Payments (S) columns
+// ════════════════════════════════════════════════════════════════════
+// R holds the line items as JSON so the Invoice Wizard can reopen an invoice
+// and change it (install dropped, TPMS added…) instead of issuing a second
+// one. S holds every payment {date, method, amount, kind} — cash payments
+// are booked to the ledger immediately; bank ones when the statement matches.
+// Idempotent on the R11 header.
+async function applyInvoiceDetailColumns(env, userId, sheetsByTitle, changes, errors, dryRun) {
+  const invTab = Object.values(sheetsByTitle).find(s => /invoices/i.test(s.title));
+  if (!invTab) return;
+  const sheetId = invTab.sheetId;
+  const t = invTab.title;
+
+  const hdr = await readRange(env, userId, `'${t}'!R11`);
+  if (hdr.ok && /lines/i.test(String(hdr.values?.[0]?.[0] || ''))) return;
+
+  if (dryRun) {
+    changes.push(`Add 'Lines' and 'Payments' columns (R, S) to '${t}' so invoices can be reopened and cash payments tracked.`);
+    return;
+  }
+
+  const rowCount = invTab.gridProperties?.rowCount || 5000;
+  const reqs = [];
+  if ((invTab.gridProperties?.columnCount || 0) < 19) {
+    reqs.push({ updateSheetProperties: {
+      properties: { sheetId, gridProperties: { columnCount: 19, rowCount, frozenRowCount: 11 } },
+      fields: 'gridProperties.columnCount,gridProperties.rowCount,gridProperties.frozenRowCount',
+    }});
+  }
+  reqs.push({ repeatCell: {
+    range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 17, endColumnIndex: 19 },
+    cell: { userEnteredFormat: {
+      backgroundColor: COLORS.blue,
+      horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE',
+      textFormat: { foregroundColor: COLORS.white, bold: true, fontSize: 10 },
+      wrapStrategy: 'WRAP',
+    }},
+    fields: 'userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat,wrapStrategy)',
+  }});
+  // JSON cells: small grey text, clipped, narrow — they're for the app, not for reading
+  reqs.push({ repeatCell: {
+    range: { sheetId, startRowIndex: 11, endRowIndex: rowCount, startColumnIndex: 17, endColumnIndex: 19 },
+    cell: { userEnteredFormat: { textFormat: { foregroundColor: COLORS.textMuted, fontSize: 8 }, wrapStrategy: 'CLIP' } },
+    fields: 'userEnteredFormat(textFormat,wrapStrategy)',
+  }});
+  reqs.push(colWidthReq(sheetId, 17, 18, 120)); // R Lines
+  reqs.push(colWidthReq(sheetId, 18, 19, 120)); // S Payments
+  const res = await spreadsheetsBatchUpdate(env, userId, reqs);
+  if (!res.ok) { errors.push(`Could not add Lines/Payments columns to '${t}': ${res.error}`); return; }
+
+  try {
+    const sid = await getUserSheetId(env, userId);
+    const tok = await getGoogleAccessToken(env, userId);
+    if (tok.ok) {
+      const bd = await fetch(`${SHEETS_API}/${sid}?fields=${encodeURIComponent('sheets(properties(sheetId),bandedRanges)')}`, { headers: { Authorization: `Bearer ${tok.accessToken}` } }).then(r => r.json());
+      const bands = (bd.sheets || []).find(x => x.properties?.sheetId === sheetId)?.bandedRanges || [];
+      const bandReqs = bands.filter(b => (b.range?.endColumnIndex || 0) === 17).map(b => ({ updateBanding: { bandedRange: { bandedRangeId: b.bandedRangeId, range: { ...b.range, endColumnIndex: 19 } }, fields: 'range' } }));
+      if (bandReqs.length) await spreadsheetsBatchUpdate(env, userId, bandReqs);
+    }
+  } catch (e) { /* cosmetic */ }
+
+  const w = await writeRange(env, userId, `'${t}'!R11:S11`, [['Lines (app)', 'Payments (app)']]);
+  if (!w.ok) { errors.push(`Failed to write Lines/Payments headers: ${w.error}`); return; }
+  changes.push(`Added 'Lines' and 'Payments' columns (R, S) to '${t}' — invoices can now be reopened and cash payments tracked.`);
 }
 
 // ════════════════════════════════════════════════════════════════════

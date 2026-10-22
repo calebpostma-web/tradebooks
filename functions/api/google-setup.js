@@ -166,7 +166,7 @@ async function handleCreateSheet(accessToken, profile, env, headers, userId) {
             gridProperties: { rowCount: 5000, columnCount: 17, frozenRowCount: 11 },
             tabColor: COLORS.teal } },
         { properties: { sheetId: 500, title: '🧾 Invoices', index: 3,
-            gridProperties: { rowCount: 5000, columnCount: 17, frozenRowCount: 11 },
+            gridProperties: { rowCount: 5000, columnCount: 19, frozenRowCount: 11 },
             tabColor: COLORS.blue } },
         { properties: { sheetId: 600, title: '📋 HST Returns', index: 4,
             gridProperties: { rowCount: 40, columnCount: 10 },
@@ -536,13 +536,13 @@ async function applyStyling(accessToken, spreadsheetId) {
   // 14 cols: A gutter, B Invoice #, C Date, D Client, E Description, F Amount excl HST,
   // G HST, H Total, I HST flag, J Due, K Status, L Date Paid, M Notes, N Revenue Category,
   // O Deposit Amount, P Deposit Date Received, Q Balance Due
-  requests.push(...bannerRequest(INV, 0, 0, 17, COLORS.blue));
+  requests.push(...bannerRequest(INV, 0, 0, 19, COLORS.blue));
   requests.push(...sectionRequest(INV, 1, 1, 6, COLORS.blue));
   requests.push(cellFormat(INV, 2, 1, 10, 2, { textFormat: { bold: true, fontSize: 10 } }));
   requests.push(cellFormat(INV, 2, 2, 10, 6, { backgroundColor: COLORS.blueTint }));
-  requests.push(headerRowRequest(INV, 10, 1, 17, COLORS.blue));
+  requests.push(headerRowRequest(INV, 10, 1, 19, COLORS.blue));
   requests.push({ updateDimensionProperties: { range: { sheetId: INV, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 36 }, fields: 'pixelSize' } });
-  requests.push(bandingRequest(INV, 11, 5000, 1, 17, COLORS.blueTint));
+  requests.push(bandingRequest(INV, 11, 5000, 1, 19, COLORS.blueTint));
   requests.push(cellFormat(INV, 11, 2, 5000, 3, FMT_DATE));
   requests.push(cellFormat(INV, 11, 5, 5000, 6, FMT_CURRENCY));
   requests.push(cellFormat(INV, 11, 6, 5000, 7, FMT_CURRENCY));
@@ -1113,10 +1113,11 @@ async function populateValues(accessToken, spreadsheetId, profile) {
   // (Awaiting Deposit + Unpaid contribute their full Total to outstanding.)
   data.push({ range: "'🧾 Invoices'!B8:C8", values: [['Outstanding — not yet paid', '=SUM(H12:H)-SUMIF(K12:K,"Paid",H12:H)-SUMIF(K12:K,"Deposit Received",O12:O)']] });
   data.push({ range: "'🧾 Invoices'!B9:C9", values: [['Collected — paid + deposits', '=SUMIF(K12:K,"Paid",H12:H)+SUMIF(K12:K,"Deposit Received",O12:O)']] });
-  data.push({ range: "'🧾 Invoices'!B11:Q11", values: [[
+  data.push({ range: "'🧾 Invoices'!B11:S11", values: [[
     'Invoice #', 'Date Issued', 'Client', 'Service Description', 'Amount (excl HST)',
     `HST (${taxPct}%)`, 'Total Invoiced', 'HST?', 'Due Date', 'Status', 'Date Paid', 'Notes',
     'Revenue Category', 'Deposit Amount', 'Deposit Date Received', 'Balance Due',
+    'Lines (app)', 'Payments (app)',
   ]]});
 
   // HST RETURNS

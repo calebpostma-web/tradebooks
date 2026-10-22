@@ -958,6 +958,13 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
         <div class="card-title">Billing from</div>
         <div id="companySwitch" style="display:none;gap:.5rem;margin-bottom:1.25rem"></div>
         <div class="card-title" style="margin-top:0">Invoice details</div>
+        <div id="invOpenWrap" style="display:flex;gap:.5rem;align-items:center;margin-bottom:.9rem;flex-wrap:wrap">
+          <select id="invOpenSel" onchange="invOpenExisting(this.value)" style="flex:1;min-width:220px;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem;background:white">
+            <option value="">Open an existing invoice…</option>
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="invStartNew()" title="Start a fresh invoice">＋ New</button>
+        </div>
+        <div id="invEditingBanner" style="display:none;font-size:.78rem;padding:.5rem .8rem;border-radius:4px;background:#e8eefc;color:#203a75;margin-bottom:.9rem"></div>
         <div style="margin-bottom:1.1rem">
           <label style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:.4rem">Invoice number</label>
           <div class="inv-num-row">
@@ -1016,11 +1023,34 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
           </div>
         </div>
         <div class="totals-box" id="invTotalsBox"></div>
+
+        <div id="invPayPanel" style="margin-top:1.1rem;padding:.9rem 1rem;border:1px solid var(--rule);border-radius:var(--radius);background:white">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.5rem">
+            <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase">Payments</div>
+            <div id="invPayBalance" style="font-size:.8rem;color:var(--ink3)"></div>
+          </div>
+          <div id="invPayList" style="font-size:.82rem;margin-bottom:.6rem"></div>
+          <div id="invPayForm" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:.5rem;align-items:end">
+            <div class="field" style="margin:0"><label>Type</label>
+              <select id="invPayKind" style="width:100%;padding:.5rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem;background:white">
+                <option value="deposit">Deposit</option><option value="final">Final payment</option><option value="payment">Payment</option>
+              </select></div>
+            <div class="field" style="margin:0"><label>Method</label>
+              <select id="invPayMethod" style="width:100%;padding:.5rem .6rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.85rem;background:white" onchange="invPayHint()">
+                <option value="cash">Cash</option><option value="e-transfer">e-Transfer</option><option value="cheque">Cheque</option><option value="card">Card</option>
+              </select></div>
+            <div class="field" style="margin:0"><label>Amount</label><input type="number" id="invPayAmt" step="0.01" min="0" placeholder="0.00" style="font-family:var(--mono)"></div>
+            <div class="field" style="margin:0"><label>Date</label><input type="date" id="invPayDate"></div>
+            <button class="btn btn-green btn-sm" id="invPayBtn" onclick="invRecordPayment()" style="height:38px">Record</button>
+          </div>
+          <div id="invPayHintEl" style="font-size:.74rem;color:var(--ink3);margin-top:.45rem;line-height:1.45"></div>
+        </div>
+
         <div class="field" style="margin-top:1.1rem"><label>Notes (optional)</label><textarea id="invNotes" placeholder="Payment due within 30 days." oninput="invUpdate()"></textarea></div>
         <div class="btn-row">
           <button class="btn btn-primary" onclick="invPrint()">⬇ Download PDF</button>
           <button class="btn btn-green" id="invSheetsBtn" onclick="invSendToSheets()">📊 Send to Google Sheets</button>
-          <button class="btn btn-outline" onclick="invClear()">Clear</button>
+          <button class="btn btn-outline" onclick="invStartNew()">Clear / New</button>
         </div>
         <div id="invSheetsStatus" style="font-size:.82rem;color:var(--ink3);margin-top:.5rem"></div>
       </div>
@@ -3684,7 +3714,7 @@ function showTab(t){
   document.getElementById('panel-'+t).classList.add('active');
   // Lazy load on first open
   if (t === 'payroll') { try { payrollInit(); } catch(e) { console.warn(e); } }
-  if (t === 'invoice') { try { invNumberInit(); } catch(e) { console.warn(e); } }
+  if (t === 'invoice') { try { invNumberInit(); invRefreshOpenList(); invRenderPayments(); } catch(e) { console.warn(e); } }
   if (t === 'yearend') { try { yearendInit(); } catch(e) { console.warn(e); } }
 }
 function toast(msg,ms=3500){
@@ -4598,6 +4628,7 @@ function setInvCompany(key){
 let invLines=[{desc:'',qty:1,rate:''}];
 let invNum=String(USER_CONFIG?.invoiceStart||1001);
 let invCurrency='CAD';
+let invEditing=null;   // saved-invoice editing state — see "Open / edit an existing invoice" below
 
 function renderCurrencySwitch(){
   const el=document.getElementById('currencySwitch');
@@ -4717,6 +4748,177 @@ async function invNumberInit(){
   else invCheckDuplicate();
 }
 
+// ── Open / edit an existing invoice, and payments ───────────────────
+// invEditing = { sheetRow, invNum, status, payments:[...], paidSoFar, total }
+// when the wizard is working on a row that already exists in the sheet.
+// null = drafting a new invoice. Payments can only be recorded against a
+// saved invoice (they're written to its row), so the panel says "save first".
+// (declared up with invNum/invCurrency so the load-time initInv() can call invUpdate)
+
+async function invRefreshOpenList(){
+  const sel = document.getElementById('invOpenSel');
+  if(!sel) return;
+  const token = localStorage.getItem(AUTH_KEY);
+  if(!token) return;
+  try {
+    const r = await fetch('/api/invoice/list?start=' + encodeURIComponent(USER_CONFIG?.invoiceStart || 1001), { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if(!d.ok) return;
+    const cur = invEditing?.sheetRow || '';
+    const opts = (d.invoices || []).slice(0, 60).map(i => {
+      const st = i.status === 'Unpaid' ? 'Open' : i.status;
+      const owing = i.balanceDue > 0 && st !== 'Paid' ? ` · owes $${fmtMoney(i.balanceDue)}` : '';
+      return `<option value="${i.sheetRow}"${String(i.sheetRow)===String(cur)?' selected':''}>${esc(i.invNum)} — ${esc(i.client || '—')} — $${fmtMoney(i.total)} — ${esc(st)}${owing}</option>`;
+    });
+    sel.innerHTML = `<option value="">Open an existing invoice…</option>` + opts.join('');
+    // keep the duplicate-check cache in step
+    _invKnown = { numbers: new Set((d.numbers || []).map(n => String(n).trim().toUpperCase())), nextNumber: d.nextNumber };
+    _invKnownAt = Date.now();
+  } catch(e){ /* offline */ }
+}
+
+async function invOpenExisting(sheetRow){
+  if(!sheetRow) return;
+  const token = localStorage.getItem(AUTH_KEY);
+  const status = document.getElementById('invSheetsStatus');
+  status.textContent = 'Loading invoice…';
+  try {
+    const r = await fetch('/api/invoice/get?row=' + encodeURIComponent(sheetRow), { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if(!d.ok){ status.textContent = '❌ ' + (d.error || 'Could not load'); return; }
+    invLoadIntoForm(d.invoice);
+    status.textContent = '';
+  } catch(err){ status.textContent = '❌ ' + err.message; }
+}
+
+function invLoadIntoForm(inv){
+  invEditing = { sheetRow: inv.sheetRow, invNum: inv.invNum, status: inv.status, payments: inv.payments || [], paidSoFar: inv.paidSoFar || 0, total: inv.total };
+  // number (locked while editing)
+  invNum = inv.invNum;
+  document.getElementById('invNumDisp').textContent = inv.invNum;
+  const custom = document.getElementById('invNumCustom'); if(custom){ custom.value = ''; custom.disabled = true; }
+  const regen = document.querySelector('.btn-regen'); if(regen) regen.disabled = true;
+  document.getElementById('invNumWarn').style.display = 'none';
+  // header fields
+  document.getElementById('invClient').value = inv.client || '';
+  document.getElementById('invDate').value = inv.date || '';
+  document.getElementById('invDue').value = inv.due || '';
+  document.getElementById('invNotes').value = inv.notes || '';
+  const hstEl = document.getElementById('invHST'); if(hstEl) hstEl.checked = String(inv.hstFlag||'Yes').toLowerCase() !== 'no';
+  const cat = document.getElementById('invCategory');
+  if(cat && inv.category){
+    if(![...cat.options].some(o => o.value === inv.category)){ const o = document.createElement('option'); o.value = o.textContent = inv.category; cat.appendChild(o); }
+    cat.value = inv.category;
+  }
+  setInvCurrency('CAD');
+  // lines: from JSON if the row has them, else one line reconstructed from the header
+  if(Array.isArray(inv.lines) && inv.lines.length){
+    invLines = inv.lines.map(l => ({ desc: l.desc || '', qty: l.qty || 1, rate: l.rate || 0 }));
+  } else {
+    invLines = [{ desc: inv.desc || 'Services', qty: 1, rate: inv.sub || 0 }];
+  }
+  // legacy "deposit required" toggle: show if the row has a deposit amount but no payments yet
+  const depOn = document.getElementById('invDepositOn');
+  const depAmt = document.getElementById('invDepositAmt');
+  const depDate = document.getElementById('invDepositDate');
+  const depWrap = document.getElementById('invDepositFields');
+  const showDep = inv.depositAmount > 0 && !(inv.payments && inv.payments.length);
+  if(depOn) depOn.checked = showDep;
+  if(depWrap) depWrap.style.display = showDep ? '' : 'none';
+  if(depAmt) depAmt.value = showDep ? inv.depositAmount : '';
+  if(depDate) depDate.value = showDep ? (inv.depositDate || '') : '';
+
+  const banner = document.getElementById('invEditingBanner');
+  const st = inv.status === 'Unpaid' ? 'Open' : inv.status;
+  banner.style.display = '';
+  banner.innerHTML = `✏️ Editing <strong>${esc(inv.invNum)}</strong> (row ${inv.sheetRow}) · ${esc(st)} · Changes save back to this row — no new invoice is created.`;
+  const btn = document.getElementById('invSheetsBtn'); if(btn){ btn.disabled = false; btn.textContent = '💾 Save changes to Google Sheets'; btn.style.background = ''; }
+  renderLines();
+  invUpdate();
+  invRenderPayments();
+}
+
+function invStartNew(){
+  invEditing = null;
+  const custom = document.getElementById('invNumCustom'); if(custom){ custom.value = ''; custom.disabled = false; }
+  const regen = document.querySelector('.btn-regen'); if(regen) regen.disabled = false;
+  const sel = document.getElementById('invOpenSel'); if(sel) sel.value = '';
+  const banner = document.getElementById('invEditingBanner'); if(banner){ banner.style.display = 'none'; banner.innerHTML = ''; }
+  const btn = document.getElementById('invSheetsBtn'); if(btn){ btn.disabled = false; btn.textContent = '📊 Send to Google Sheets'; btn.style.background = ''; }
+  invClear();
+  regenInv();
+  invRenderPayments();
+}
+
+function invPayHint(){
+  const m = document.getElementById('invPayMethod')?.value;
+  const el = document.getElementById('invPayHintEl');
+  if(!el) return;
+  if(!invEditing){ el.textContent = 'Send the invoice to Google Sheets first — payments are recorded against its row.'; return; }
+  el.textContent = m === 'cash'
+    ? 'Cash: booked to Transactions right now (Account: Cash, HST split out, tagged with this invoice number).'
+    : 'Recorded on the invoice now; the revenue row is written when the bank/card statement is imported and this deposit matches.';
+}
+
+function invRenderPayments(){
+  const list = document.getElementById('invPayList');
+  const bal = document.getElementById('invPayBalance');
+  const form = document.getElementById('invPayForm');
+  if(!list) return;
+  const dateEl = document.getElementById('invPayDate'); if(dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0,10);
+  invPayHint();
+  if(!invEditing){
+    list.innerHTML = '<span style="color:var(--ink3);font-style:italic">No payments yet.</span>';
+    bal.textContent = '';
+    form.style.opacity = '.5'; form.querySelectorAll('input,select,button').forEach(x => x.disabled = true);
+    return;
+  }
+  form.style.opacity = '1'; form.querySelectorAll('input,select,button').forEach(x => x.disabled = false);
+  const pays = invEditing.payments || [];
+  const paid = pays.reduce((s,p)=>s+(Number(p.amount)||0),0);
+  const total = Number(invEditing.total)||0;
+  const owing = Math.max(0, Math.round((total-paid)*100)/100);
+  bal.innerHTML = `paid <strong>$${fmtMoney(paid)}</strong> of $${fmtMoney(total)} · <strong style="color:${owing>0?'var(--amber)':'var(--green)'}">${owing>0?'$'+fmtMoney(owing)+' owing':'paid in full'}</strong>`;
+  list.innerHTML = pays.length ? pays.map(p => `
+    <div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:.6rem;padding:.3rem 0;border-bottom:1px solid var(--paper2)">
+      <span style="font-family:var(--mono);color:var(--ink3)">${esc(p.date||'')}</span>
+      <span>${esc(p.kind||'payment')} · ${esc(p.method||'')}${p.pending?' <span style="color:var(--amber);font-size:.72rem">(awaiting statement match)</span>':' <span style="color:var(--green);font-size:.72rem">(in ledger)</span>'}</span>
+      <span style="font-family:var(--mono)">$${fmtMoney(p.amount)}</span>
+    </div>`).join('') : '<span style="color:var(--ink3);font-style:italic">No payments yet.</span>';
+  // sensible default amount: the balance
+  const amtEl = document.getElementById('invPayAmt'); if(amtEl && !amtEl.value && owing>0) amtEl.placeholder = owing.toFixed(2);
+  const kindEl = document.getElementById('invPayKind'); if(kindEl) kindEl.value = pays.length ? 'final' : 'deposit';
+}
+
+async function invRecordPayment(){
+  if(!invEditing){ toast('Send the invoice to Sheets first'); return; }
+  const token = localStorage.getItem(AUTH_KEY);
+  const kind = document.getElementById('invPayKind').value;
+  const method = document.getElementById('invPayMethod').value;
+  const amtEl = document.getElementById('invPayAmt');
+  const date = document.getElementById('invPayDate').value;
+  const pays = invEditing.payments || [];
+  const owing = Math.max(0, Math.round(((Number(invEditing.total)||0) - pays.reduce((s,p)=>s+(Number(p.amount)||0),0))*100)/100);
+  const amount = parseFloat(amtEl.value) || (kind==='final' ? owing : 0);
+  if(!(amount>0)){ toast('Enter the amount received'); return; }
+  if(!date){ toast('Enter the date received'); return; }
+  const btn = document.getElementById('invPayBtn'); btn.disabled = true; btn.textContent = '…';
+  try {
+    const r = await fetch('/api/invoice/pay', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
+      body: JSON.stringify({ invNum: invEditing.invNum, sheetRow: invEditing.sheetRow, amount, method, date, kind }) });
+    const d = await r.json();
+    if(!d.ok){ toast(d.error || 'Could not record payment', 6000); return; }
+    invEditing.payments = [...pays, d.payment];
+    invEditing.paidSoFar = d.paid; invEditing.status = d.status; invEditing.total = invEditing.total;
+    amtEl.value = '';
+    toast(d.ledger ? `✓ $${fmtMoney(amount)} cash booked — invoice ${d.status === 'Unpaid' ? 'Open' : d.status}` : `✓ Payment recorded — ${d.status === 'Unpaid' ? 'Open' : d.status}`);
+    invRenderPayments(); invUpdate(); invRefreshOpenList();
+    const banner = document.getElementById('invEditingBanner');
+    if(banner) banner.innerHTML = `✏️ Editing <strong>${esc(invEditing.invNum)}</strong> (row ${invEditing.sheetRow}) · ${esc(d.status==='Unpaid'?'Open':d.status)} · Changes save back to this row — no new invoice is created.`;
+  } catch(err){ toast('Payment failed: ' + err.message); }
+  finally { btn.disabled = false; btn.textContent = 'Record'; }
+}
+
 // ── Deposit / down payment toggle ───────────────────────────────────
 // When ON, deposit fields are revealed. Amount is gross (incl HST). Date is
 // optional — blank means "required but not yet received" (kitchen-table flow).
@@ -4777,15 +4979,21 @@ function invUpdate(){
   const depDate = depOn ? (document.getElementById('invDepositDate')?.value || '') : '';
   // Cap deposit at total so "balance due" never goes negative in the display
   const depEffective = Math.min(depAmt, total);
-  const balanceDue = depAmt > 0 ? Math.max(0, Math.round((total - depEffective)*100)/100) : total;
+  let balanceDue = depAmt > 0 ? Math.max(0, Math.round((total - depEffective)*100)/100) : total;
+  // Recorded payments (editing a saved invoice) take precedence over the legacy deposit toggle
+  const recPays = (invEditing && Array.isArray(invEditing.payments)) ? invEditing.payments : [];
+  const recPaid = Math.round(recPays.reduce((s,p)=>s+(Number(p.amount)||0),0)*100)/100;
+  if(recPaid > 0) balanceDue = Math.max(0, Math.round((total - recPaid)*100)/100);
+  const payRowsBox = recPays.map(p => `<div class="tot-row" style="color:var(--green)"><span class="tot-lbl">Less ${esc(p.kind||'payment')} received ${esc(fmtDate(p.date))} (${esc(p.method||'')})</span><span class="tot-val">−$${fmtMoney(p.amount)} CAD</span></div>`).join('');
 
   const noTaxLbl = invCurrency==='USD' ? `No tax (USD — zero-rated)` : `No ${taxType}`;
   document.getElementById('invTotalsBox').innerHTML=`
     <div class="tot-row"><span class="tot-lbl">Subtotal</span><span class="tot-val">$${fmtMoney(sub)} ${curCode}</span></div>
     ${hst?`<div class="tot-row"><span class="tot-lbl">${taxLabel}</span><span class="tot-val">$${fmtMoney(hstAmt)} ${curCode}</span></div>`:`<div class="tot-row"><span class="tot-lbl" style="color:var(--red)">${noTaxLbl}</span><span class="tot-val">—</span></div>`}
     <div class="tot-row final"><span>Total</span><span class="tot-val big">$${fmtMoney(total)} ${curCode}</span></div>
-    ${depAmt>0 && depDate ? `<div class="tot-row" style="color:var(--green)"><span class="tot-lbl">Less deposit received ${fmtDate(depDate)}</span><span class="tot-val">−$${fmtMoney(depEffective)} ${curCode}</span></div><div class="tot-row final"><span>Balance Due</span><span class="tot-val big" style="color:var(--green)">$${fmtMoney(balanceDue)} ${curCode}</span></div>` : ''}
-    ${depAmt>0 && !depDate ? `<div class="tot-row" style="color:var(--amber);font-style:italic"><span class="tot-lbl">Required deposit before work begins</span><span class="tot-val">$${fmtMoney(depAmt)} ${curCode}</span></div>` : ''}`;
+    ${recPaid>0 ? payRowsBox + `<div class="tot-row final"><span>${balanceDue>0?'Balance Due':'Paid in full'}</span><span class="tot-val big" style="color:var(--green)">$${fmtMoney(balanceDue)} ${curCode}</span></div>` : ''}
+    ${recPaid===0 && depAmt>0 && depDate ? `<div class="tot-row" style="color:var(--green)"><span class="tot-lbl">Less deposit received ${fmtDate(depDate)}</span><span class="tot-val">−$${fmtMoney(depEffective)} ${curCode}</span></div><div class="tot-row final"><span>Balance Due</span><span class="tot-val big" style="color:var(--green)">$${fmtMoney(balanceDue)} ${curCode}</span></div>` : ''}
+    ${recPaid===0 && depAmt>0 && !depDate ? `<div class="tot-row" style="color:var(--amber);font-style:italic"><span class="tot-lbl">Required deposit before work begins</span><span class="tot-val">$${fmtMoney(depAmt)} ${curCode}</span></div>` : ''}`;
 
   // Update company header in preview
   const co = INV_COMPANIES[activeCompany] || {};
@@ -4849,18 +5057,21 @@ function invUpdate(){
   //   1. No deposit → Subtotal / HST / TOTAL DUE (current behaviour)
   //   2. Deposit received (date filled) → ... / Total / Less deposit / Balance Due
   //   3. Deposit required (no date) → ... / TOTAL DUE / "Required deposit before work" callout
-  const depRow = depAmt>0 && depDate
-    ? `<tr><td colspan="3" class="flbl" style="text-align:right;color:var(--green)">Less deposit received ${esc(fmtDate(depDate))}</td><td class="mono" style="text-align:right;color:var(--green)">−$${fmtMoney(depEffective)}</td></tr>`
-    : '';
-  const finalLabel = depAmt>0 && depDate ? 'BALANCE DUE' : 'TOTAL DUE';
-  const finalAmt = depAmt>0 && depDate ? balanceDue : total;
-  const depRequiredRow = depAmt>0 && !depDate
+  const hasCredit = recPaid>0 || (depAmt>0 && depDate);
+  const depRow = recPaid>0
+    ? recPays.map(p => `<tr><td colspan="3" class="flbl" style="text-align:right;color:var(--green)">Less ${esc(p.kind||'payment')} received ${esc(fmtDate(p.date))} — ${esc(p.method||'')}</td><td class="mono" style="text-align:right;color:var(--green)">−$${fmtMoney(p.amount)}</td></tr>`).join('')
+    : (depAmt>0 && depDate
+      ? `<tr><td colspan="3" class="flbl" style="text-align:right;color:var(--green)">Less deposit received ${esc(fmtDate(depDate))}</td><td class="mono" style="text-align:right;color:var(--green)">−$${fmtMoney(depEffective)}</td></tr>`
+      : '');
+  const finalLabel = hasCredit ? (balanceDue>0 ? 'BALANCE DUE' : 'PAID IN FULL') : 'TOTAL DUE';
+  const finalAmt = hasCredit ? balanceDue : total;
+  const depRequiredRow = recPaid===0 && depAmt>0 && !depDate
     ? `<tr><td colspan="4" style="padding-top:.6rem"><div style="background:#fff8e1;border-left:3px solid var(--amber);padding:.55rem .8rem;border-radius:3px;font-size:.78rem;color:var(--amber)"><strong>Required deposit before work begins:</strong> $${fmtMoney(depAmt)} ${curCode} — please e-transfer the deposit${co.etransferEmail?` to ${esc(co.etransferEmail)}`:''} before materials are ordered.</div></td></tr>`
     : '';
   document.getElementById('prevFoot').innerHTML = `
     <tr><td colspan="3" class="flbl" style="text-align:right">Subtotal</td><td class="mono" style="text-align:right">$${fmtMoney(sub)}</td></tr>
     ${hst?`<tr><td colspan="3" class="flbl" style="text-align:right">${taxLabel}</td><td class="mono" style="text-align:right">$${fmtMoney(hstAmt)}</td></tr>`:''}
-    ${depAmt>0 && depDate ? `<tr><td colspan="3" class="flbl" style="text-align:right">Total</td><td class="mono" style="text-align:right">$${fmtMoney(total)}</td></tr>` : ''}
+    ${hasCredit ? `<tr><td colspan="3" class="flbl" style="text-align:right">Total</td><td class="mono" style="text-align:right">$${fmtMoney(total)}</td></tr>` : ''}
     ${depRow}
     <tr class="gtotal"><td colspan="3" style="color:var(--ink3);font-size:.74rem;font-family:var(--mono)">${finalLabel} (${curCode})</td><td style="text-align:right;color:var(--green)">$${fmtMoney(finalAmt)}</td></tr>
     ${depRequiredRow}`;
@@ -5045,6 +5256,8 @@ async function invSendToSheets(){
       depositAmount: depAmt,        // CAD, gross (incl HST). 0 = no deposit.
       depositDate: depDate,         // ISO yyyy-mm-dd or '' if not received yet
       balanceDue,                   // total - deposit (capped at 0)
+      notes: document.getElementById('invNotes')?.value.trim() || '',
+      sheetRow: invEditing?.sheetRow || null,   // set → update that row instead of appending
       lines: invLines.map(l=>({
         desc: l.desc,
         qty: parseFloat(l.qty)||0,
@@ -5074,8 +5287,25 @@ async function invSendToSheets(){
       } else if(depAmt>0){
         depMsg = ` Status set to <strong>Awaiting deposit</strong> — $${fmtMoney(depAmt)} required before work begins.`;
       }
-      status.innerHTML = `✅ Invoice #${invNum} added to <strong>Invoices</strong>.${depMsg} Revenue will post to <strong>Transactions</strong> when the deposit is imported and matched. ${sheetLink}`;
-      _invKnown = null; invLoadKnown(true).then(() => invCheckDuplicate());   // the number we just used is now taken
+      if(d.updated){
+        status.innerHTML = `✅ Invoice #${invNum} <strong>updated</strong> in Invoices (row ${d.sheetRow}) — ${esc(d.status==='Unpaid'?'Open':d.status)}, balance $${fmtMoney(d.balanceDue)}. ${sheetLink}`;
+      } else {
+        status.innerHTML = `✅ Invoice #${invNum} added to <strong>Invoices</strong>.${depMsg} Record cash below, or let the bank import match e-transfers. ${sheetLink}`;
+      }
+      // We're now editing the saved row: payments can be recorded, and a
+      // re-send updates instead of duplicating.
+      if(d.sheetRow){
+        invEditing = { sheetRow: d.sheetRow, invNum, status: d.status, payments: (invEditing?.payments) || [], paidSoFar: d.paid || 0, total };
+        if(depAmt>0 && depDate && !invEditing.payments.length) invEditing.payments = [{ date: depDate, method: 'e-transfer', amount: Math.min(depAmt,total), kind: 'deposit', pending: true }];
+        const custom = document.getElementById('invNumCustom'); if(custom){ custom.value=''; custom.disabled = true; }
+        const regen = document.querySelector('.btn-regen'); if(regen) regen.disabled = true;
+        const banner = document.getElementById('invEditingBanner');
+        if(banner){ banner.style.display=''; banner.innerHTML = `✏️ Editing <strong>${esc(invNum)}</strong> (row ${d.sheetRow}) · ${esc(d.status==='Unpaid'?'Open':d.status)} · Changes save back to this row — no new invoice is created.`; }
+        btn.textContent = '💾 Save changes to Google Sheets';
+        btn.disabled = false;
+        invRenderPayments();
+      }
+      _invKnown = null; invRefreshOpenList();
     } else {
       status.textContent = '❌ ' + (d.error || 'Unknown error');
       btn.disabled = false;

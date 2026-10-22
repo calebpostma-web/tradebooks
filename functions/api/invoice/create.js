@@ -1,17 +1,21 @@
 // ════════════════════════════════════════════════════════════════════
 // POST /api/invoice/create
-// Create an invoice row in the Invoices tab.
+// Create an invoice row in 🧾 Invoices — or UPDATE an existing one in place
+// when body.invoice.sheetRow is given (the wizard reopened it).
 //
-// CASH BASIS (Phase 2A): invoice creation does NOT write to the ledger.
-// Revenue is recognized only when the deposit is matched to this invoice
-// via /api/import/confirm-match (which writes the Transactions row using
-// the Revenue Category stored on the invoice).
+// CASH BASIS: creating/updating an invoice does NOT write to the ledger.
+// Revenue reaches 📒 Transactions either when a bank deposit is imported
+// and matched (/api/import/confirm-match) or when a cash payment is
+// recorded (/api/invoice/pay). Updating an invoice never touches payments
+// already recorded; it recomputes status/balance from them.
+//
+// Stored per row: the header fields (B..Q), the line items as JSON (R)
+// so the invoice can be reopened and edited, and payments as JSON (S).
 // ════════════════════════════════════════════════════════════════════
 
-import { appendRows, writeRange } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
-
-const INVOICES_TAB = '🧾 Invoices';
+import { findInvoice, writeInvoiceRow, appendInvoiceRow, deriveStatus } from '../../_invoices.js';
+import { round2 } from '../../_payroll_sheet.js';
 
 export const onRequestOptions = () => options();
 
@@ -21,72 +25,73 @@ export async function onRequestPost({ request, env }) {
   const userId = auth.userId;
 
   let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ ok: false, error: 'Invalid JSON' }, 400);
-  }
+  try { body = await request.json(); } catch { return json({ ok: false, error: 'Invalid JSON' }, 400); }
 
   const inv = body.invoice || {};
+  const invNum = String(inv.invNum || '').trim();
+  if (!invNum) return json({ ok: false, error: 'Invoice number is required' }, 400);
+
   const category = inv.category || 'Consulting Revenue';
+  const sub = round2(parseFloat(inv.sub) || 0);
+  const hstAmt = round2(parseFloat(inv.hstAmt) || 0);
+  const total = round2(parseFloat(inv.total) || (sub + hstAmt));
+  const lines = Array.isArray(inv.lines) ? inv.lines.filter(l => l && (l.desc || l.qty || l.rate)) : null;
 
-  // Deposit / down payment fields. Stored gross (incl HST). Date may be blank
-  // when the deposit is required-but-not-yet-received (kitchen-table flow).
-  const depositAmount = parseFloat(inv.depositAmount) || 0;
-  const depositDate = (inv.depositDate || '').trim();
-  const total = parseFloat(inv.total) || 0;
-  const balanceDue = depositAmount > 0
-    ? Math.max(0, Math.round((total - Math.min(depositAmount, total)) * 100) / 100)
-    : total;
+  // Legacy deposit fields from the wizard's "deposit required" toggle.
+  // Amount = what's required up front (gross). Date = received date, or ''.
+  const depositRequired = round2(parseFloat(inv.depositAmount) || 0);
+  const depositDate = String(inv.depositDate || '').trim();
 
-  // Status state machine:
-  //   - No deposit field set                                → 'Unpaid'   (legacy)
-  //   - Deposit amount > 0, no date received yet            → 'Awaiting Deposit'
-  //   - Deposit amount > 0 and date received                → 'Deposit Received'
-  //   - 'Paid' is set later by the bank-match flow.
-  let status = 'Unpaid';
-  if (depositAmount > 0 && depositDate) status = 'Deposit Received';
-  else if (depositAmount > 0) status = 'Awaiting Deposit';
+  // ── UPDATE path ──────────────────────────────────────────────────
+  if (inv.sheetRow) {
+    const found = await findInvoice(env, userId, { sheetRow: inv.sheetRow });
+    if (!found.ok) return json({ ok: false, error: found.error });
+    const existing = found.invoice;
+    if (!existing) return json({ ok: false, error: `No invoice at row ${inv.sheetRow}` }, 404);
 
-  // Columns B-K: InvNum, Date, Client, Description, Subtotal, HST, Total, HSTFlag, Due, Status
-  const invRow = [[
-    inv.invNum || '',
-    inv.dateVal || '',
-    inv.client || '',
-    inv.desc || '',
-    parseFloat(inv.sub) || 0,
-    parseFloat(inv.hstAmt) || 0,
-    total,
-    inv.hst || 'Yes',
-    inv.dueVal || '',
-    status,
-  ]];
-
-  const invResult = await appendRows(env, userId, `'${INVOICES_TAB}'!B12:K`, invRow);
-  if (!invResult.ok) return json({ ok: false, error: 'Invoice write failed: ' + invResult.error });
-
-  // Resolve the row number we just appended to so we can write the additive
-  // columns (Revenue Category, deposit fields). Sheets returns updatedRange
-  // looking like "'🧾 Invoices'!B45:K45".
-  const match = /!B(\d+):K(\d+)/.exec(invResult.updates.updatedRange);
-  if (match) {
-    const row = parseInt(match[1]);
-    // Col N — Revenue Category (existing behaviour)
-    const catResult = await writeRange(env, userId, `'${INVOICES_TAB}'!N${row}`, [[category]]);
-    if (!catResult.ok) console.warn('Invoice category write failed:', catResult.error);
-
-    // Cols O, P, Q — Deposit Amount, Deposit Date Received, Balance Due.
-    // Only write when a deposit is actually flagged so legacy-shaped sheets
-    // (no headers in O/P/Q) don't get noise from no-deposit invoices.
-    if (depositAmount > 0) {
-      const depResult = await writeRange(
-        env, userId,
-        `'${INVOICES_TAB}'!O${row}:Q${row}`,
-        [[depositAmount, depositDate || '', balanceDue]]
-      );
-      if (!depResult.ok) console.warn('Invoice deposit write failed:', depResult.error);
+    // Payments already recorded stay as they are. If the legacy deposit date
+    // is being set for the first time and there's no payment yet, treat it as
+    // a pending e-transfer deposit so status/balance line up with the old flow.
+    let payments = existing.payments.slice();
+    if (depositRequired > 0 && depositDate && payments.length === 0 && !existing.depositDate) {
+      payments.push({ date: depositDate, method: 'e-transfer', amount: Math.min(depositRequired, total), kind: 'deposit', pending: true, recordedAt: new Date().toISOString() });
     }
+    const { status, balanceDue, paid } = deriveStatus({ total, payments, depositRequired, current: existing.status });
+
+    const updated = {
+      ...existing,
+      invNum, date: inv.dateVal || existing.date, client: inv.client || existing.client,
+      desc: inv.desc || existing.desc, sub, hst: hstAmt, total,
+      hstFlag: inv.hst || existing.hstFlag || 'Yes',
+      due: inv.dueVal || existing.due,
+      notes: inv.notes != null ? String(inv.notes) : existing.notes,
+      category,
+      depositAmount: depositRequired || existing.depositAmount || 0,
+      depositDate: existing.depositDate || depositDate || '',
+      payments, balanceDue, status,
+      datePaid: status === 'Paid' ? (existing.datePaid || payments[payments.length - 1]?.date || '') : '',
+      lines: lines || existing.lines,
+    };
+    const w = await writeInvoiceRow(env, userId, existing.sheetRow, updated);
+    if (!w.ok) return json({ ok: false, error: 'Invoice update failed: ' + w.error });
+    return json({ ok: true, updated: true, invNum, sheetRow: existing.sheetRow, status, balanceDue, paid, truncated: !!w.truncated });
   }
 
-  return json({ ok: true, invNum: inv.invNum, status, balanceDue });
+  // ── CREATE path ──────────────────────────────────────────────────
+  const payments = [];
+  if (depositRequired > 0 && depositDate) {
+    payments.push({ date: depositDate, method: 'e-transfer', amount: Math.min(depositRequired, total), kind: 'deposit', pending: true, recordedAt: new Date().toISOString() });
+  }
+  const { status, balanceDue, paid } = deriveStatus({ total, payments, depositRequired });
+
+  const row = {
+    invNum, date: inv.dateVal || '', client: inv.client || '', desc: inv.desc || '',
+    sub, hst: hstAmt, total, hstFlag: inv.hst || 'Yes', due: inv.dueVal || '',
+    status, datePaid: '', notes: inv.notes ? String(inv.notes) : '', category,
+    depositAmount: depositRequired, depositDate, balanceDue, lines, payments,
+  };
+  const a = await appendInvoiceRow(env, userId, row);
+  if (!a.ok) return json({ ok: false, error: 'Invoice write failed: ' + a.error });
+
+  return json({ ok: true, created: true, invNum, sheetRow: a.sheetRow, status, balanceDue, paid, truncated: !!a.truncated });
 }

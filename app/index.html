@@ -8952,6 +8952,89 @@ function openSettings(){
   const modal = document.getElementById('settingsModal');
   modal.style.display = 'flex';
   renderSettings();
+  intakeRender();
+}
+
+// ── Order intake (Settings) ──────────────────────────────────────────
+// Shows the account's private forwarding address, the Gmail confirmation
+// code when one has arrived, the recent intake log, and a paste box that
+// books an order email by hand (also the fallback if forwarding breaks).
+async function intakeRender(){
+  const el = document.getElementById('intakePanel');
+  if(!el) return;
+  const token = localStorage.getItem(AUTH_KEY);
+  if(!token){ el.textContent = 'Sign in to set up order intake.'; return; }
+  try {
+    const r = await fetch('/api/intake/address', { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if(!d.ok){ el.innerHTML = `<span style="color:var(--red)">${esc(d.error || 'Could not load')}</span>`; return; }
+    const ev = d.events || [];
+    const badge = (st) => ({ booked:'#1a5c38', duplicate:'#555', needs_review:'#8a4b00', error:'#b91c1c', info:'#203a75' }[st] || '#555');
+    const evRows = ev.length ? ev.slice(0, 15).map(e => `
+      <div style="display:grid;grid-template-columns:auto auto 1fr;gap:.6rem;padding:.3rem 0;border-bottom:1px solid var(--paper2);font-size:.78rem">
+        <span style="font-family:var(--mono);color:var(--ink3)">${esc(String(e.received_at||'').slice(0,16).replace('T',' '))}</span>
+        <span style="color:${badge(e.status)};font-weight:600">${esc(e.status)}</span>
+        <span>${e.order_no ? `<strong>${esc(e.order_no)}</strong> · ` : ''}${esc(e.detail || e.subject || '')}</span>
+      </div>`).join('') : '<div style="font-style:italic">Nothing received yet.</div>';
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr auto;gap:.6rem;align-items:center;background:var(--paper2);padding:.8rem 1rem;border-radius:var(--radius);margin-bottom:.8rem">
+        <div>
+          <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3)">Your intake address</div>
+          <div style="font-family:var(--mono);font-size:1rem;color:var(--ink);user-select:all" id="intakeAddr">${esc(d.address)}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('intakeAddr').textContent).then(()=>toast('Copied'))">Copy</button>
+      </div>
+      <div style="font-size:.8rem;line-height:1.55;color:var(--ink2);margin-bottom:.8rem">
+        <strong>One-time setup in Gmail</strong> (the mailbox that gets the order emails):
+        Settings → <em>See all settings</em> → <em>Forwarding and POP/IMAP</em> → <em>Add a forwarding address</em> → paste the address above.
+        Gmail emails a confirmation code to it — it appears here within a minute; type it back into Gmail.
+        Then <em>Filters and Blocked Addresses</em> → <em>Create a new filter</em> → From: <code>orders@pctires.ca</code> → <em>Forward it to</em> the address above. Done — every new order books itself.
+      </div>
+      ${d.gmailVerify ? `<div style="background:#fff8e8;border-left:3px solid #b88a00;padding:.6rem .9rem;border-radius:4px;margin-bottom:.8rem;font-size:.85rem">📬 <strong>Gmail confirmation code:</strong> <span style="font-family:var(--mono);font-size:1.05rem;user-select:all">${esc(d.gmailVerify.code)}</span> <span style="color:var(--ink3);font-size:.75rem">(received ${esc(String(d.gmailVerify.at).slice(0,16).replace('T',' '))})</span></div>` : ''}
+      <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);margin:.6rem 0 .3rem">Recent intake</div>
+      ${evRows}
+      <details style="margin-top:.9rem">
+        <summary style="cursor:pointer;font-size:.82rem;color:var(--ink2)">Book an order by pasting the email</summary>
+        <div style="margin-top:.5rem">
+          <textarea id="intakePaste" rows="6" placeholder="Open the New Order email, select all, copy, paste here." style="width:100%;font-size:.8rem;font-family:var(--mono)"></textarea>
+          <div style="display:flex;gap:.5rem;margin-top:.4rem;align-items:center">
+            <button class="btn btn-outline btn-sm" onclick="intakePaste(true)">Preview</button>
+            <button class="btn btn-green btn-sm" onclick="intakePaste(false)">Book it</button>
+            <span id="intakePasteStatus" style="font-size:.78rem;color:var(--ink3)"></span>
+          </div>
+          <div id="intakePastePreview" style="font-size:.8rem;margin-top:.5rem"></div>
+        </div>
+      </details>`;
+  } catch(err){ el.innerHTML = `<span style="color:var(--red)">${esc(err.message)}</span>`; }
+}
+
+async function intakePaste(dryRun){
+  const token = localStorage.getItem(AUTH_KEY);
+  const text = document.getElementById('intakePaste')?.value || '';
+  const st = document.getElementById('intakePasteStatus');
+  const pv = document.getElementById('intakePastePreview');
+  if(text.trim().length < 40){ st.textContent = 'Paste the whole email first.'; return; }
+  st.textContent = dryRun ? 'Reading…' : 'Booking…';
+  try {
+    const looksHtml = /<\/?(table|tr|td|div)[\s>]/i.test(text);
+    const r = await fetch('/api/intake/paste', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
+      body: JSON.stringify(looksHtml ? { html: text, dryRun } : { text, dryRun }) });
+    const d = await r.json();
+    if(!d.ok){ st.textContent = ''; pv.innerHTML = `<span style="color:var(--red)">${esc(d.error || 'Failed')}</span>`; return; }
+    const p = d.parsed || {};
+    if(d.dryRun){
+      const c = p.charged || {};
+      pv.innerHTML = `<div style="background:var(--paper2);padding:.6rem .8rem;border-radius:4px"><strong>${esc(p.orderNo)}</strong> · ${esc(p.customer?.name||'')} · total $${fmtMoney(c.total||0)} (HST $${fmtMoney(c.hst||0)}) · ${esc(p.status)}${c.depositPaid?` · Stripe deposit $${fmtMoney(c.depositPaid)}`:''}<br>TDG cost $${fmtMoney(p.tdg?.totalCost||0)} (${esc(p.tdg?.reference||'')})<br><span style="color:var(--ink3)">${(p.invoice?.lines||[]).map(l=>esc(l.desc)).join(' · ')}</span></div>`;
+      st.textContent = 'Looks right? Click Book it.';
+    } else {
+      pv.innerHTML = d.duplicate
+        ? `<span style="color:#8a4b00">⚠ ${esc(p.orderNo)} is already in Invoices (row ${d.invoice.sheetRow}). Nothing added.</span>`
+        : `<span style="color:var(--green)">✓ ${esc(p.orderNo)} booked — Invoices row ${d.invoice.sheetRow}, ${d.ledger.length} ledger row(s): ${d.ledger.map(l=>esc(l.kind)).join(', ')||'none'}.</span>`;
+      st.textContent = '';
+      document.getElementById('intakePaste').value = '';
+      intakeRender();
+    }
+  } catch(err){ st.textContent = ''; pv.innerHTML = `<span style="color:var(--red)">${esc(err.message)}</span>`; }
 }
 function closeSettings(){
   document.getElementById('settingsModal').style.display = 'none';
@@ -9096,6 +9179,10 @@ function renderSettings(){
     </div>
     <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">Card payments, CRA remittances, shareholder loans and owner draws are not income or expenses. Name them the way you think of them; they stay out of the P&amp;L and HST and get their own columns on the Accountant tabs.</div>
     <div style="font-size:.78rem;color:var(--ink3);margin-top:-.5rem;margin-bottom:1rem">These will appear in all category dropdowns alongside the standard categories. The AI will learn to use them when categorizing your transactions.</div>
+
+    <hr class="divider">
+    <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Order intake — website orders → your books</div>
+    <div id="intakePanel" style="font-size:.85rem;color:var(--ink3)">Loading…</div>
 
     <hr class="divider">
     <div style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:1rem">Google Sheet Connection</div>

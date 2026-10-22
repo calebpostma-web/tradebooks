@@ -1,0 +1,22 @@
+# Email intake Worker — receives every message sent to *@aibookkeeper.ca
+# (Cloudflare Email Routing catch-all → this Worker) and books pctires.ca
+# orders into the right user's sheet.
+#
+# Deploy:   cd workers/order-intake && npm install && npx wrangler deploy
+# Secrets:  npx wrangler secret put GOOGLE_CLIENT_ID
+#           npx wrangler secret put GOOGLE_CLIENT_SECRET
+# Then in Cloudflare → aibookkeeper.ca → Email → Email Routing:
+#   enable routing, add the MX/TXT records it asks for, and set the
+#   catch-all action to "Send to a Worker: aibookkeeper-order-intake".
+name = "aibookkeeper-order-intake"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tradebooks-db"
+database_id = "7735c004-045f-4043-9ec4-a48934c833ca"
+
+[vars]
+INTAKE_DOMAIN = "aibookkeeper.ca"

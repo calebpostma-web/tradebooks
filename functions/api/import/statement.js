@@ -258,6 +258,26 @@ export async function onRequestPost({ request, env }) {
     receiptUrls.push(receiptUrl);
   }
 
+  // Stripe payouts: the sale was already booked in Account "Stripe" when the
+  // order came in, so the payout landing in the bank is a transfer. If the
+  // user has a Stripe pocket (any pocket named …stripe…), add the mirror row
+  // on the Stripe side so the Stripe account balance comes back to ~0 and the
+  // bank side stays a transfer. Skip when the imported account IS Stripe.
+  const stripePocket = [...pockets].find(p => /stripe/i.test(p));
+  if (stripePocket && !/stripe/i.test(bank)) {
+    const mirrors = [];
+    for (const r of txnRows) {
+      const cat = String(r[4] || '').toLowerCase();
+      if (cat !== stripePocket) continue;
+      // r: Date | Party | Description | Amount | Category | HST? | HST | Account | Source | Ref | Related Invoice | Match Status
+      mirrors.push([r[0], r[1], `${r[2]} (Stripe side of payout)`, -Number(r[3] || 0), r[4], 'No', 0, 'Stripe', source, `${r[9]}-STRIPE`, '', 'N/A']);
+    }
+    if (mirrors.length) {
+      const fresh = mirrors.filter(m => !existingRefs.has(String(m[9]).toLowerCase()));
+      if (fresh.length) { txnRows.push(...fresh); fresh.forEach(() => receiptUrls.push('')); }
+    }
+  }
+
   let firstAppendedRow = null;
   if (txnRows.length) {
     const appendResult = await appendRows(env, userId, `'${TXN_TAB}'!B12:M`, txnRows);
@@ -438,9 +458,11 @@ function findLedgerMatch(ledgerRows, claimed, { account, total, date, wantReceip
   for (const r of ledgerRows) {
     if (claimed.has(r.row) || !r.date || r.amount >= 0) continue;
     if (r.account.toLowerCase() !== acct) continue;
-    const isOpenReceipt = r.source === 'Receipt Scanner' && r.status === 'Awaiting statement';
+    // "Awaiting statement" rows come from the receipt scanner AND the order
+    // import (TDG cost known from the order email before the card statement).
+    const isOpenReceipt = r.status === 'Awaiting statement';
     if (wantReceiptRow) { if (!isOpenReceipt) continue; }
-    else { if (r.source === 'Receipt Scanner' || r.status === 'Receipt ✓' || r.receipt) continue; }
+    else { if (isOpenReceipt || r.source === 'Receipt Scanner' || r.source === 'Order import' || r.status === 'Receipt ✓' || r.receipt) continue; }
     if (Math.abs((Math.abs(r.amount) + r.hst) - total) > 0.02) continue;
     const days = Math.abs((r.date - d) / 86400000);
     if (days > MATCH_DAYS) continue;

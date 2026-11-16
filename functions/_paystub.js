@@ -104,7 +104,7 @@ export function renderPayStub(d) {
   const payMethod = /cash/i.test(run.workDesc) ? 'Cash' : 'Direct deposit / e-Transfer';
 
   const dedRows = [
-    ['Canada Pension Plan (CPP)', run.cpp, ytd.cpp],
+    [run.cpp - run.employerCpp > 0.005 ? `Canada Pension Plan (CPP) — includes ${'$' + (run.cpp - run.employerCpp).toFixed(2)} correction for CPP under-deducted earlier this year` : 'Canada Pension Plan (CPP)', run.cpp, ytd.cpp],
     ['Employment Insurance (EI)', run.ei, ytd.ei],
     ['Federal income tax', run.fedTax, ytd.fedTax],
     ['Ontario income tax', run.onTax, ytd.onTax],

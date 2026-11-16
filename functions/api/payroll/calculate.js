@@ -25,7 +25,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 import { authenticateRequest, json, options } from '../../_shared.js';
-import { calculatePayRun, remittanceDueDate } from '../../_payroll.js';
+import { calculatePayRun, remittanceDueDate, applyCppRecovery } from '../../_payroll.js';
 import { loadEmployee, loadWorkLogInRange, loadYtdState, loadRemitter } from '../../_payroll_sheet.js';
 import { SheetReadError, sheetReadErrorBody } from '../../_payroll_sheet.js';
 
@@ -73,12 +73,16 @@ async function handlePost({ request, env }) {
   const remitter = await loadRemitter(env, userId);
 
   // 4. Run the engine
+  // Annual-max room is measured against the CPP each run SHOULD have had.
   const result = calculatePayRun({
     employee,
     payDate,
     grossPay,
-    ytd,
+    ytd: { ...ytd, cppBase: ytd.cppRequired },
+    periodStart,
+    periodEnd,
   });
+  applyCppRecovery(result, ytd.cppShortfall);
 
   return json({
     ok: true,
@@ -98,13 +102,13 @@ async function handlePost({ request, env }) {
     ytdBefore: ytd,
     ytdAfter: {
       gross: Math.round((ytd.gross + result.gross) * 100) / 100,
-      cppBase: Math.round((ytd.cppBase + result.cpp + result.cpp2) * 100) / 100,
+      cppBase: Math.round((ytd.cppBase + result.cpp + result.cpp2 + result.cppRecovery) * 100) / 100,
       fedTax: Math.round((ytd.fedTax + result.fedTax) * 100) / 100,
       onTax: Math.round((ytd.onTax + result.onTax) * 100) / 100,
     },
     calculation: result,
     remitter,
-    remittanceDue: (result.cpp + result.cpp2 + result.ei + result.fedTax + result.onTax) > 0
+    remittanceDue: result.totalRemittance > 0
       ? remittanceDueDate(payDate, remitter)
       : null,
   });

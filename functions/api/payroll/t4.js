@@ -40,7 +40,7 @@
 import { readRange } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
 import { num } from '../../_payroll_sheet.js';
-import { ageOnDate } from '../../_payroll.js';
+import { ageOnDate, cppApplies } from '../../_payroll.js';
 
 const PAYROLL_TAB = '💼 Payroll';
 
@@ -100,7 +100,8 @@ export async function onRequestGet({ request, env }) {
   const yearEndIso = `${year}-12-31`;
 
   for (const [empName, runs] of byName.entries()) {
-    const emp = employees.find(e => e.name === empName) || {};
+    // Same name can be saved more than once — prefer the active record.
+    const emp = employees.find(e => e.name === empName && e.active !== false) || employees.find(e => e.name === empName) || {};
     const ageStart = emp.dob ? ageOnDate(emp.dob, yearStartIso) : null;
     const ageEnd = emp.dob ? ageOnDate(emp.dob, yearEndIso) : null;
     const cppExemptAllYear = ageEnd != null && ageEnd < 18;   // under 18 through whole year
@@ -113,8 +114,10 @@ export async function onRequestGet({ request, env }) {
     const onTaxTotal = round2(runs.reduce((s, r) => s + r.onTax, 0));
     const box22 = round2(fedTaxTotal + onTaxTotal);
     const box24 = familyEiExempt ? 0 : box14;
-    // Pensionable = gross, capped at YMPE for CPP-earning employees; zero if CPP-exempt
-    const box26 = cppExemptAllYear ? 0 : Math.min(box14, 74600);
+    // Box 26 = pensionable earnings: only pay from the months CPP applied
+    // (CRA: from the month after the 18th birthday). Counting pre-18 pay
+    // here would make CRA's year-end review (PIER) see a CPP shortfall.
+    const box26 = round2(Math.min(runs.filter(r => cppApplies(emp.dob, r.payDate)).reduce((s, r) => s + r.gross, 0), 74600));
 
     slips.push({
       employee: {
@@ -134,7 +137,7 @@ export async function onRequestGet({ request, env }) {
       box22,
       box24,
       box26,
-      box28Cpp: cppExemptAllYear ? 'X' : '',
+      box28Cpp: box26 === 0 ? 'X' : '',
       box28Ei: familyEiExempt ? 'X' : '',
       fedTaxWithheld: fedTaxTotal,
       onTaxWithheld: onTaxTotal,

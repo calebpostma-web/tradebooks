@@ -2251,10 +2251,23 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
             <div class="field"><label>Default rate ($/hr)</label><input type="number" step="0.01" id="emp_defaultRate" placeholder="16.00"></div>
             <div class="field"><label>SIN (optional)</label><input type="text" id="emp_sin" placeholder="Required for T4"></div>
           </div>
+          <div class="field"><label>How often are they paid?</label>
+            <select id="emp_payFrequency" style="width:100%;padding:.55rem .75rem;border:1px solid var(--rule);border-radius:var(--radius);font-size:.88rem;background:white">
+              <option value="monthly">Monthly (12 pays a year)</option>
+              <option value="semimonthly">Twice a month (24)</option>
+              <option value="biweekly">Every two weeks (26)</option>
+              <option value="weekly">Weekly (52)</option>
+            </select>
+            <div style="font-size:.72rem;color:var(--ink3);margin-top:.2rem">CRA splits the $3,500 CPP exemption across the year's pays, so this sets how much comes off each pay. A catch-up pay covering several months automatically gets that many months' worth.</div>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
             <div class="field"><label>TD1 Fed code</label><input type="number" id="emp_td1Fed" value="1" min="0" max="10"></div>
             <div class="field"><label>TD1 ON code</label><input type="number" id="emp_td1On" value="1" min="0" max="10"></div>
           </div>
+          <label style="display:flex;gap:.5rem;align-items:flex-start;font-size:.8rem;line-height:1.45;margin:-.1rem 0 .5rem;cursor:pointer">
+            <input type="checkbox" id="emp_td1Below" style="margin-top:.2rem">
+            <span>Ticked the TD1 box <em>"my total income for the year will be less than my total claim amount"</em> — no income tax is taken off (CRA rule). Only if their income from <strong>all</strong> jobs this year will stay under about $16,000. CPP still applies at 18+.</span>
+          </label>
           <div style="font-size:.74rem;color:var(--ink3);line-height:1.5;margin-top:-.2rem;margin-bottom:.6rem">
             From the employee's signed TD1 / TD1ON. <strong>1</strong> = basic personal amount only (most people). <strong>0</strong> = no claim here — use when another employer already applies their basic amount, or they ticked "more than one employer"; tax is then withheld from the first dollar. <strong>2–10</strong> = extra credits (spouse, disability, tuition) per the CRA chart. Only one employer can claim the basic amount.
           </div>
@@ -2361,6 +2374,9 @@ kbd{background:var(--paper2);border:1px solid var(--rule);border-radius:3px;padd
 
         <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin:1.4rem 0 .6rem">Pay stubs — recent pay runs</div>
         <div id="prRecent" style="font-size:.82rem;color:var(--ink3);font-style:italic">Loading…</div>
+
+        <div style="font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin:1.4rem 0 .6rem">CPP check — this year vs CRA's method</div>
+        <div id="prCppCheck" style="font-size:.82rem"><button class="btn btn-outline btn-sm" onclick="prCppCheck()">Check CPP</button></div>
       </div>
     </div>
   </div>
@@ -7777,7 +7793,7 @@ function payrollSub(which){
   ['employees','worklog','payruns','remittance','t4'].forEach(k => {
     document.getElementById('pay-sub-'+k).style.display = (k === which) ? '' : 'none';
   });
-  if(which === 'payruns') { try { prSetDefaults(); prLoadRecent(); } catch(e) { console.warn(e); } }
+  if(which === 'payruns') { try { prSetDefaults(); prLoadRecent(); prCppCheck(); } catch(e) { console.warn(e); } }
   if(which === 'remittance') { try { rmLoad(); } catch(e) { console.warn(e); } }
   if(which === 't4') { try { t4SetDefaults(); } catch(e) { console.warn(e); } }
 }
@@ -8009,6 +8025,8 @@ function empLoad(id){
   document.getElementById('emp_sin').value = e.sin || '';
   document.getElementById('emp_td1Fed').value = e.td1FedClaim ?? 1;
   document.getElementById('emp_td1On').value = e.td1OnClaim ?? 1;
+  document.getElementById('emp_payFrequency').value = e.payFrequency || 'monthly';
+  document.getElementById('emp_td1Below').checked = !!e.td1IncomeBelowClaim;
   document.getElementById('emp_email').value = e.email || '';
   document.getElementById('emp_notes').value = e.notes || '';
 }
@@ -8019,6 +8037,8 @@ function empClear(){
   document.getElementById('emp_relationship').value = 'child';
   document.getElementById('emp_td1Fed').value = 1;
   document.getElementById('emp_td1On').value = 1;
+  document.getElementById('emp_payFrequency').value = 'monthly';
+  document.getElementById('emp_td1Below').checked = false;
   document.getElementById('empSaveStatus').textContent = '';
 }
 
@@ -8037,6 +8057,8 @@ async function empSave(){
     sin: document.getElementById('emp_sin').value.trim() || undefined,
     td1FedClaim: td1Code(document.getElementById('emp_td1Fed').value),
     td1OnClaim: td1Code(document.getElementById('emp_td1On').value),
+    payFrequency: document.getElementById('emp_payFrequency').value,
+    td1IncomeBelowClaim: document.getElementById('emp_td1Below').checked,
     email: document.getElementById('emp_email').value.trim() || undefined,
     notes: document.getElementById('emp_notes').value.trim() || undefined,
   };
@@ -8466,13 +8488,40 @@ function prReadForm(){
   return { employeeId, periodStart, periodEnd, payDate, adjustment };
 }
 
+/** One-line "why" under the CPP amount, e.g. ($1,500.00 − $291.67) × 5.95% = $71.90 */
+function prCppMathHtml(c){
+  const m = c.breakdown && c.breakdown.cpp;
+  if(!m) return '';
+  const st = 'display:block;font-size:.72rem;color:var(--ink3);font-family:var(--mono);line-height:1.4;margin-top:.1rem';
+  if(c.flags && c.flags.cppExempt) return `<span style="${st}">No CPP: ${(c.age ?? 0) >= 70 ? 'it stops the month after the 70th birthday' : 'it starts the month after the 18th birthday'} (CRA rule)</span>`;
+  const per = m.periodsCovered > 1
+    ? `${m.periodsCovered} pay periods × $${(3500/m.periodsPerYear).toFixed(2)}`
+    : `$3,500 ÷ ${m.periodsPerYear} pays`;
+  if(m.pensionable <= 0) return `<span style="${st}">Pay is under this period's exemption (${per} = $${m.exemption.toFixed(2)}) — no CPP</span>`;
+  return `<span style="${st}">($${c.gross.toFixed(2)} − $${m.exemption.toFixed(2)} exemption) × 5.95% = $${(c.cpp).toFixed(2)}<br>exemption = ${per}${m.capped ? ' · capped at the annual maximum' : ''}</span>`;
+}
+
+/** Plain-English "why" for the income tax lines — CRA's own method. */
+function prTaxMathHtml(c){
+  const t = c.breakdown && c.breakdown.tax;
+  if(!t) return '';
+  const st = 'display:block;font-size:.72rem;color:var(--ink3);line-height:1.45;margin-top:.1rem';
+  const money = n => '$' + Math.round(n).toLocaleString();
+  if(t.incomeBelowClaim) return `<span style="${st}">No income tax: the TD1 "income less than claim amount" box is ticked.</span>`;
+  const per = t.periodsCovered > 1 ? `each of the ${t.periodsCovered} pay periods this covers` : 'this pay';
+  const lead = `CRA's method: ${per} counts as ${money(t.annualIncome)} a year.`;
+  if((c.fedTax + c.onTax) === 0) return `<span style="${st}">${lead} That's under the basic personal amounts and credits, so no income tax.</span>`;
+  const ohp = t.healthPremium ? ` Ontario includes the health premium (${money(t.healthPremium)}/yr).` : '';
+  return `<span style="${st}">${lead} Year's tax ÷ ${t.periodsPerYear} pays.${ohp}</span>`;
+}
+
 function prRenderBreakdown(d){
   const c = d.calculation;
   const wl = d.workLog;
   const emp = d.employee;
   const flags = c.flags || {};
   const flagChips = [];
-  if(flags.isUnder18) flagChips.push('<span style="background:#dff7e0;color:#1a5c38;font-size:.7rem;padding:.1rem .45rem;border-radius:3px">Under 18 · CPP exempt</span>');
+  if(flags.cppExempt) flagChips.push(`<span style="background:#dff7e0;color:#1a5c38;font-size:.7rem;padding:.1rem .45rem;border-radius:3px">${flags.isUnder18 ? 'Under 18' : (c.age ?? 0) >= 70 ? '70+' : 'Turns 18 this month'} · CPP exempt</span>`);
   if(flags.familyEiExempt) flagChips.push('<span style="background:#e8eefc;color:#203a75;font-size:.7rem;padding:.1rem .45rem;border-radius:3px">Family-EI exempt</span>');
   if(flags.td1Fed !== undefined){
     const zero = flags.td1Fed === 0 || flags.td1On === 0;
@@ -8513,12 +8562,17 @@ function prRenderBreakdown(d){
       <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.3rem">Deductions (2026 CRA rates)</div>
       <div style="display:grid;grid-template-columns:1fr auto;gap:.2rem .8rem;font-size:.85rem;line-height:1.5;margin-bottom:.8rem">
         <div>Gross this run</div><div style="text-align:right;font-family:var(--mono)">$${c.gross.toFixed(2)}</div>
-        <div>CPP (5.95%)</div><div style="text-align:right;font-family:var(--mono)">$${(c.cpp+c.cpp2).toFixed(2)}</div>
+        <div>CPP (5.95%)${prCppMathHtml(c)}</div><div style="text-align:right;font-family:var(--mono)">$${(c.cpp+c.cpp2).toFixed(2)}</div>
+        ${c.cppRecovery > 0 ? `<div>CPP correction<span style="display:block;font-size:.72rem;color:var(--ink3);line-height:1.4">Taking back CPP that was under-deducted earlier this year ($${c.cppOutstandingBefore.toFixed(2)} owing). CRA allows up to this pay's normal CPP each pay${c.cppOutstandingAfter > 0 ? ` — $${c.cppOutstandingAfter.toFixed(2)} left for the next pay` : ' — this settles it'}.</span></div><div style="text-align:right;font-family:var(--mono)">$${c.cppRecovery.toFixed(2)}</div>` : ''}
         <div>EI</div><div style="text-align:right;font-family:var(--mono);color:${c.ei===0?'var(--ink3)':'var(--ink)'}">$${c.ei.toFixed(2)}</div>
         <div>Federal tax</div><div style="text-align:right;font-family:var(--mono)">$${c.fedTax.toFixed(2)}</div>
-        <div>Ontario tax</div><div style="text-align:right;font-family:var(--mono)">$${c.onTax.toFixed(2)}</div>
+        <div>Ontario tax${prTaxMathHtml(c)}</div><div style="text-align:right;font-family:var(--mono)">$${c.onTax.toFixed(2)}</div>
         <div style="padding-top:.3rem;border-top:1px solid var(--rule);font-weight:600">Net Pay</div>
         <div style="text-align:right;font-family:var(--mono);font-weight:600;padding-top:.3rem;border-top:1px solid var(--rule);color:var(--green)">$${c.netPay.toFixed(2)}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:.2rem .8rem;font-size:.85rem;line-height:1.5;margin:-.3rem 0 .9rem;padding:.45rem .6rem;background:var(--paper2);border-radius:4px">
+        <div><strong>Total to CRA for this pay</strong><div style="font-size:.72rem;color:var(--ink3)">Your deductions $${c.totalDeductions.toFixed(2)} + company's matching CPP/EI $${Number(c.employerShare||0).toFixed(2)}</div></div>
+        <div style="text-align:right;font-family:var(--mono);font-weight:600">$${Number(c.totalRemittance||0).toFixed(2)}</div>
       </div>
 
       <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;margin-bottom:.3rem">Employer side (corporation pays on top of gross)</div>
@@ -8557,15 +8611,85 @@ async function prLoadRecent(){
     if(!d.runs.length){ el.innerHTML = 'No committed pay runs yet. Each committed run gets a printable, emailable stub here.'; return; }
     el.style.fontStyle = 'normal'; el.style.color = 'var(--ink)';
     el.innerHTML = d.runs.map(r => `
-      <div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:.6rem 1rem;align-items:center;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:var(--radius);background:white;margin-bottom:.4rem">
+      <div style="display:grid;grid-template-columns:auto 1fr auto auto auto;gap:.6rem 1rem;align-items:center;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:var(--radius);background:white;margin-bottom:.4rem">
         <div style="font-family:var(--mono);font-size:.78rem;color:var(--ink3)">${esc(r.payDate)}</div>
         <div><div style="font-weight:600">${esc(r.employee)}</div><div style="font-size:.74rem;color:var(--ink3)">${r.period ? esc(r.period) + ' · ' : ''}${r.hours ? r.hours.toFixed(2) + ' h · ' : ''}gross $${r.gross.toFixed(2)} · net <strong>$${r.netPay.toFixed(2)}</strong>${r.stub ? ` · <a href="${escAttr(r.stub)}" target="_blank" style="color:var(--green)">📎 Drive</a>` : ''}</div></div>
         <button class="btn btn-outline btn-sm" onclick="prPrintStub(${r.sheetRow})" title="Opens the stub in a new tab — use Print or Save as PDF">🖨 Print / PDF</button>
         <button class="btn btn-outline btn-sm" onclick="prEmailStub(${r.sheetRow}, '${escAttr(r.employee)}')" title="Email the stub to the employee's address on file (also saves a copy to Drive)">✉ Email</button>
+        ${String(r.status).toLowerCase() === 'remitted'
+          ? `<span style="font-size:.7rem;color:var(--ink3)" title="CRA has been paid for this run">✓ Remitted</span>`
+          : `<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:#e7b7b2" onclick="prCancelRun(${r.sheetRow}, '${escAttr(r.employee)}', '${escAttr(r.payDate)}', ${r.netPay})" title="Made a mistake? Cancel this run, then redo it with Preview → Commit">✕ Cancel</button>`}
       </div>`).join('');
   } catch(err){
     el.innerHTML = `<span style="color:var(--red)">${esc(err.message)}</span>`;
   }
+}
+
+async function prCancelRun(sheetRow, employee, payDate, netPay){
+  const msg = `Cancel the pay run for ${employee} paid ${payDate} (net $${Number(netPay).toFixed(2)})?\n\n`
+    + `What this does:\n• Marks the run "Cancelled" in the Payroll tab — it stays there as a record, but stops counting toward year-to-date, the T4 and what's owed to CRA.\n`
+    + `• Adds a reversing line in Transactions so the books net to zero.\n\n`
+    + `Then redo it: set the dates, Preview, check the numbers, Commit.\n\nOnly cancel a run whose money has NOT gone out, or one you are about to redo.`;
+  if(!confirm(msg)) return;
+  const token = localStorage.getItem(AUTH_KEY);
+  try {
+    const r = await fetch('/api/payroll/cancel', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token }, body: JSON.stringify({ sheetRow }) });
+    const d = await r.json();
+    if(!d.ok){ alert(d.error || 'Could not cancel'); return; }
+    toast(`Cancelled — ${employee} ${payDate}. Redo it with Preview → Commit.`);
+    prLoadRecent(); prCppCheck(true);
+  } catch(err){ alert(err.message); }
+}
+
+/** CPP check — compares every run this year with CRA's method. */
+async function prCppCheck(quiet){
+  const el = document.getElementById('prCppCheck');
+  if(!el) return;
+  const token = localStorage.getItem(AUTH_KEY);
+  if(!token) return;
+  const year = new Date().getFullYear();
+  if(!quiet) el.innerHTML = '⏳ Checking…';
+  try {
+    const r = await fetch('/api/payroll/cpp-review?year=' + year, { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if(!d.ok){ el.innerHTML = `<span style="color:var(--red)">${esc(d.error || 'Check failed')}</span>`; return; }
+    if(!d.runs.length){ el.innerHTML = '<span style="color:var(--ink3);font-style:italic">No pay runs this year yet.</span>'; return; }
+    const needs = d.runs.filter(x => x.employerNeedsUpdate && !x.remitted);
+    const rows = d.runs.map(x => `<tr>
+        <td style="padding:.25rem .4rem">${esc(x.payDate)}</td>
+        <td style="padding:.25rem .4rem">${esc(x.employee)}${x.periodsCovered>1?` <span style="color:var(--ink3);font-size:.72rem">(${x.periodsCovered} pay periods)</span>`:''}</td>
+        <td style="padding:.25rem .4rem;text-align:right">$${x.gross.toFixed(2)}</td>
+        <td style="padding:.25rem .4rem;text-align:right">$${x.deducted.toFixed(2)}</td>
+        <td style="padding:.25rem .4rem;text-align:right;font-weight:600">$${x.required.toFixed(2)}</td>
+        <td style="padding:.25rem .4rem;font-size:.72rem;color:${x.employerNeedsUpdate?'#8a4b00':'var(--green)'}">${x.employerNeedsUpdate ? (x.remitted ? 'Remitted — talk to Caleb' : 'Company share needs updating') : '✓'}</td>
+      </tr>`).join('');
+    const emp = d.employees.map(e => {
+      if(Math.abs(e.shortfall) < 0.01) return `<div>✓ <strong>${esc(e.name)}</strong>: CPP is right for the year so far ($${e.required.toFixed(2)}).</div>`;
+      if(e.shortfall > 0) return `<div>⚠ <strong>${esc(e.name)}</strong>: $${e.shortfall.toFixed(2)} too little CPP was taken off so far. The next pay run takes it back automatically — up to that pay's normal CPP each time (CRA's limit) — and shows it as a "CPP correction" line.</div>`;
+      return `<div>ℹ <strong>${esc(e.name)}</strong>: $${(-e.shortfall).toFixed(2)} more CPP was taken off than CRA requires. It is refunded to the employee on their tax return — nothing to do here.</div>`;
+    }).join('');
+    el.innerHTML = `
+      <div style="font-size:.78rem;color:var(--ink2);line-height:1.5;margin-bottom:.5rem">Each pay run's CPP compared with CRA's method: 5.95% of pay above that pay's share of the $3,500 exemption ($3,500 ÷ pays per year, times the pay periods a catch-up covers).</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.78rem;margin-bottom:.6rem">
+        <thead><tr style="border-bottom:1px solid var(--rule);color:var(--ink3);font-size:.7rem">
+          <th style="padding:.25rem .4rem;text-align:left">Pay date</th><th style="padding:.25rem .4rem;text-align:left">Employee</th>
+          <th style="padding:.25rem .4rem;text-align:right">Gross</th><th style="padding:.25rem .4rem;text-align:right">CPP taken off</th>
+          <th style="padding:.25rem .4rem;text-align:right">CRA's method</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      <div style="font-size:.8rem;line-height:1.55;margin-bottom:.6rem">${emp}</div>
+      ${needs.length ? `<button class="btn btn-primary btn-sm" onclick="prCppApply(${year})">Apply CRA's numbers</button>
+        <div style="font-size:.74rem;color:var(--ink3);line-height:1.5;margin-top:.4rem">This sets the company's matching CPP on ${needs.length} run${needs.length>1?'s':''} to CRA's figure (the company always sends its full share). What was actually taken off the paycheques stays as it was — that's what happened — and any shortfall is recovered on the next pays.</div>` : ''}`;
+  } catch(err){ el.innerHTML = `<span style="color:var(--red)">${esc(err.message)}</span>`; }
+}
+
+async function prCppApply(year){
+  if(!confirm('Update the company\'s matching CPP on these runs to CRA\'s figures? Paycheques already paid are not changed.')) return;
+  const token = localStorage.getItem(AUTH_KEY);
+  const r = await fetch('/api/payroll/cpp-review', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token }, body: JSON.stringify({ year, apply: true }) });
+  const d = await r.json();
+  if(!d.ok){ alert(d.error || 'Update failed'); return; }
+  toast(`Updated ${d.updated.length} run${d.updated.length===1?'':'s'}.`);
+  prCppCheck();
 }
 
 async function prPrintStub(sheetRow){

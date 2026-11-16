@@ -20,7 +20,7 @@
 
 import { appendRows } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
-import { calculatePayRun, remittanceDueDate } from '../../_payroll.js';
+import { calculatePayRun, remittanceDueDate, applyCppRecovery } from '../../_payroll.js';
 import {
   PAYROLL_TAB, TXN_TAB, round2,
   loadEmployee, loadWorkLogInRange, loadYtdState, findExistingPayrollRow, resolveWageCategory, loadRemitter,
@@ -86,17 +86,19 @@ async function handlePost({ request, env }) {
   const ytd = await loadYtdState(env, userId, employee.name, payDate);
   const remitter = await loadRemitter(env, userId);
 
-  const result = calculatePayRun({ employee, payDate, grossPay, ytd });
+  const result = calculatePayRun({ employee, payDate, grossPay, ytd: { ...ytd, cppBase: ytd.cppRequired }, periodStart, periodEnd });
+  applyCppRecovery(result, ytd.cppShortfall);
 
   // Determine remittance due + status
-  const totalDeductions = result.cpp + result.cpp2 + result.ei + result.fedTax + result.onTax;
-  const remitDue = totalDeductions > 0 ? remittanceDueDate(payDate, remitter) : '';
+  const totalDeductions = result.totalDeductions;            // includes any CPP recovery
+  const remitDue = result.totalRemittance > 0 ? remittanceDueDate(payDate, remitter) : '';
   const status = 'Paid';  // employee paid; CRA remittance tracked separately via Status flip
 
   // Build Payroll row (20 data columns B-U)
   const businesses = [...new Set(wlEntries.map(e => e.business).filter(Boolean))];
   const businessDisplay = businesses.length === 0 ? 'Postma' : businesses.length === 1 ? businesses[0] : 'Multi';
-  const workDescription = buildWorkDescription(wlEntries, adjustment);
+  const workDescription = buildWorkDescription(wlEntries, adjustment)
+    + (result.cppRecovery > 0 ? ` · CPP incl. $${result.cppRecovery.toFixed(2)} correction (earlier under-deduction)` : '');
   const avgRate = totalHours > 0 ? round2(wlGross / totalHours) : '';
 
   const payrollRow = [[
@@ -108,7 +110,7 @@ async function handlePost({ request, env }) {
     totalHours || '',             // G Hours
     avgRate,                      // H Rate
     result.gross,                 // I Gross
-    round2(result.cpp + result.cpp2), // J CPP (combined base+CPP2)
+    round2(result.cpp + result.cpp2 + result.cppRecovery), // J CPP deducted (base+CPP2+any recovery)
     result.ei,                    // K EI
     result.fedTax,                // L Fed Tax
     result.onTax,                 // M ON Tax
@@ -117,7 +119,7 @@ async function handlePost({ request, env }) {
     remitDue,                     // P Remittance Due
     status,                       // Q Status
     `${periodStart} → ${periodEnd}`, // R Period
-    result.employerCpp,           // S Employer CPP (matches employee CPP incl. CPP2)
+    result.employerCpp,           // S Employer CPP = the CORRECT contribution for this pay (no recovery)
     result.employerEi,            // T Employer EI (1.4× employee EI)
     '',                           // U Stub (Drive link, filled when a stub is generated)
   ]];
@@ -167,7 +169,7 @@ async function handlePost({ request, env }) {
     payDate, period: { start: periodStart, end: periodEnd },
     gross: result.gross, netPay: result.netPay,
     deductions: {
-      cpp: result.cpp, cpp2: result.cpp2, ei: result.ei,
+      cpp: result.cpp, cpp2: result.cpp2, cppRecovery: result.cppRecovery, ei: result.ei,
       fedTax: result.fedTax, onTax: result.onTax, total: round2(totalDeductions),
     },
     employer: {
@@ -182,7 +184,7 @@ async function handlePost({ request, env }) {
     transactionRow: txnResult.updates?.updatedRange,
     ytdAfter: {
       gross: round2(ytd.gross + result.gross),
-      cpp: round2(ytd.cppBase + result.cpp + result.cpp2),
+      cpp: round2(ytd.cppBase + result.cpp + result.cpp2 + result.cppRecovery),
       fedTax: round2(ytd.fedTax + result.fedTax),
       onTax: round2(ytd.onTax + result.onTax),
     },

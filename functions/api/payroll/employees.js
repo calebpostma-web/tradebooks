@@ -28,6 +28,7 @@
 //   }
 // ════════════════════════════════════════════════════════════════════
 
+import { normalizePayFrequency } from '../../_payroll.js';
 import { writeRange } from '../../_sheets.js';
 import { authenticateRequest, json, options } from '../../_shared.js';
 
@@ -81,6 +82,8 @@ export async function onRequestPost({ request, env }) {
     td1FedClaim: claimCode(body.td1FedClaim),
     td1OnClaim: claimCode(body.td1OnClaim),
     email: body.email ? String(body.email).trim() : '',
+    payFrequency: normalizePayFrequency(body.payFrequency),
+    td1IncomeBelowClaim: !!body.td1IncomeBelowClaim,
     active: body.active !== false,
     notes: body.notes ? String(body.notes).trim() : '',
     updatedAt: new Date().toISOString(),

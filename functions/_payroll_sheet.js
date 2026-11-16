@@ -83,7 +83,7 @@ export function num(v) {
   return neg ? -n : n;
 }
 
-export function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+export function round2(n) { const x = Number(n) || 0; return Math.round(Number((x * 100).toFixed(6))) / 100; }
 
 /** Normalise a sheet date cell ("Sep 30, 2026", "2026-09-30") to ISO, or ''. */
 export function isoDate(v) {
@@ -233,7 +233,11 @@ export async function loadPayrollRows(env, userId) {
  * combined figure (it caps against the combined annual max).
  */
 export async function loadYtdState(env, userId, employeeName, payDateIso) {
-  const ytd = { gross: 0, cppBase: 0, cpp2: 0, fedTax: 0, onTax: 0 };
+  // cppBase      = employee CPP actually deducted (col J), incl. recoveries
+  // cppRequired  = the CPP each run SHOULD have had (col S, the employer
+  //                match — employer always remits the full correct share)
+  // cppShortfall = cppRequired − cppBase: employee CPP still to recover
+  const ytd = { gross: 0, cppBase: 0, cpp2: 0, fedTax: 0, onTax: 0, cppRequired: 0, cppShortfall: 0 };
   const res = await loadPayrollRows(env, userId);
   if (!res.ok) throw new SheetReadError('past pay runs (Payroll tab)', res);
   const payT = Date.parse(payDateIso);
@@ -247,11 +251,14 @@ export async function loadYtdState(env, userId, employeeName, payDateIso) {
     if (rowT >= payT) continue;
     ytd.gross += r.gross;
     ytd.cppBase += r.cpp;
+    ytd.cppRequired += r.employerCpp;
     ytd.fedTax += r.fedTax;
     ytd.onTax += r.onTax;
   }
   ytd.gross = round2(ytd.gross);
   ytd.cppBase = round2(ytd.cppBase);
+  ytd.cppRequired = round2(ytd.cppRequired);
+  ytd.cppShortfall = round2(Math.max(0, ytd.cppRequired - ytd.cppBase));
   ytd.fedTax = round2(ytd.fedTax);
   ytd.onTax = round2(ytd.onTax);
   return ytd;

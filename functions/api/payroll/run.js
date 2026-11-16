@@ -25,10 +25,20 @@ import {
   PAYROLL_TAB, TXN_TAB, round2,
   loadEmployee, loadWorkLogInRange, loadYtdState, findExistingPayrollRow, resolveWageCategory, loadRemitter,
 } from '../../_payroll_sheet.js';
+import { SheetReadError, sheetReadErrorBody } from '../../_payroll_sheet.js';
 
 export const onRequestOptions = () => options();
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(ctx) {
+  try {
+    return await handlePost(ctx);
+  } catch (err) {
+    if (err instanceof SheetReadError) return json(sheetReadErrorBody(err), 503);
+    throw err;
+  }
+}
+
+async function handlePost({ request, env }) {
   const auth = await authenticateRequest(request, env);
   if (!auth) return json({ ok: false, error: 'Unauthorized' }, 401);
   const userId = auth.userId;

@@ -16,6 +16,31 @@
 
 import { readRange } from './_sheets.js';
 
+/**
+ * Thrown when a payroll read can't reach the sheet (expired Google grant,
+ * missing sheet, API error). Callers MUST surface it — never fall back to
+ * zeros. A silent zero made a Preview show "YTD $0 / 0 Work Log entries /
+ * CPP $0" and would have let a wrong pay run be committed (Nov 16 2026).
+ */
+export class SheetReadError extends Error {
+  constructor(what, result) {
+    super(`Couldn't read ${what} from your Google Sheet: ${result?.error || 'unknown error'}`);
+    this.name = 'SheetReadError';
+    this.needsReauth = !!result?.needsReauth || /revoked|reconnect|invalid_grant/i.test(String(result?.error || ''));
+  }
+}
+
+/** JSON body for a SheetReadError, shared by the endpoints. */
+export function sheetReadErrorBody(err) {
+  return {
+    ok: false,
+    error: err.needsReauth
+      ? 'Google connection lost — the site can\'t read your sheet right now. Log out and sign in with Google again, then retry. Nothing was saved.'
+      : err.message + ' Nothing was saved.',
+    needsReauth: !!err.needsReauth,
+  };
+}
+
 export const WORK_LOG_TAB = '📝 Work Log';
 export const PAYROLL_TAB = '💼 Payroll';
 export const TXN_TAB = '📒 Transactions';
@@ -124,7 +149,7 @@ export async function loadRemitter(env, userId) {
  */
 export async function loadWorkLogInRange(env, userId, employeeName, startIso, endIso) {
   const result = await readRange(env, userId, WL_READ_RANGE);
-  if (!result.ok) return [];
+  if (!result.ok) throw new SheetReadError('the Work Log', result);
   const startT = Date.parse(startIso);
   const endT = Date.parse(endIso);
   const entries = [];
@@ -191,7 +216,7 @@ export function parsePayrollRow(row, sheetRow) {
 /** All Payroll rows, parsed, with 1-indexed sheet row numbers. */
 export async function loadPayrollRows(env, userId) {
   const result = await readRange(env, userId, PAY_READ_RANGE);
-  if (!result.ok) return { ok: false, error: result.error, rows: [] };
+  if (!result.ok) return { ok: false, error: result.error, needsReauth: !!result.needsReauth, rows: [] };
   const rows = [];
   for (let i = 0; i < result.values.length; i++) {
     const row = result.values[i];
@@ -210,7 +235,7 @@ export async function loadPayrollRows(env, userId) {
 export async function loadYtdState(env, userId, employeeName, payDateIso) {
   const ytd = { gross: 0, cppBase: 0, cpp2: 0, fedTax: 0, onTax: 0 };
   const res = await loadPayrollRows(env, userId);
-  if (!res.ok) return ytd;
+  if (!res.ok) throw new SheetReadError('past pay runs (Payroll tab)', res);
   const payT = Date.parse(payDateIso);
   const payYear = new Date(payDateIso).getUTCFullYear();
   for (const r of res.rows) {
@@ -235,7 +260,7 @@ export async function loadYtdState(env, userId, employeeName, payDateIso) {
 /** Existing (employee, payDate) Payroll row, for the idempotency check. */
 export async function findExistingPayrollRow(env, userId, employeeName, payDateIso) {
   const res = await loadPayrollRows(env, userId);
-  if (!res.ok) return null;
+  if (!res.ok) throw new SheetReadError('past pay runs (Payroll tab)', res);
   const hit = res.rows.find(r => r.employee === employeeName && r.payDate === payDateIso);
   return hit ? { sheetRow: hit.sheetRow, row: hit } : null;
 }

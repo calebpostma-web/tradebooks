@@ -13,7 +13,7 @@ import { loadPayrollRows, loadEmployees, loadWorkLogInRange, round2 } from './_p
 /** Collect everything the stub needs for one committed Payroll row. */
 export async function buildStubData(env, userId, sheetRow) {
   const res = await loadPayrollRows(env, userId);
-  if (!res.ok) return { ok: false, error: 'Failed to read Payroll: ' + res.error };
+  if (!res.ok) return { ok: false, error: 'Failed to read Payroll: ' + res.error, needsReauth: !!res.needsReauth };
   const run = res.rows.find(r => r.sheetRow === sheetRow);
   if (!run) return { ok: false, error: `No pay run at Payroll row ${sheetRow}` };
 
@@ -64,7 +64,11 @@ export async function buildStubData(env, userId, sheetRow) {
   if (pm) { periodStart = pm[1]; periodEnd = pm[2]; }
   let workLog = [];
   if (periodStart && periodEnd) {
-    workLog = await loadWorkLogInRange(env, userId, run.employee, periodStart, periodEnd);
+    try {
+      workLog = await loadWorkLogInRange(env, userId, run.employee, periodStart, periodEnd);
+    } catch (err) {
+      return { ok: false, error: err.message, needsReauth: !!err.needsReauth };
+    }
   }
 
   return {

@@ -8307,6 +8307,17 @@ function prReset(){
   document.getElementById('prStatus').textContent = '';
 }
 
+/** Error box for Preview/Commit. On a lost Google connection, offer the one fix. */
+function prErrorHtml(d, fallback){
+  const msg = esc(d.error || fallback);
+  if(!d.needsReauth) return `<div style="color:var(--red)">${msg}</div>`;
+  return `<div style="background:var(--redlt);border-left:3px solid var(--red);padding:.7rem .9rem;border-radius:4px">
+    <div style="font-weight:600;color:var(--red);margin-bottom:.3rem">Google connection lost</div>
+    <div style="color:var(--ink2);font-size:.8rem;margin-bottom:.5rem">${msg}</div>
+    <button onclick="loginWithGoogle()" style="background:var(--red);color:white;border:none;border-radius:4px;padding:.45rem .9rem;font-size:.82rem;cursor:pointer">🔓 Reconnect Google</button>
+  </div>`;
+}
+
 async function prPreview(){
   const token = localStorage.getItem(AUTH_KEY);
   if(!token){ toast('Please sign in first'); return; }
@@ -8327,9 +8338,11 @@ async function prPreview(){
     });
     const d = await r.json();
     if(!d.ok){
+      _prLastPreview = null;
+      document.getElementById('prCommitBtn').disabled = true;
       status.textContent = '❌ ' + (d.error || 'Preview failed');
       status.style.color = 'var(--red)';
-      breakdown.innerHTML = `<div style="color:var(--red)">${esc(d.error || 'Preview failed')}</div>`;
+      breakdown.innerHTML = prErrorHtml(d, 'Preview failed');
       return;
     }
     _prLastPreview = { ...payload, result: d };
@@ -8398,6 +8411,7 @@ async function prCommit(){
     if(!d.ok){
       status.textContent = '❌ ' + (d.error || 'Commit failed');
       status.style.color = 'var(--red)';
+      if(d.needsReauth){ breakdown.innerHTML = prErrorHtml(d, 'Commit failed'); _prLastPreview = null; return; }
       document.getElementById('prCommitBtn').disabled = false;
       return;
     }

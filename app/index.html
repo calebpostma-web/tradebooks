@@ -8415,7 +8415,13 @@ async function wlEditSave(i){
   }
   st.textContent = '⏳ Saving…'; st.style.color = 'var(--ink3)';
   try {
-    const d = await wlPostChange(i, body);
+    let d = await wlPostChange(i, body);
+    if(!d.ok && d.confirm === 'paidPeriod'){
+      if(!confirm(d.error + '\n\nOK = yes, that pay covered these hours — move them\nCancel = leave the date as it is')){
+        st.textContent = 'Not changed.'; st.style.color = 'var(--ink3)'; return;
+      }
+      d = await wlPostChange(i, { ...body, allowPaidPeriod: true });
+    }
     if(!d.ok){ st.textContent = '❌ ' + (d.error || 'Save failed'); st.style.color = 'var(--red)'; if(d.stale) setTimeout(wlLoadRecent, 2500); return; }
     toast('Work Log entry corrected');
     wlLoadRecent();

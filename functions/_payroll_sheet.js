@@ -373,6 +373,8 @@ export async function loadYtdState(env, userId, employeeName, payDateIso) {
 export async function findExistingPayrollRow(env, userId, employeeName, payDateIso) {
   const res = await loadPayrollRows(env, userId);
   if (!res.ok) throw new SheetReadError('past pay runs (Payroll tab)', res);
-  const hit = res.rows.find(r => r.employee === employeeName && r.payDate === payDateIso);
+  // A Cancelled run on the same date is history, not a clash — redoing a
+  // cancelled pay on the same pay date is the normal correction path.
+  const hit = res.rows.find(r => r.employee === employeeName && r.payDate === payDateIso && r.status.toLowerCase() !== 'cancelled');
   return hit ? { sheetRow: hit.sheetRow, row: hit } : null;
 }

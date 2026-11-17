@@ -20,6 +20,9 @@
 //            "[REMOVED]", Entry Audit gets "|removed:<ISO>|by:<user>|was:…|reason:…".
 //            Every payroll reader skips rows whose audit has "|removed:".
 //
+// Moving an entry INTO an already-paid period needs allowPaidPeriod (the
+// screen asks first) — for hours that pay really covered but were mis-dated.
+//
 // Inside a period that's already been paid, only changes that leave the paid
 // hours alone go through: rewording task/notes, or removing an exact duplicate.
 //
@@ -214,8 +217,17 @@ async function handlePost({ request, env }) {
     if (!(rate >= 0)) return json({ ok: false, error: 'Rate must be 0 or more.' }, 400);
     const task = body.task == null ? (row[WL_COL.task] || '') : safeText(body.task);
     if (!String(task).trim()) return json({ ok: false, error: 'Task description is required.' }, 400);
+    // Moving hours INTO a pay that's already been run is legitimate when that
+    // pay really covered them (Andrea's 300 h were paid in the Sept catch-up
+    // but dated on the pay day, Oct 4). Ask first; the screen resends with
+    // allowPaidPeriod after the person confirms.
     const paidNew = findPaidPeriod(periods, workDate);
-    if (paidNew && !paidOld) return json({ ok: false, paid: fmtPaid(paidNew), error: paidMessage(paidNew, 'The new date is') + ' Pick a date after that pay period ended.' }, 409);
+    if (paidNew && !paidOld && !body.allowPaidPeriod) {
+      return json({ ok: false, confirm: 'paidPeriod', paid: fmtPaid(paidNew),
+        error: `${fmtLong(workDate)} is inside the ${fmtLong(paidNew.payDate)} pay, which covered ${fmtLong(paidNew.start)} to ${fmtLong(paidNew.end)}. ` +
+          `Only do this if that pay already paid for these hours (for example, they were dated on the pay day by mistake). ` +
+          `If these hours haven't been paid yet, pick a date after ${fmtLong(paidNew.end)} instead.` }, 409);
+    }
     newRow = [
       workDate, employee,
       body.business == null ? (row[WL_COL.business] || '') : safeText(body.business),

@@ -85,6 +85,20 @@ export function num(v) {
 
 export function round2(n) { const x = Number(n) || 0; return Math.round(Number((x * 100).toFixed(6))) / 100; }
 
+/** Text typed by a user is written with USER_ENTERED; never let it start a formula. */
+export function safeText(v) {
+  const s = String(v ?? '').trim();
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+
+/** True only for a real calendar date in YYYY-MM-DD form (rejects 2026-11-31, which JS rolls to Dec 1). */
+export function isRealIsoDate(v) {
+  const s = String(v || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + 'T00:00:00Z');
+  return !isNaN(d) && d.toISOString().slice(0, 10) === s;
+}
+
 /** Normalise a sheet date cell ("Sep 30, 2026", "2026-09-30") to ISO, or ''. */
 export function isoDate(v) {
   if (!v) return '';
@@ -153,12 +167,15 @@ export async function loadWorkLogInRange(env, userId, employeeName, startIso, en
   const startT = Date.parse(startIso);
   const endT = Date.parse(endIso);
   const entries = [];
-  for (const row of result.values) {
+  for (let i = 0; i < result.values.length; i++) {
+    const row = result.values[i];
     if (!row || !row[WL_COL.date]) continue;
     if (row[WL_COL.employee] !== employeeName) continue;
+    if (isRemovedEntry(row)) continue;
     const t = Date.parse(row[WL_COL.date]);
     if (isNaN(t) || t < startT || t > endT) continue;
     entries.push({
+      sheetRow: 12 + i,
       date: row[WL_COL.date],
       business: row[WL_COL.business] || '',
       task: row[WL_COL.task] || '',
@@ -169,6 +186,94 @@ export async function loadWorkLogInRange(env, userId, employeeName, startIso, en
     });
   }
   return entries;
+}
+
+/** A Work Log row marked removed (audit "|removed:") never counts toward pay. */
+export function isRemovedEntry(row) {
+  return /\|removed:/.test(String(row?.[WL_COL.audit] || ''));
+}
+
+/** Parse a Payroll "Period" cell ("2026-10-01 → 2026-10-31") into ISO dates. */
+export function parsePeriod(text) {
+  const m = /(\d{4}-\d{2}-\d{2})\s*(?:→|->|to|–|-)\s*(\d{4}-\d{2}-\d{2})/.exec(String(text || ''));
+  return m ? { start: m[1], end: m[2] } : null;
+}
+
+/**
+ * Periods already paid for one employee: every committed, non-cancelled
+ * Payroll row with a readable Period. Hours dated inside one of these were
+ * (or should have been) paid by that run — editing them after the fact
+ * would make the Work Log disagree with what was actually paid.
+ */
+export function paidPeriods(payrollRows, employeeName) {
+  const out = [];
+  for (const r of payrollRows) {
+    if (r.employee !== employeeName || r.status.toLowerCase() === 'cancelled') continue;
+    const p = parsePeriod(r.period);
+    if (!p) continue;
+    out.push({ ...p, startT: Date.parse(p.start), endT: Date.parse(p.end), payDate: r.payDate, sheetRow: r.sheetRow, status: r.status });
+  }
+  return out;
+}
+
+/** The paid period (if any) that covers a date, for one employee. */
+export function findPaidPeriod(periods, dateValue) {
+  const t = Date.parse(isoDate(dateValue) || dateValue);
+  if (isNaN(t)) return null;
+  return periods.find(p => t >= p.startT && t <= p.endT + 86399999) || null;
+}
+
+/**
+ * Work Log entries for one employee dated OUTSIDE [start, end] but within
+ * `days` of it, and not covered by any committed (non-cancelled) pay run's
+ * period. Shown on the Preview as "hours just outside this period" — the
+ * exact trap Andrea hit (catch-up hours dated on the pay date, Oct 4,
+ * instead of inside Apr 1–Sep 30).
+ */
+export async function loadWorkLogNearby(env, userId, employeeName, startIso, endIso, days = 62) {
+  const result = await readRange(env, userId, WL_READ_RANGE);
+  if (!result.ok) throw new SheetReadError('the Work Log', result);
+  const pay = await loadPayrollRows(env, userId);
+  if (!pay.ok) throw new SheetReadError('past pay runs (Payroll tab)', pay);
+  const covered = paidPeriods(pay.rows, employeeName).map(p => [p.startT, p.endT]);
+  const startT = Date.parse(startIso), endT = Date.parse(endIso), win = days * 86400000;
+  const out = [];
+  for (let i = 0; i < result.values.length; i++) {
+    const row = result.values[i];
+    if (!row || !row[WL_COL.date] || row[WL_COL.employee] !== employeeName || isRemovedEntry(row)) continue;
+    const t = Date.parse(row[WL_COL.date]);
+    if (isNaN(t) || (t >= startT && t <= endT)) continue;
+    if (t < startT - win || t > endT + win) continue;
+    if (covered.some(([a, b]) => t >= a && t <= b + 86399999)) continue;
+    out.push({ sheetRow: 12 + i, date: row[WL_COL.date], isoDate: isoDate(row[WL_COL.date]), hours: num(row[WL_COL.hours]), rate: num(row[WL_COL.rate]), task: row[WL_COL.task] || '', after: t > endT });
+  }
+  return out;
+}
+
+/**
+ * Period checks shared by Preview (calculate) and Commit (run):
+ *   alreadyPaid — Work Log entries in this period that a committed,
+ *                 non-cancelled run already covered (paying them again
+ *                 would pay the same hours twice). Commit refuses these.
+ *   overlaps    — committed runs whose period overlaps this one.
+ *   nearby      — unpaid entries dated just outside this period (the
+ *                 "hours dated on the pay day" trap). Preview shows them.
+ * `excludeSheetRow`: the run being overwritten (same employee + pay date).
+ */
+export async function loadPeriodChecks(env, userId, employeeName, periodStart, periodEnd, wlEntries, excludeSheetRow = null) {
+  const pay = await loadPayrollRows(env, userId);
+  if (!pay.ok) throw new SheetReadError('past pay runs (Payroll tab)', pay);
+  const periods = paidPeriods(pay.rows, employeeName).filter(p => p.sheetRow !== excludeSheetRow);
+  const startT = Date.parse(periodStart), endT = Date.parse(periodEnd);
+  const brief = p => ({ payDate: p.payDate, start: p.start, end: p.end, status: p.status });
+  const alreadyPaid = [];
+  for (const e of wlEntries) {
+    const p = findPaidPeriod(periods, e.date);
+    if (p) alreadyPaid.push({ ...e, paidBy: brief(p) });
+  }
+  const overlaps = periods.filter(p => p.startT <= endT && p.endT >= startT).map(brief);
+  const nearby = await loadWorkLogNearby(env, userId, employeeName, periodStart, periodEnd);
+  return { alreadyPaid, overlaps, nearby };
 }
 
 // ─── Payroll rows ───────────────────────────────────────────────────

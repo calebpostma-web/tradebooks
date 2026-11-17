@@ -24,6 +24,7 @@ import { calculatePayRun, remittanceDueDate, applyCppRecovery } from '../../_pay
 import {
   PAYROLL_TAB, TXN_TAB, round2,
   loadEmployee, loadWorkLogInRange, loadYtdState, findExistingPayrollRow, resolveWageCategory, loadRemitter,
+  loadPeriodChecks,
 } from '../../_payroll_sheet.js';
 import { SheetReadError, sheetReadErrorBody } from '../../_payroll_sheet.js';
 
@@ -83,6 +84,26 @@ async function handlePost({ request, env }) {
     return json({ ok: false, error: 'Gross pay is $0 — no Work Log entries in range and no adjustment.' }, 400);
   }
 
+  // No hours, only an Adjustment: allowed for a real bonus or extra pay, but
+  // the screen has to say so. Otherwise it's almost always hours dated
+  // outside the period (Andrea's 300 h dated on the pay day).
+  const isBonus = !!body.isBonus;
+  if (wlEntries.length === 0 && !isBonus) {
+    return json({ ok: false, needsBonusConfirm: true,
+      error: 'There are no Work Log hours in this period, only the Adjustment amount. If these are hours worked, log them in the Work Log dated inside this period (the last day the work was done) and Preview again. If this really is a bonus or extra pay with no hours, tick "This is a bonus / extra pay" and commit again.' }, 400);
+  }
+
+  // Never pay the same hours twice.
+  const checks = await loadPeriodChecks(env, userId, employee.name, periodStart, periodEnd, wlEntries,
+    existingRow && overwrite ? existingRow.sheetRow : null);
+  if (checks.alreadyPaid.length) {
+    const p = checks.alreadyPaid[0].paidBy;
+    return json({ ok: false, alreadyPaid: checks.alreadyPaid,
+      error: `${checks.alreadyPaid.length} Work Log entr${checks.alreadyPaid.length === 1 ? 'y' : 'ies'} in this period ` +
+        `${checks.alreadyPaid.length === 1 ? 'was' : 'were'} already paid by the ${fmtLong(p.payDate)} pay (${fmtLong(p.start)} to ${fmtLong(p.end)}). ` +
+        `Start this period ${fmtLong(new Date(Date.parse(p.end) + 86400000).toISOString().slice(0, 10))} or later, or cancel that earlier run first if it was wrong.` }, 409);
+  }
+
   const ytd = await loadYtdState(env, userId, employee.name, payDate);
   const remitter = await loadRemitter(env, userId);
 
@@ -97,7 +118,7 @@ async function handlePost({ request, env }) {
   // Build Payroll row (20 data columns B-U)
   const businesses = [...new Set(wlEntries.map(e => e.business).filter(Boolean))];
   const businessDisplay = businesses.length === 0 ? 'Postma' : businesses.length === 1 ? businesses[0] : 'Multi';
-  const workDescription = buildWorkDescription(wlEntries, adjustment)
+  const workDescription = buildWorkDescription(wlEntries, adjustment, isBonus)
     + (result.cppRecovery > 0 ? ` · CPP incl. $${result.cppRecovery.toFixed(2)} correction (earlier under-deduction)` : '');
   const avgRate = totalHours > 0 ? round2(wlGross / totalHours) : '';
 
@@ -193,9 +214,14 @@ async function handlePost({ request, env }) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function buildWorkDescription(entries, adjustment) {
+function fmtLong(iso) {
+  const d = new Date(iso + 'T00:00:00Z');
+  return isNaN(d) ? iso : d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+function buildWorkDescription(entries, adjustment, isBonus = false) {
   if (!entries.length) {
-    return adjustment > 0 ? `Adjustment / bonus only` : `—`;
+    return adjustment > 0 ? (isBonus ? `Bonus / extra pay — no hours` : `Adjustment only — no hours logged`) : `—`;
   }
   const tasks = [...new Set(entries.map(e => e.task).filter(Boolean))];
   let desc;

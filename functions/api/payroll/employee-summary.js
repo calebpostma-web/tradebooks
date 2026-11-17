@@ -53,6 +53,7 @@ export async function onRequestGet({ request, env }) {
       if (!row || !row[0]) continue;
       const [date, name, business, task, hours, rate, notes, audit] = row;
       if (name !== employee.name) continue;
+      if (/\|removed:/.test(String(audit || ''))) continue;
       const t = Date.parse(date);
       if (isNaN(t) || t < yearStart || t > yearEnd) continue;
       wlEntries.push({

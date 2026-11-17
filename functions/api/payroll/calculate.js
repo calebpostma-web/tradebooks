@@ -26,7 +26,7 @@
 
 import { authenticateRequest, json, options } from '../../_shared.js';
 import { calculatePayRun, remittanceDueDate, applyCppRecovery } from '../../_payroll.js';
-import { loadEmployee, loadWorkLogInRange, loadYtdState, loadRemitter } from '../../_payroll_sheet.js';
+import { loadEmployee, loadWorkLogInRange, loadYtdState, loadRemitter, loadPeriodChecks } from '../../_payroll_sheet.js';
 import { SheetReadError, sheetReadErrorBody } from '../../_payroll_sheet.js';
 
 export const onRequestOptions = () => options();
@@ -67,6 +67,8 @@ async function handlePost({ request, env }) {
   const wlEntries = await loadWorkLogInRange(env, userId, employee.name, periodStart, periodEnd);
   const wlGross = wlEntries.reduce((s, e) => s + (e.hours * e.rate), 0);
   const grossPay = Math.round((wlGross + adjustment) * 100) / 100;
+  const checks = await loadPeriodChecks(env, userId, employee.name, periodStart, periodEnd, wlEntries,
+    body.overwriteSheetRow ? parseInt(body.overwriteSheetRow, 10) : null);
 
   // 3. Read Payroll rows for YTD state (calendar year of payDate)
   const ytd = await loadYtdState(env, userId, employee.name, payDate);
@@ -98,7 +100,11 @@ async function handlePost({ request, env }) {
       entries: wlEntries,
       sumGross: Math.round(wlGross * 100) / 100,
       adjustment,
+      alreadyPaid: checks.alreadyPaid,   // entries a committed run already paid
+      nearby: checks.nearby,             // unpaid entries just outside this period
     },
+    overlaps: checks.overlaps,           // committed runs whose period overlaps
+    needsBonusConfirm: wlEntries.length === 0 && adjustment > 0,
     ytdBefore: ytd,
     ytdAfter: {
       gross: Math.round((ytd.gross + result.gross) * 100) / 100,
